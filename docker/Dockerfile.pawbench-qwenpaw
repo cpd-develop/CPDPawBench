@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 # ── Pinned agent version ───────────────────────────────────────────────────────
 # Keep in sync with _DEFAULT_QWENPAW_VERSION in pawbench/agents/impl/qwenpaw_agent.py.
-ARG QWENPAW_VERSION=1.1.3
+ARG QWENPAW_VERSION=2.2.0
 
 # ── Node.js version ────────────────────────────────────────────────────────────
 # CoPaw-Pro uses node:slim as its base image.  Many QwenClawBench tasks execute
@@ -120,3 +120,8 @@ RUN node --version && npm --version
 RUN python3 -c "import requests, yaml, pandas, numpy; print('Python deps OK')"
 RUN chromium --version 2>/dev/null || chromium-browser --version 2>/dev/null || echo "[warn] chromium not found"
 RUN python3 -c "import playwright; print('playwright OK')"
+
+# ── Task data: 150 pawbench tasks (required by backend.load_tasks) ────────────
+# Without this, the container has the runner code but no task definitions and
+# fails with FileNotFoundError: .../data/pawbench-v1.0/tasks
+COPY data/ /opt/copawbench/data/

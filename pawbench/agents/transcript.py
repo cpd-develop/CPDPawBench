@@ -10,6 +10,7 @@ and converts it to the OpenClaw event list consumed by the grader.
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -20,11 +21,15 @@ def build_transcript_from_session(
 ) -> "list[dict[str, Any]]":
     """Build an OpenClaw-compatible transcript from a completed agent run.
 
-    Three sources are tried in order:
+    Sources are tried in order:
 
     1. **Structured session JSON** in ``<local_workspace>/sessions/*.json``
        (preferred).  All current agents write a session file in the qwenpaw
        ``agent.memory.content`` format before returning from ``run()``.
+    1b. **qwenpaw >= 2.x SQLite history** in ``<local_workspace>/history.db``
+       (table ``conversation_history``).  qwenpaw 2.x persists the conversation
+       in SQLite rather than in ``agent.memory.content``, so this is the
+       authoritative source for those versions.
     2. **Stdout chunk scan** (legacy fallback).  Scan every line of stdout for
        complete JSON objects following the ``{"events": [...]}`` envelope.
     3. **Stdout tail** (last-resort fallback).  Wrap the last 40 000 chars of
@@ -38,6 +43,15 @@ def build_transcript_from_session(
             session_events = []
         if session_events:
             return session_events
+
+    # ── 1b. qwenpaw >= 2.x SQLite conversation history ─────────────────────────
+    if local_workspace is not None:
+        try:
+            db_events = _events_from_history_db(local_workspace)
+        except Exception:
+            db_events = []
+        if db_events:
+            return db_events
 
     # ── 2. Legacy stdout chunk scan ──────────────────────────────────────────
     tool_calls: list[str] = []
@@ -162,8 +176,14 @@ def _events_from_session_dir(sessions_dir: Path) -> "list[dict[str, Any]]":
         return events
 
     # ── 2 & 3. Session JSON (qwenpaw / openclaw-native / openai-chat) ─────────
+    # qwenpaw ≥ 2.x persists console-channel sessions under sessions/console/,
+    # so search that subdirectory too (not just the sessions/ top level).
+    search_dirs = [sessions_dir]
+    console_dir = sessions_dir / "console"
+    if console_dir.is_dir():
+        search_dirs.append(console_dir)
     candidates = sorted(
-        (p for p in sessions_dir.glob("*.json") if p.is_file()),
+        (p for d in search_dirs for p in d.glob("*.json") if p.is_file()),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
@@ -192,6 +212,120 @@ def _events_from_session_dir(sessions_dir: Path) -> "list[dict[str, Any]]":
                 return translated
 
     return []
+
+
+# ── qwenpaw >= 2.x SQLite conversation history ──────────────────────────────────
+
+def _events_from_history_db(local_workspace: Path) -> "list[dict[str, Any]]":
+    """Extract transcript events from qwenpaw 2.x SQLite history.
+
+    qwenpaw >= 2.x persists the conversation in ``<workspace>/history.db``
+    (table ``conversation_history``) instead of the ``agent.memory.content``
+    JSON that older versions wrote under ``sessions/``.  Each row carries
+    ``role``, ``kind``, ``name``, ``content``, ``tool_input``, ``tool_state``,
+    ``headline`` and ``blocks`` columns which we translate into OpenClaw
+    transcript events.
+
+    The human-readable text lives in ``content`` for some rows, but for tool
+    turns and many assistant turns the full payload is serialized into the
+    ``blocks`` JSON column.  We therefore fall back to ``blocks`` (and then
+    ``headline``) so the LLM judge sees the actual tool I/O and reasoning.
+
+    Returns ``[]`` when no usable history DB is found.
+    """
+    candidates = [
+        local_workspace / "history.db",
+        local_workspace / "output" / "history.db",
+    ]
+    rows: "list[tuple]" = []
+    for db_path in candidates:
+        if not db_path.is_file():
+            continue
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT seq, kind, role, name, content, tool_input, tool_state, "
+                "headline, blocks "
+                "FROM conversation_history ORDER BY seq"
+            )
+            rows = cur.fetchall()
+            conn.close()
+        except Exception:
+            rows = []
+        if rows:
+            break
+    if not rows:
+        return []
+
+    events: "list[dict[str, Any]]" = []
+    for r in rows:
+        seq, kind, role, name, content, tool_input, tool_state, headline, blocks = (
+            list(r) + [None] * 9
+        )[:9]
+        role = (role or "").lower()
+        kind = (kind or "").lower()
+        text = _sqlite_row_text(content, blocks, headline)
+
+        if role == "user":
+            if text:
+                events.append(_message_event("user", [{"type": "text", "text": text}]))
+            continue
+
+        if role == "tool" or kind == "tool_result":
+            rt = text or (str(tool_state) if tool_state else "")
+            if rt:
+                events.append(_message_event("toolResult", [{"type": "text", "text": rt}]))
+            continue
+
+        # assistant (or unknown) — emit a tool call when tool_input is present
+        if tool_input is not None and tool_input != "":
+            args = _parse_tool_args(tool_input)
+            call = {"type": "toolCall", "name": name or "tool", "arguments": args}
+            events.append(_message_event("assistant", [call]))
+            if text:
+                events.append(_message_event("assistant", [{"type": "text", "text": text}]))
+            continue
+
+        if text:
+            events.append(_message_event("assistant", [{"type": "text", "text": text}]))
+
+    return events
+
+
+def _sqlite_row_text(content: Any, blocks: Any, headline: Any) -> str:
+    """Best-effort extraction of human-readable text from a history row.
+
+    Preference order: ``content`` (already-flattened text) -> serialized
+    ``blocks`` (Msg block JSON, where the real payload usually lives) ->
+    ``headline`` (assistant summary line).
+    """
+    if isinstance(content, str) and content.strip():
+        return content
+    if blocks:
+        if isinstance(blocks, str):
+            try:
+                blocks = json.loads(blocks)
+            except (json.JSONDecodeError, ValueError):
+                blocks = None
+        if isinstance(blocks, list):
+            parts: "list[str]" = []
+            for b in blocks:
+                if isinstance(b, dict):
+                    for key in ("text", "output", "content", "thinking"):
+                        v = b.get(key)
+                        if isinstance(v, str) and v.strip():
+                            parts.append(v)
+            if parts:
+                return "\n".join(parts)
+    if isinstance(headline, str) and headline.strip():
+        return headline
+    return ""
+
+
+def _message_event(role: str, content: "list[dict[str, Any]]") -> "dict[str, Any]":
+    """Build a single OpenClaw ``message`` transcript event."""
+    return {"type": "message", "message": {"role": role, "content": content}}
 
 
 # ── openclaw trajectory JSONL parser ─────────────────────────────────────────

@@ -217,7 +217,12 @@ def _grade_llm_judge(
             "LLM judge requires JUDGE_BASE_URL and JUDGE_API_KEY environment variables."
         )
 
-    api_model = judge_model.split("/", 1)[-1] if "/" in judge_model else judge_model
+    # Pass the judge model id verbatim to the API. Gateways such as SiliconFlow
+    # require the FULL id including its provider namespace
+    # (e.g. "deepseek-ai/DeepSeek-V4-Pro"); stripping the prefix would make the
+    # request fail with "Model does not exist". For unprefixed judge names
+    # (e.g. "qwen3p6-35b-a3b", "claude-opus-4-5-20251101") this is a no-op.
+    api_model = judge_model
     last_exc: Optional[Exception] = None
     for attempt in range(JUDGE_API_MAX_RETRIES):
         if attempt > 0:

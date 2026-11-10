@@ -18,7 +18,7 @@ _SERVER_URL = "http://127.0.0.1:8088"
 
 # Default qwenpaw package version to install when the binary is absent from
 # the image.  Override per-task via agent config key "qwenpaw_version".
-_DEFAULT_QWENPAW_VERSION = "1.1.3"
+_DEFAULT_QWENPAW_VERSION = "2.2.0"
 
 # Map our ProviderType to qwenpaw's builtin provider IDs and chat_model values.
 # Builtin providers are pre-registered in qwenpaw; only api_key / model need to
@@ -444,7 +444,7 @@ cli()
           3. Configure provider via HTTP API (builtin or custom)
           4. Add model with multimodal metadata
           5. Activate model globally
-          6. Stream POST /api/agent/process (parse SSE data: / [DONE])
+          6. Stream POST /api/console/chat (parse SSE data: / [DONE])
           7. Wait for session file
         """
         model_config = self._model_config
@@ -584,7 +584,7 @@ cli()
             "}\n"
             "print(f'[call_agent] session_id={SESSION_ID}', flush=True)\n"
             "try:\n"
-            "    resp = requests.post(f'{URL}/api/agent/process', json=payload,\n"
+            "    resp = requests.post(f'{API_BASE}/console/chat', json=payload,\n"
             "                         headers=headers, stream=True, timeout=TIMEOUT)\n"
             "    resp.raise_for_status()\n"
             "    for chunk in resp.iter_content(chunk_size=None):\n"

@@ -1,0 +1,111 @@
+# PawBench 单任务评测 Pod：qwenpaw 执行模型 + 评测(judge)模型 均走公司模型服务
+#
+# 架构：
+#   dind sidecar 提供 Docker 守护进程（TCP 2375）
+#   initContainer 把 docker CLI 二进制注入 runner（镜像本身不带 docker 客户端）
+#   runner 用 DOCKER_HOST 指向 dind，由 PawBench backend 在 dind 内拉起 agent 容器跑任务
+#
+# 使用前请把所有 <...> 占位符替换成真实值。
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pawbench-t020
+  namespace: default
+spec:
+  restartPolicy: Never
+  # 拉取公司镜像用的 pull secret（runner / dind / agent 镜像都要能从公司 registry 拉）
+  imagePullSecrets:
+    - name: company-registry          # ← 改成你公司 registry 的 imagePullSecret 名
+
+  initContainers:
+    # 仅用 docker:27 客户端镜像，把 docker 二进制拷到共享卷，供 runner 使用
+    - name: docker-cli
+      image: docker:27
+      command: ["sh", "-c", "cp /usr/local/bin/docker /docker-bin/docker"]
+      volumeMounts:
+        - name: docker-bin
+          mountPath: /docker-bin
+
+  containers:
+    # ── Docker-in-Docker 守护进程 ──────────────────────────────────────────────
+    - name: dind
+      image: docker:27-dind
+      args: ["--host=tcp://0.0.0.0:2375", "--tls=false"]
+      securityContext:
+        privileged: true
+      volumeMounts:
+        - name: dind-storage
+          mountPath: /var/lib/docker
+        # dind 拉取私有 agent 镜像用的凭证（secret 需含 config.json）
+        - name: docker-config
+          mountPath: /root/.docker
+      ports:
+        - containerPort: 2375
+
+    # ── PawBench runner（就是你推送的镜像，内含 run_bench.py + pawbench/ ）────────
+    - name: runner
+      image: <COMPANY_DOCKERHUB>/qwenclawbench-qwenpaw:2.2.0
+      workingDir: /opt/copawbench
+      env:
+        # 指向同 Pod 内的 dind
+        - name: DOCKER_HOST
+          value: "tcp://localhost:2375"
+        - name: PYTHONPATH
+          value: "/opt/copawbench"
+
+        # ── 执行模型（qwenpaw 实际调用的 LLM）：公司模型服务 ──
+        # 注意：custom provider 下 qwenpaw 会自动补 /v1，所以这里【不要】写 /v1
+        - name: CUSTOM_BASE_URL
+          value: "<https://models.company.com>"
+        - name: CUSTOM_API_KEY
+          value: "<FILL-IN-EXEC-APIKEY>"
+
+        # ── 评测模型（judge）：公司模型服务 ──
+        # 注意：grader 不会自动补 /v1，OpenAI 兼容端点【必须】带 /v1
+        - name: JUDGE_BASE_URL
+          value: "<https://models.company.com/v1>"
+        - name: JUDGE_API_KEY
+          value: "<FILL-IN-JUDGE-APIKEY>"
+      command: ["python"]
+      args:
+        - "/opt/copawbench/run_bench.py"
+        - "--agents"
+        - "qwenpaw"
+        - "--docker-image"
+        - "<COMPANY_DOCKERHUB>/qwenclawbench-qwenpaw:2.2.0"   # dind 会去公司 registry 拉这个
+        - "--model"
+        - "custom/<EXEC_MODEL>"        # 例如 custom/deepseek-v4-flash（名字要和公司端点一致）
+        - "--judge"
+        - "<JUDGE_MODEL>"              # 例如 qwen3.6-35b-a3b
+        - "--tasks"
+        - "T020"
+        - "--results-dir"
+        - "/results"
+      volumeMounts:
+        # 从 initContainer 注入的 docker CLI（subPath 只挂单个文件）
+        - name: docker-bin
+          mountPath: /usr/local/bin/docker
+          subPath: docker
+        - name: results
+          mountPath: /results
+      resources:
+        requests:
+          cpu: "2"
+          memory: "4Gi"
+        limits:
+          cpu: "4"
+          memory: "8Gi"
+
+  volumes:
+    - name: docker-bin
+      emptyDir: {}
+    - name: dind-storage
+      emptyDir: {}
+    # 结果落盘：建议用 PVC 以便评测后取回；临时验证也可用 emptyDir（Pod 删了就没了）
+    - name: results
+      persistentVolumeClaim:
+        claimName: pawbench-results   # ← 改成你已有的 PVC，或把下面这段换成 emptyDir: {}
+    # 公司 registry 登录凭证（含 config.json），供 dind 拉私有 agent 镜像
+    - name: docker-config
+      secret:
+        secretName: company-docker-config   # ← 改成你存的 docker config secret 名

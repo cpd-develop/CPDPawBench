@@ -1,0 +1,69 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: __POD_NAME__
+  namespace: __NAMESPACE__
+spec:
+  restartPolicy: Never
+  # 取消下行注释可固定节点，确保结果落在同一宿主机 hostPath（多 pod 串行时结果目录
+  # 各带 timestamp 不冲突；但若不固定 nodeName，pod 可能被调度到不同节点，hostPath
+  # 结果会分散在各节点本地盘，收集时需到对应节点取）。
+  # nodeName: labest-m1
+  containers:
+    - name: runner
+      image: __IMAGE__
+      imagePullPolicy: Always
+      workingDir: /opt/copawbench
+      env:
+        # ★ 启用本地（进程内）模式，跳过所有 Docker 操作
+        - name: PAWBENCH_ENV
+          value: "local"
+        - name: PYTHONPATH
+          value: "/opt/copawbench"
+        # 执行模型（custom provider 自动补 /v1，base 上不要写 /v1）
+        - name: CUSTOM_BASE_URL
+          value: "__CUSTOM_BASE_URL__"
+        - name: CUSTOM_API_KEY
+          value: "__API_KEY__"
+        # 评测模型（grader 不会补 /v1，必须带 /v1）
+        - name: JUDGE_BASE_URL
+          value: "__JUDGE_BASE_URL__"
+        - name: JUDGE_API_KEY
+          value: "__API_KEY__"
+        # 规避 Qwen3.6 推理模型（先流式吐 reasoning_content，content 滞后）导致的
+        # StreamIdleTimeoutError
+        - name: QWENPAW_LLM_STREAM_IDLE_TIMEOUT
+          value: "600"
+        - name: AUTO_EVAL_GENERATE_KWARGS
+          value: '{"extra_body":{"enable_thinking":false}}'
+      command: ["bash", "-lc"]
+      args:
+        - |
+          python /opt/copawbench/run_bench.py \
+            --agents qwenpaw \
+            --docker-image __IMAGE__ \
+            --model __MODEL__ \
+            --judge __JUDGE__ \
+            --tasks __TASK_STEM__ \
+            --results-dir /results
+          echo "=== run_bench exit=$? ==="
+          mkdir -p /results/_logs
+          cp -a /tmp/qwenpaw_server.log /tmp/qwenpaw_output.txt /tmp/task_instruction.txt /results/_logs/ 2>/dev/null || true
+          ls -la /results/_logs
+      volumeMounts:
+        - name: results
+          mountPath: /results
+        # 任务数据：镜像里没有 data/，用 hostPath 补上。
+        # 必须同时包含 tasks/(150 个任务 md) 和 assets/(素材文件)
+        - name: taskdata
+          mountPath: /opt/copawbench/data/pawbench-v1.0
+  volumes:
+    - name: results
+      hostPath:
+        # 落盘到宿主机，Pod 结束后仍可查看结果与 agent 日志
+        path: __RESULTS_HOST__
+        type: DirectoryOrCreate
+    - name: taskdata
+      hostPath:
+        path: __DATA_HOST__
+        type: Directory
