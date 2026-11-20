@@ -1,0 +1,653 @@
+/**
+ * Page-local layout, on top of the design system's atoms.
+ *
+ * Nothing here names a colour: every value is a semantic token from
+ * `designsys/colors_and_type.css`, which carries both themes.  A rule that
+ * needed a colour the tokens do not offer would be a signal that the rule is
+ * wrong, not that a literal is missing.
+ *
+ * The one deviation from `.ds-card` is deliberate: `.ds-card` lights up on
+ * hover, which is right for a card you can click and wrong for a panel you
+ * read.  Static surfaces therefore use `.pbe-panel`, and interactive ones add
+ * `.pbe-panel--link`.
+ */
+
+/* ── shell ─────────────────────────────────────────────────────────────── */
+
+.pbe-root {
+  display: block;
+  min-height: 100%;
+  background: var(--bg-base-secondary);
+  color: var(--text-default);
+  font-family: var(--body-base-font-family);
+  font-size: var(--body-base-font-size);
+  line-height: var(--body-base-line-height);
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * The rail and the module sit in one row that this file owns.
+ *
+ * Deliberately not expressed on `.pbe-root`: between the two there is antd's
+ * `App` wrapper, whose display is the host build's business.  Relying on it
+ * being a pass-through produced a page whose content started 100vh down the
+ * screen — one row for the rail, another for everything else.
+ */
+.pbe-shell {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  min-height: 100%;
+}
+
+.pbe-rail {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex: 0 0 var(--layout-sidebar);
+  flex-direction: column;
+  gap: var(--spacer-16);
+  width: var(--layout-sidebar);
+  height: 100vh;
+  padding: var(--spacer-16) var(--spacer-12);
+  border-right: 1px solid var(--border-neutral-l1);
+  background: var(--bg-menu);
+  box-sizing: border-box;
+}
+
+.pbe-rail__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  padding: 0 var(--spacer-8);
+  color: var(--text-default);
+  font-family: var(--font-family-heading);
+  font-size: var(--body-lg-font-size);
+  font-weight: 600;
+}
+
+.pbe-rail__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pbe-nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sb-item-gap);
+  width: 100%;
+  height: var(--nav-item-h);
+  padding: 0 var(--sb-item-pad-x);
+  border: 0;
+  border-radius: var(--radius-8);
+  background: transparent;
+  color: var(--text-default);
+  font-family: inherit;
+  font-size: var(--body-base-font-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pbe-nav-item:hover {
+  background: var(--bg-overlay-l1);
+}
+
+.pbe-nav-item[aria-current="page"] {
+  background: var(--bg-overlay-l2);
+  font-weight: 500;
+}
+
+.pbe-nav-item__count {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-family: var(--code-editor-font-family);
+  font-size: var(--body-sm-font-size);
+}
+
+.pbe-rail__foot {
+  margin-top: auto;
+  padding: var(--spacer-12);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-12);
+  background: var(--bg-base-default);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  width: 100%;
+}
+
+.pbe-rail__foot:hover {
+  background: var(--bg-card-hover);
+}
+
+.pbe-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--spacer-24) var(--spacer-32) var(--spacer-32);
+}
+
+/* ── page heading ──────────────────────────────────────────────────────── */
+
+.pbe-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacer-16);
+  margin-bottom: var(--spacer-24);
+  /* The host parks a floating control (… and collapse) in the top-right corner
+     of every route; without this the primary button sits under it. */
+  padding-right: 76px;
+}
+
+.pbe-head__text {
+  min-width: 0;
+}
+
+.pbe-head__title {
+  margin: 0;
+  color: var(--text-default);
+  font-family: var(--font-family-heading);
+  font-size: var(--heading-lg-font-size);
+  font-weight: 600;
+  line-height: var(--heading-lg-line-height);
+}
+
+.pbe-head__sub {
+  margin-top: var(--spacer-4);
+  color: var(--text-secondary);
+  font-size: var(--body-base-font-size);
+}
+
+.pbe-head__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  margin-left: auto;
+}
+
+/* ── surfaces ──────────────────────────────────────────────────────────── */
+
+.pbe-panel {
+  background: var(--bg-base-default);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-12);
+}
+
+.pbe-panel--pad {
+  padding: var(--spacer-20);
+}
+
+.pbe-panel--link {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.pbe-panel--link:hover {
+  background: var(--bg-card-hover);
+}
+
+.pbe-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacer-16);
+  align-items: start;
+}
+
+.pbe-grid--wide {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 1000px) {
+  .pbe-grid,
+  .pbe-grid--wide {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.pbe-span-all {
+  grid-column: 1 / -1;
+}
+
+/* ── metric row (C2 tier) ──────────────────────────────────────────────── */
+
+.pbe-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacer-16);
+  margin-bottom: var(--spacer-24);
+}
+
+@media (max-width: 1000px) {
+  .pbe-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .pbe-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.pbe-metric {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-12);
+  height: 72px;
+  padding: var(--spacer-16);
+  box-sizing: border-box;
+}
+
+.pbe-tile {
+  display: inline-flex;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-8);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.pbe-metric__body {
+  min-width: 0;
+}
+
+.pbe-metric__title {
+  color: var(--text-default);
+  font-size: var(--body-base-font-size);
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pbe-metric__desc {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-6);
+  height: 20px;
+  color: var(--text-secondary);
+  font-size: var(--body-sm-font-size);
+  line-height: 20px;
+}
+
+.pbe-figure {
+  color: var(--text-default);
+  font-family: var(--font-family-metric);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.pbe-mono {
+  font-family: var(--code-editor-font-family);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── toolbar (filter / search, single row, labels inline) ──────────────── */
+
+.pbe-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacer-12);
+  margin-bottom: var(--spacer-16);
+}
+
+.pbe-toolbar__label {
+  color: var(--text-tertiary);
+  font-size: var(--body-sm-font-size);
+  white-space: nowrap;
+}
+
+.pbe-toolbar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  margin-left: auto;
+}
+
+/* ── table ─────────────────────────────────────────────────────────────── */
+
+.pbe-table-wrap {
+  overflow: hidden;
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-12);
+  background: var(--bg-base-default);
+}
+
+.pbe-table .ant-table {
+  background: transparent;
+}
+
+.pbe-table .ant-table-thead > tr > th {
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: var(--body-sm-font-size);
+  font-weight: 500;
+  letter-spacing: var(--body-sm-letter-spacing);
+  border-bottom: 1px solid var(--border-neutral-l1);
+}
+
+.pbe-table .ant-table-thead > tr > th::before {
+  display: none;
+}
+
+.pbe-table .ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--border-neutral-l1);
+}
+
+.pbe-table .ant-table-tbody > tr:last-child > td {
+  border-bottom: 0;
+}
+
+.pbe-table .ant-table-tbody > tr {
+  cursor: pointer;
+}
+
+.pbe-table__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-12);
+  padding: var(--spacer-12) var(--spacer-16);
+  border-top: 1px solid var(--border-neutral-l1);
+  color: var(--text-secondary);
+  font-size: var(--body-sm-font-size);
+}
+
+.pbe-cell-title {
+  color: var(--text-default);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pbe-cell-sub {
+  color: var(--text-tertiary);
+  font-size: var(--body-sm-font-size);
+  line-height: var(--body-sm-line-height);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── report ────────────────────────────────────────────────────────────── */
+
+.pbe-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacer-8);
+  margin-top: var(--spacer-8);
+  color: var(--text-secondary);
+  font-size: var(--body-sm-font-size);
+}
+
+.pbe-meta__sep {
+  color: var(--text-tertiary);
+}
+
+.pbe-scoreboard {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: var(--spacer-24);
+}
+
+@media (max-width: 900px) {
+  .pbe-scoreboard {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.pbe-scoreboard__cell {
+  padding: 0 var(--spacer-16);
+  border-left: 1px solid var(--border-neutral-l1);
+}
+
+.pbe-scoreboard__cell:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.pbe-scoreboard__label {
+  color: var(--text-tertiary);
+  font-size: var(--body-sm-font-size);
+}
+
+.pbe-scoreboard__value {
+  margin-top: var(--spacer-4);
+  color: var(--text-default);
+  font-family: var(--font-family-metric);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--heading-md-font-size, 20px);
+  font-weight: 600;
+}
+
+.pbe-block {
+  padding: var(--spacer-12) var(--spacer-16);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-8);
+  background: var(--bg-base-tertiary);
+  color: var(--text-default);
+  font-family: var(--code-editor-font-family);
+  font-size: var(--body-sm-font-size);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+.pbe-prompt {
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+.pbe-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacer-12) var(--spacer-24);
+}
+
+@media (max-width: 760px) {
+  .pbe-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.pbe-fact__label {
+  color: var(--text-tertiary);
+  font-size: var(--body-sm-font-size);
+}
+
+.pbe-fact__value {
+  margin-top: 2px;
+  color: var(--text-default);
+  word-break: break-word;
+}
+
+.pbe-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.pbe-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-12);
+  padding: var(--spacer-8) 0;
+  border-bottom: 1px solid var(--border-neutral-l1);
+  font-size: var(--body-sm-font-size);
+}
+
+.pbe-row:last-child {
+  border-bottom: 0;
+}
+
+.pbe-row__grow {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pbe-section-title {
+  margin: 0 0 var(--spacer-12);
+  color: var(--text-default);
+  font-size: var(--body-base-font-size);
+  font-weight: 600;
+}
+
+.pbe-timeline {
+  display: flex;
+  flex-direction: column;
+}
+
+.pbe-timeline__item {
+  display: grid;
+  grid-template-columns: 88px 96px minmax(0, 1fr);
+  gap: var(--spacer-12);
+  padding: var(--spacer-8) 0;
+  border-bottom: 1px solid var(--border-neutral-l1);
+  font-size: var(--body-sm-font-size);
+}
+
+.pbe-timeline__item:last-child {
+  border-bottom: 0;
+}
+
+.pbe-timeline__at {
+  color: var(--text-tertiary);
+  font-family: var(--code-editor-font-family);
+}
+
+@media (max-width: 760px) {
+  .pbe-timeline__item {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacer-4);
+  }
+}
+
+/* ── form (label left, control right — the system default) ─────────────── */
+
+.pbe-field {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacer-12);
+  margin-bottom: var(--spacer-16);
+}
+
+.pbe-field__label {
+  flex: none;
+  width: 92px;
+  padding-top: var(--spacer-6);
+  color: var(--text-secondary);
+  font-size: var(--body-base-font-size);
+  text-align: right;
+}
+
+.pbe-field__control {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pbe-field__hint {
+  margin-top: var(--spacer-4);
+  color: var(--text-tertiary);
+  font-size: var(--body-sm-font-size);
+}
+
+.pbe-fieldset {
+  margin-bottom: var(--spacer-24);
+}
+
+.pbe-fieldset__title {
+  margin-bottom: var(--spacer-12);
+  color: var(--text-tertiary);
+  font-size: var(--body-sm-font-size);
+  letter-spacing: 0.04em;
+}
+
+.pbe-empty {
+  padding: var(--spacer-32);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.pbe-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-6);
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--code-editor-font-family);
+  font-size: var(--body-sm-font-size);
+  cursor: pointer;
+}
+
+.pbe-copy:hover {
+  color: var(--text-default);
+}
+
+.pbe-copy__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── status pill ───────────────────────────────────────────────────────── */
+
+.pbe-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-6);
+  height: 20px;
+  padding: 0 var(--spacer-8);
+  border: 1px solid transparent;
+  border-radius: var(--radius-4);
+  font-size: var(--body-xs-font-size);
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.pbe-pill__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.pbe-pill--ok {
+  background: var(--status-success-surface-l1);
+  color: var(--status-success-default);
+}
+
+.pbe-pill--warn {
+  background: var(--status-warning-surface-l1);
+  color: var(--status-warning-default);
+}
+
+.pbe-pill--err {
+  background: var(--status-error-surface-l1);
+  color: var(--status-error-default);
+}
+
+.pbe-pill--info {
+  background: var(--status-primary-surface-l1);
+  color: var(--status-primary-default);
+}
+
+.pbe-pill--muted {
+  background: var(--bg-overlay-l1);
+  color: var(--text-secondary);
+}

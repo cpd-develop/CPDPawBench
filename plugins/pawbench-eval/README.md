@@ -56,8 +56,8 @@ Three modules behind a fixed rail.  Submitting a run, curating datasets and
 pointing the board at a service are three different jobs done at different
 times; stacking them on one page meant scrolling past a form to read a score.
 
-- **评测 (jobs)** — the list is the landing page: four headline numbers (running
-  / waiting / finished / mean score) over one row per submission, each row
+- **评测 (jobs)** — the list is the landing page: three headline numbers (running
+  / waiting / finished, the last carrying the mean) over one row per submission, each row
   carrying its task progress and its mean score, taken from one grouped query
   rather than a detail request per line.  **＋ 新建评测** opens the submission
   form as a modal: ACP address, product, purpose, a mixed selector (whole
@@ -87,6 +87,16 @@ task entry therefore carries two ids, and the exported file carries them too:
 | `trace_id` | ours, 16 hex chars per attempt | `grep <trace_id>` on the service log: session open, manifest issued, the reason it failed |
 | `session_id` | the agent's own handle | the agent's logs, so both sides can be shown to describe the same conversation |
 
+`session_id` is minted *by us, in the shape the agent uses*
+(`1795156778446-y2r8j2a`: epoch millis, a hyphen, seven lowercase base-36
+characters) and then handed to the agent through `session/load`, so the id in
+the report is the one the agent files its own history under.  An agent that
+declares `loadSession` adopts it and every later update is routed by it; an
+agent that cannot keeps the id it minted itself, which is still the right id to
+grep — it is just not the one we chose.  Asking the agent to adopt our id is what
+makes "open this session in your console" a working instruction rather than a
+translation exercise.
+
 Both live in the **shared** tier, not behind `完整版`: the report is the document
 a submitter forwards to the team that owns the agent.  A retry gets a new
 `trace_id`, which is the point — two attempts of the same task never share log
@@ -104,6 +114,36 @@ Third-party dependencies, if this plugin ever needs any, go in
 `backend/`.  Nothing is needed today: the backend uses only the standard library
 and the FastAPI that QwenPaw already provides.
 
-`ui/index.js` must stay a single file.  The host fetches it, wraps it in a Blob
-and `import()`s it, so a relative import resolves against the blob URL and fails
-on the machine that matters.
+`ui/index.js` is the file the host loads, and it must stay a single file.  The
+host fetches it, wraps it in a Blob and `import()`s it, so a relative import
+resolves against the blob URL and fails on the machine that matters — and a
+bare specifier (`antd`, `react`) has no import map to resolve against at all.
+It is therefore **built**, not hand-written:
+
+```
+ui/src/           what you edit — React + antd sources, one module per screen
+ui/build.mjs      esbuild: JSX -> the host's createElement, CSS -> a string
+ui/index.js       the artifact.  Committed, because `install` copies the
+                  directory and never runs npm.
+```
+
+```bash
+cd ui && npm install          # once
+npm run build                 # writes index.js
+npm run typecheck             # tsc --noEmit
+```
+
+Two rules the build encodes rather than documents.  JSX compiles to
+`window.QwenPaw.host.React.createElement` through `src/host/jsx.ts`, so no React
+copy of ours can ever be the one that rendered a component of theirs.  And
+antd is *destructured from the host* (`src/host/antd.ts`), not bundled: two antd
+instances mean two `ConfigProvider`s and a modal that renders in the wrong
+theme.
+
+`src/designsys/` holds the team's token and component stylesheets verbatim
+(`.qoder/skills/designsys-full`).  The page sets `data-theme` on its own root
+from the host's `colorBgBase`, then reads the resolved custom properties back
+out of the CSS and hands them to `ConfigProvider` — one source of colour, so
+"no literal colours anywhere except `designsys/`" is enforced by there being
+nowhere else to get a colour from.  `tests/cpd/acp_remote_eval/test_plugin.py`
+scans `ui/src` for hex and `rgb()` literals to keep it that way.

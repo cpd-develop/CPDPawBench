@@ -1,7 +1,7 @@
 {
   "id": "pawbench-eval",
   "name": "PawBench Evaluation",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "app",
   "description": "PawBench evaluation dashboard and dataset skill: submit evaluation jobs against the remote ACP service, watch the queue, drill into per-task results, and prepare custom datasets.",
   "description_i18n": {

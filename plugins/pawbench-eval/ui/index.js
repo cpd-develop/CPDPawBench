@@ -1,3728 +1,2583 @@
-/**
- * PawBench Eval — dashboard (runtime-loaded plugin frontend).
- *
- * The host fetches this file, wraps it in a Blob and `import()`s it, so it is a
- * module with no relative imports and no bundler: React, antd and the icon set
- * come from `window.QwenPaw.host`.
- *
- * Layout: three modules behind a fixed rail rather than one long page.
- * Submitting a run, curating datasets and pointing the board at a service are
- * three different jobs done by the same person at different times, and stacking
- * them meant scrolling past a form to read a score. The rail keeps one of them
- * on screen; the other two cost a click.
- *
- * Colour never appears literally: every surface/text/border value comes from
- * `theme.useToken()`, which is the host's own theme, so light and dark are the
- * same code path and the design system's "no hardcoded colour" rule holds
- * without a second stylesheet.
- */
-(function () {
-  "use strict";
+// src/host/jsx.ts
+var React = window.QwenPaw?.host?.React;
+var __h = React.createElement;
+var __Fragment = React.Fragment;
 
-  var Q = window.QwenPaw;
-  if (!Q || !Q.host || !Q.registerRoutes) {
+// src/designsys/colors_and_type.css
+var colors_and_type_default = '/**\n * TraeWork design library tokens\n * Light-mode canonical tokens in parser-friendly standard structure.\n *\n * Source of truth:\n * - /Users/bytedance/Desktop/样板间/TraeWork skill.md\n *\n * Notes:\n * - Token values are preserved from the current TraeWork Light system.\n * - Added numeric tokens use direct values, e.g. --radius-12: 12px.\n * - Component HTML should reference these canonical token names.\n */\n\n/* @dual-theme: light default + dark override (data-theme="dark" re-points semantic color tokens) */\n/* @group-priority: radius, spacers, font, body, heading, code, bg, bg-brand, text, icon, border, accent, status, brand */\n\n:root {\n  /* radius — 三档纪律（2026-11-04 收敛）\n     12 = 卡片 / 弹窗 / 面板；8 = 按钮 / 输入 / 标签；4..6 = 标签 / 小控件。\n     0/2/10/16/20/24/32/full 与 xs..xl 别名已移除：直角写 CSS 原生 0，\n     原圆形 / 胶囊一律改用 --radius-4。 */\n  --radius-4: 4px;\n  --radius-6: 6px;\n  --radius-8: 8px;\n  --radius-12: 12px;\n  --border-width-default: 1px;\n\n  /* spacers */\n  --spacer-0: 0px;\n  --spacer-2: 2px;\n  --spacer-3: 3px;\n  --spacer-4: 4px;\n  --spacer-6: 6px;\n  --spacer-8: 8px;\n  --spacer-10: 10px;\n  --spacer-12: 12px;\n  --spacer-16: 16px;\n  --spacer-20: 20px;\n  --spacer-24: 24px;\n  --spacer-32: 32px;\n  --spacer-40: 40px;\n  --spacer-48: 48px;\n  --spacer-64: 64px;\n\n  /* icon sizes */\n  --icon-size-12: 12px;\n  --icon-size-14: 14px;\n  --icon-size-16: 16px;\n  --icon-size-20: 20px;\n  --icon-size-24: 24px;\n\n  /* font */\n  --font-family-default: "SF Pro Text", "PingFang SC", system-ui, "Segoe UI", Roboto;\n  --font-family-heading: var(--font-family-default);\n  --font-family-metric: var(--font-family-mono);\n  --font-family-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas;\n  --font-weight-default: 400;\n  --font-weight-code: 450;\n  --font-weight-medium: 500;\n  --font-weight-strong: 600;\n  --font-family-base: var(--font-family-default);\n  --font-family-heading-alias: var(--font-family-heading);\n  --font-family-mono-alias: var(--font-family-mono);\n\n  /* body */\n  --body-xs-font-family: var(--font-family-default);\n  --body-xs-font-size: 10px;\n  --body-xs-font-weight: 400;\n  --body-xs-line-height: 14px;\n  --body-xs-letter-spacing: 0;\n  --body-xs-strong-font-family: var(--font-family-default);\n  --body-xs-strong-font-size: 10px;\n  --body-xs-strong-font-weight: 500;\n  --body-xs-strong-line-height: 14px;\n  --body-xs-strong-letter-spacing: 0;\n  --body-sm-font-family: var(--font-family-default);\n  --body-sm-font-size: 11px;\n  --body-sm-font-weight: 400;\n  --body-sm-line-height: 16px;\n  --body-sm-letter-spacing: 0;\n  --body-sm-strong-font-family: var(--font-family-default);\n  --body-sm-strong-font-size: 11px;\n  --body-sm-strong-font-weight: 500;\n  --body-sm-strong-line-height: 16px;\n  --body-sm-strong-letter-spacing: 0;\n  --body-md-font-family: var(--font-family-default);\n  --body-md-font-size: 12px;\n  --body-md-font-weight: 400;\n  --body-md-line-height: 18px;\n  --body-md-letter-spacing: 0;\n  --body-md-strong-font-family: var(--font-family-default);\n  --body-md-strong-font-size: 12px;\n  --body-md-strong-font-weight: 500;\n  --body-md-strong-line-height: 18px;\n  --body-md-strong-letter-spacing: 0;\n  --body-base-font-family: var(--font-family-default);\n  --body-base-font-size: 14px;\n  --body-base-font-weight: 400;\n  --body-base-line-height: 20px;\n  --body-base-letter-spacing: -0.02em;\n  --body-base-strong-font-family: var(--font-family-default);\n  --body-base-strong-font-size: 14px;\n  --body-base-strong-font-weight: 500;\n  --body-base-strong-line-height: 20px;\n  --body-base-strong-letter-spacing: -0.02em;\n  --body-lg-font-family: var(--font-family-default);\n  --body-lg-font-size: 18px;\n  --body-lg-font-weight: 400;\n  --body-lg-line-height: 28px;\n  --body-lg-letter-spacing: -0.02em;\n\n  /* heading */\n  --heading-3xs-font-family: var(--font-family-default);\n  --heading-3xs-font-size: 11px;\n  --heading-3xs-font-weight: 600;\n  --heading-3xs-line-height: 16px;\n  --heading-3xs-letter-spacing: 0;\n  --heading-2xs-font-family: var(--font-family-default);\n  --heading-2xs-font-size: 12px;\n  --heading-2xs-font-weight: 600;\n  --heading-2xs-line-height: 18px;\n  --heading-2xs-letter-spacing: 0;\n  --heading-xs-font-family: var(--font-family-default);\n  --heading-xs-font-size: 13px;\n  --heading-xs-font-weight: 600;\n  --heading-xs-line-height: 20px;\n  --heading-xs-letter-spacing: 0;\n  --heading-sm-font-family: var(--font-family-default);\n  --heading-sm-font-size: 16px;\n  --heading-sm-font-weight: 600;\n  --heading-sm-line-height: 24px;\n  --heading-sm-letter-spacing: 0;\n  --heading-md-font-family: var(--font-family-heading);\n  --heading-md-font-size: 20px;\n  --heading-md-font-weight: 600;\n  --heading-md-line-height: 28px;\n  --heading-md-letter-spacing: 0;\n  --heading-lg-font-family: var(--font-family-heading);\n  --heading-lg-font-size: 22px;\n  --heading-lg-font-weight: 600;\n  --heading-lg-line-height: 30px;\n  --heading-lg-letter-spacing: 0;\n  --heading-xl-font-family: var(--font-family-heading);\n  --heading-xl-font-size: 24px;\n  --heading-xl-font-weight: 600;\n  --heading-xl-line-height: 32px;\n  --heading-xl-letter-spacing: 0;\n  --heading-2xl-font-family: var(--font-family-heading);\n  --heading-2xl-font-size: 28px;\n  --heading-2xl-font-weight: 600;\n  --heading-2xl-line-height: 36px;\n  --heading-2xl-letter-spacing: 0;\n  --heading-3xl-font-family: var(--font-family-heading);\n  --heading-3xl-font-size: 32px;\n  --heading-3xl-font-weight: 600;\n  --heading-3xl-line-height: 40px;\n  --heading-3xl-letter-spacing: 0;\n  --heading-display-font-family: var(--font-family-heading);\n  --heading-display-font-size: 52px;\n  --heading-display-font-weight: 600;\n  --heading-display-line-height: 60px;\n  --heading-display-letter-spacing: -0.03em;\n  --heading-display-sm-font-family: var(--font-family-heading);\n  --heading-display-sm-font-size: 40px;\n  --heading-display-sm-font-weight: 600;\n  --heading-display-sm-line-height: 48px;\n  --heading-display-sm-letter-spacing: -0.02em;\n\n  /* code */\n  --code-editor-font-family: var(--font-family-mono);\n  --code-editor-font-size: 13px;\n  --code-editor-font-weight: 450;\n  --code-editor-line-height: 20px;\n  --code-terminal-font-family: var(--font-family-mono);\n  --code-terminal-font-size: 12px;\n  --code-terminal-font-weight: 450;\n  --code-terminal-line-height: 18px;\n  --code-text: #17181A;\n  --code-doc: #8393A3;\n  --code-link: #2F74FF;\n  --code-number: #E54595;\n  --code-action: #5F36B2;\n  --code-instruction: #B15EF2;\n  --code-function: #FF5D4D;\n  --code-constant: #175CE6;\n  --code-parameter: #4DA621;\n  --code-attribute: #C99100;\n  --code-tag: #E24864;\n\n  /* bg */\n  --bg-base-default: #FFFFFF;\n  --bg-base-secondary: #F5F5F5;\n  --bg-page: #FEFEFF; /* king_2026 2026-11-05: 示例页画布(近白), 深色沿用画布深色 */\n  --bg-card-hover: #F6F6F6; /* king_2026 2026-11-06: 卡片 hover 灰（用户指定），替代原 hover 阴影+描边加深 */\n  --bg-base-tertiary: #E5E5E5;\n  --bg-overlay-l1: rgba(115, 115, 115, 0.08);\n  --bg-overlay-l2: rgba(115, 115, 115, 0.12);\n  --bg-overlay-l3: rgba(115, 115, 115, 0.16);\n  --bg-overlay-l4: rgba(115, 115, 115, 0.20);\n  --bg-white: #FFFFFF;\n  --bg-menu: #FFFFFF;\n  --bg-tooltip: #FFFFFF;\n  --bg-invert: #262626;\n  --bg-invert-hover: #404040;\n  --bg-invert-active: #171717;\n  --bg-invert-disabled: rgba(115, 115, 115, 0.20);\n  --color-background: var(--bg-base-default);\n  --color-surface: var(--bg-base-secondary);\n  --color-surface-variant: var(--bg-base-tertiary);\n  --color-overlay-1: var(--bg-overlay-l1);\n  --color-overlay-2: var(--bg-overlay-l2);\n  --color-overlay-3: var(--bg-overlay-l3);\n  --color-overlay-4: var(--bg-overlay-l4);\n  --color-card: var(--bg-base-secondary);\n  --color-tooltip: var(--bg-tooltip);\n  --color-menu: var(--bg-menu);\n\n  /* bg-brand */\n  --bg-brand: #4B3FE3;\n  --bg-brand-hover: #6A6FFF;\n  --bg-brand-active: #3F31C6;\n  --bg-brand-disabled: rgba(75, 63, 227, 0.22);\n  --bg-brand-popup: rgba(170, 183, 255, 0.36);\n  --color-primary: var(--bg-brand);\n  --color-primary-hover: var(--bg-brand-hover);\n  --color-primary-disabled: var(--bg-brand-disabled);\n  --color-primary-soft: var(--bg-brand-popup);\n  --color-accent: var(--bg-brand);\n\n  /* text */\n  --text-default: #171717;\n  --text-default-hover: #262626;\n  --text-default-active: #262626;\n  --text-secondary: #404040;\n  --text-secondary-hover: #171717;\n  --text-secondary-active: #171717;\n  --text-tertiary: #737373;\n  --text-disabled: #A1A1A1;\n  --text-onbrand: #FFFFFF;\n  --text-onaccent: #FFFFFF;\n  --text-white: #FFFFFF;\n  --color-foreground: var(--text-default);\n  --color-foreground-hover: var(--text-default-hover);\n  --color-on-surface: var(--text-default);\n  --color-on-surface-variant: var(--text-secondary);\n  --color-muted-foreground: var(--text-secondary);\n  --color-disabled-foreground: var(--text-disabled);\n  --color-on-primary: var(--text-onbrand);\n  --text-brand: #4B3FE3;\n  --text-brand-hover: #6A6FFF;\n  --text-brand-active: #3F31C6;\n\n  /* icon */\n  --icon-default: #262626;\n  --icon-default-hover: #171717;\n  --icon-default-active: #171717;\n  --icon-secondary: #404040;\n  --icon-secondary-hover: #262626;\n  --icon-secondary-active: #262626;\n  --icon-tertiary: #737373;\n  --icon-disabled: #A1A1A1;\n  --icon-onbrand: #FFFFFF;\n  --icon-onaccent: #FFFFFF;\n  --icon-white: #FFFFFF;\n  --icon-brand: #4B3FE3;\n  --icon-brand-hover: #6A6FFF;\n\n  /* border */\n  --border-neutral-l1: rgba(115, 115, 115, 0.12);\n  --border-neutral-l2: rgba(115, 115, 115, 0.18);\n  --border-neutral-l3: rgba(115, 115, 115, 0.36);\n  --border-contrast: #000000;\n  --border-brand: #4B3FE3;\n  --color-border: var(--border-neutral-l1);\n  --color-border-strong: var(--border-neutral-l2);\n  --color-border-stronger: var(--border-neutral-l3);\n  --color-border-contrast: var(--border-contrast);\n  --color-outline: var(--border-neutral-l1);\n\n  /* accent */\n  --accent-teal: #00B983;\n  --accent-coral: #FF6B45;\n  --accent-amber: #F2A90C;\n  --accent-lime: #5FC000;\n  --accent-cyan: #00B6F5;\n  --accent-blue: #3F85FF;\n  --accent-magenta: #F53CFF;\n  --accent-violet: #9570FF;\n  --accent-slate: #747E94;\n\n  /* status */\n  --status-primary-default: #2F74FF;\n  --status-primary-hover: #4C88FF;\n  --status-primary-active: #1759DD;\n  --status-primary-surface-l1: rgba(47, 116, 255, 0.12);\n  --status-primary-surface-l2: rgba(47, 116, 255, 0.18);\n  --status-primary-surface-l3: rgba(47, 116, 255, 0.36);\n  --status-success-default: #15A877;\n  --status-success-hover: #2FB287;\n  --status-success-active: #1E8B56;\n  --status-success-surface-l1: rgba(64, 176, 139, 0.12);\n  --status-success-surface-l2: rgba(64, 176, 139, 0.18);\n  --status-success-surface-l3: rgba(64, 176, 139, 0.36);\n  --status-alert-default: #FEA900;\n  --status-alert-hover: #FFB700;\n  --status-alert-active: #E59100;\n  --status-alert-surface-l1: rgba(254, 169, 0, 0.14);\n  --status-alert-surface-l2: rgba(254, 169, 0, 0.20);\n  --status-alert-surface-l3: rgba(254, 169, 0, 0.36);\n  --status-warning-default: #E27900;\n  --status-warning-hover: #F39A35;\n  --status-warning-active: #C46F11;\n  --status-warning-surface-l1: rgba(226, 121, 0, 0.12);\n  --status-warning-surface-l2: rgba(226, 121, 0, 0.16);\n  --status-warning-surface-l3: rgba(226, 121, 0, 0.36);\n  --status-error-default: #E8463A;\n  --status-error-hover: #EA574C;\n  --status-error-active: #C9382F;\n  --status-error-surface-l1: rgba(232, 70, 58, 0.12);\n  --status-error-surface-l2: rgba(232, 70, 58, 0.16);\n  --status-error-surface-l3: rgba(232, 70, 58, 0.36);\n  --color-info: var(--status-primary-default);\n  --color-success: var(--status-success-default);\n  --color-warning: var(--status-warning-default);\n  --color-error: var(--status-error-default);\n  --color-error-soft: var(--status-error-surface-l1);\n\n  /* brand */\n  --brand-50: #F2F7FF;\n  --brand-100: #E5EAFF;\n  --brand-200: #CFD8FF;\n  --brand-300: #AAB7FF;\n  --brand-400: #8894FF;\n  --brand-500: #6A6FFF;\n  --brand-600: #4B3FE3;\n  --brand-700: #3F31C6;\n  --brand-800: #2C2290;\n  --brand-900: #1A1759;\n  --brand-950: #010109;\n  --brand-grey-50: #FAFAFA;\n  --brand-grey-100: #F5F5F5;\n  --brand-grey-200: #E5E5E5;\n  --brand-grey-300: #D4D4D4;\n  --brand-grey-400: #A1A1A1;\n  --brand-grey-500: #737373;\n  --brand-grey-600: #525252;\n  --brand-grey-700: #404040;\n  --brand-grey-800: #262626;\n  --brand-grey-900: #171717;\n  --brand-grey-950: #0A0A0A;\n  --brand-green-100: var(--brand-50);\n  --brand-green-200: var(--brand-100);\n  --brand-green-300: var(--brand-200);\n  --brand-green-400: var(--brand-300);\n  --brand-green-500: var(--brand-600);\n  --brand-green-600: var(--brand-500);\n  --brand-green-700: var(--brand-700);\n  --brand-green-800: var(--brand-800);\n  --brand-green-900: var(--brand-900);\n  --brand-green-1000: var(--brand-950);\n  --brand-red-100: #FFE5E5;\n  --brand-red-200: #FFCCCC;\n  --brand-red-300: #FFB2B2;\n  --brand-red-400: #FF9999;\n  --brand-red-500: #FF8080;\n  --brand-red-600: #FF6464;\n  --brand-red-700: #E63737;\n  --brand-red-800: #CB1010;\n  --brand-red-900: #8F0505;\n  --brand-red-1000: #4D0000;\n  --brand-yellow-100: #FFF6E5;\n  --brand-yellow-200: #FFECCC;\n  --brand-yellow-300: #FFE3B2;\n  --brand-yellow-400: #FFDA99;\n  --brand-yellow-500: #FFD080;\n  --brand-yellow-600: #FFC864;\n  --brand-yellow-700: #E6A637;\n  --brand-yellow-800: #CB8710;\n  --brand-yellow-900: #8F5C05;\n  --brand-yellow-1000: #4D3000;\n  --brand-blue-100: #E5F3FF;\n  --brand-blue-200: #CCE6FF;\n  --brand-blue-300: #B2DAFF;\n  --brand-blue-400: #99CEFF;\n  --brand-blue-500: #80C1FF;\n  --brand-blue-600: #64B4FF;\n  --brand-blue-700: #3792E6;\n  --brand-blue-800: #1071CB;\n  --brand-blue-900: #054C8F;\n  --brand-blue-1000: #00284D;\n  --brand-purple-100: #E8E5FF;\n  --brand-purple-200: #D2CCFF;\n  --brand-purple-300: #BBB2FF;\n  --brand-purple-400: #A599FF;\n  --brand-purple-500: #8E80FF;\n  --brand-purple-600: #7864FF;\n  --brand-purple-700: #4C37E6;\n  --brand-purple-800: #2610CB;\n  --brand-purple-900: #15058F;\n  --brand-purple-1000: #09004D;\n  --brand-neutral-grey-100: #F2F2F2;\n  --brand-neutral-grey-200: #E3E3E3;\n  --brand-neutral-grey-300: #D6D6D6;\n  --brand-neutral-grey-400: #C7C7C7;\n  --brand-neutral-grey-500: #BABABA;\n  --brand-neutral-grey-600: #ABABAB;\n  --brand-neutral-grey-700: #8A8A8A;\n  --brand-neutral-grey-800: #686868;\n  --brand-neutral-grey-900: #474747;\n  --brand-neutral-grey-1000: #262626;\n  --brand-blue-grey-100: #F1EFF4;\n  --brand-blue-grey-200: #E0E1E6;\n  --brand-blue-grey-300: #CFD3D8;\n  --brand-blue-grey-400: #BFC5CA;\n  --brand-blue-grey-500: #B0B5BA;\n  --brand-blue-grey-600: #A0A6AB;\n  --brand-blue-grey-700: #80898E;\n  --brand-blue-grey-800: #5E696E;\n  --brand-blue-grey-900: #404A4F;\n  --brand-blue-grey-1000: #21262B;\n  --brand-green-grey-100: #F1F4F4;\n  --brand-green-grey-200: #E0E6E6;\n  --brand-green-grey-300: #CFD8D8;\n  --brand-green-grey-400: #BFCACA;\n  --brand-green-grey-500: #B0BABA;\n  --brand-green-grey-600: #A0ABAB;\n  --brand-green-grey-700: #808E8E;\n  --brand-green-grey-800: #5E6E6E;\n  --brand-green-grey-900: #404F4F;\n  --brand-green-grey-1000: #212B2B;\n\n  /* generic fallback */\n  --font-family: var(--font-family-default);\n  --font-size: var(--body-xs-font-size);\n  --font-weight: var(--body-xs-font-weight);\n  --line-height: var(--body-xs-line-height);\n\n  /* viz */\n  --viz-series-brand: var(--bg-brand);\n  --viz-series-brand-soft: var(--brand-300);\n  --viz-series-brand-mid: var(--brand-500);\n  --viz-series-brand-deep: var(--brand-700);\n  --viz-series-neutral: var(--brand-grey-500);\n  --viz-series-coral: #F87454;\n  --viz-series-amber: #EDAA45;\n  --viz-series-mint: #1DC981;\n  --viz-series-teal: #59E8E8;\n  --viz-series-sky: #22A5F7;\n  --viz-series-violet: #B655FC;\n  --viz-series-magenta: #FB9DD7;\n  --viz-series-indigo: #B6A3FF;\n  --viz-series-lime: #A6EA39;\n  --viz-series-slate: #859EAD;\n  --viz-ui-bg-chart: var(--bg-menu);\n  --viz-ui-bg-tooltip: var(--bg-tooltip);\n  --viz-ui-chart-title: var(--text-default);\n  --viz-ui-chart-subtitle: var(--text-secondary);\n  --viz-ui-chart-axis: var(--border-neutral-l2);\n  --viz-ui-chart-tick: var(--text-secondary);\n  --viz-ui-legend-label: var(--text-secondary);\n  --viz-ui-legend-value: var(--text-default);\n\n  /* special */\n  --special-white: #FFFFFF;\n  --special-black: #000000;\n  --special-bgtabsoverlay: rgba(255, 255, 255, 0.12);\n  --special-bggoldoverlay: rgba(210, 181, 19, 0.12);\n\n  /* layout aliases */\n  --brand-1: var(--brand-600);\n  --brand-2: var(--brand-500);\n  --brand-3: var(--brand-300);\n  --brand-4: var(--brand-100);\n  --site-canvas: var(--bg-base-default);\n  --bg-layout-1: var(--bg-base-secondary);\n  --bg-layout-2: var(--bg-overlay-l1);\n  --border-1: var(--border-neutral-l1);\n\n  /* layout — app shell (theme-stable geometry tokens) */\n  --layout-sidebar: 240px;\n  --layout-sidebar-collapsed: 72px;\n  --layout-sidebar-min: 200px;\n  --layout-sidebar-max: 300px;\n  --nav-item-h: 32px;\n  --sb-foot-h: 48px;\n  --sb-item-pad-x: 10px;\n  --sb-item-gap: 8px;\n\n  /* shadow — card hover micro-elevation (registered system deviation) */\n  --shadow-card-hover: 0 2px 12px rgba(31, 33, 36, 0.08);\n}\n\n/* ═══════════════════════════════════════════════════════════════\n   Dark theme overrides\n   切换方式：在 <html> 根元素设置 data-theme="dark"（如 <html data-theme="dark">）。\n   仅覆盖语义颜色 token；radius / spacer / font / 组件 CSS 一律不变。\n   浅色为默认（不写 data-theme 即浅色），确保向后兼容旧页面。\n   ═══════════════════════════════════════════════════════════════ */\n[data-theme="dark"] {\n  /* 背景层级：画布最深，表面升一层，浮层再升（组件约定 canvas 用 --bg-base-secondary、content 用 --bg-base-default） */\n  --bg-base-default: #18181B;\n  --bg-base-secondary: #0E0E11;\n  --bg-page: #0E0E11;\n  --bg-card-hover: var(--bg-overlay-l2); /* king_2026 2026-11-06: 深色用提亮 overlay，避免 hover 变浅灰块 */\n  --bg-base-tertiary: #242428;\n  --bg-overlay-l1: rgba(255, 255, 255, 0.06);\n  --bg-overlay-l2: rgba(255, 255, 255, 0.10);\n  --bg-overlay-l3: rgba(255, 255, 255, 0.14);\n  --bg-overlay-l4: rgba(255, 255, 255, 0.18);\n  --bg-white: #1A1A1E;\n  --bg-menu: #202024;\n  --bg-tooltip: #2A2A30;\n  --bg-invert: #EDEDED;\n  --bg-invert-hover: #F5F5F5;\n  --bg-invert-active: #FFFFFF;\n  --bg-invert-disabled: rgba(255, 255, 255, 0.20);\n\n  /* 文字 */\n  --text-default: #EDEDED;\n  --text-default-hover: #FFFFFF;\n  --text-default-active: #FFFFFF;\n  --text-secondary: #A1A1A1;\n  --text-secondary-hover: #EDEDED;\n  --text-secondary-active: #EDEDED;\n  --text-tertiary: #8A8A8A;\n  --text-disabled: #5C5C62;\n\n  /* 图标（同文字语义） */\n  --icon-default: #EDEDED;\n  --icon-default-hover: #FFFFFF;\n  --icon-default-active: #FFFFFF;\n  --icon-secondary: #A1A1A1;\n  --icon-secondary-hover: #EDEDED;\n  --icon-secondary-active: #EDEDED;\n  --icon-tertiary: #8A8A8A;\n  --icon-disabled: #5C5C62;\n\n  /* 边框：白色 alpha */\n  --border-neutral-l1: rgba(255, 255, 255, 0.10);\n  --border-neutral-l2: rgba(255, 255, 255, 0.14);\n  --border-neutral-l3: rgba(255, 255, 255, 0.24);\n  --border-contrast: #FFFFFF;\n\n  /* 品牌主色：实体按钮保持；文字/图标链接提亮保对比 */\n  --bg-brand-disabled: rgba(75, 63, 227, 0.30);\n  --bg-brand-popup: rgba(170, 183, 255, 0.22);\n  --text-brand: #9D8BFF;\n  --text-brand-hover: #B6A3FF;\n  --text-brand-active: #8E80FF;\n  --icon-brand: #9D8BFF;\n  --icon-brand-hover: #B6A3FF;\n  /* 浅底品牌 tile：暗色下转深色品牌底 */\n  --brand-50: rgba(75, 63, 227, 0.18);\n  --brand-100: rgba(75, 63, 227, 0.26);\n  --brand-200: #2A2566;\n  --brand-grey-50: #1A1A1E;\n  --brand-grey-100: #202024;\n  --brand-grey-200: #2A2A30;\n\n  /* 状态色：实体色略提亮 + surface alpha 提亮（暗底可读） */\n  --status-primary-default: #4C88FF;\n  --status-primary-hover: #6BA0FF;\n  --status-primary-active: #2F6FE0;\n  --status-primary-surface-l1: rgba(76, 136, 255, 0.18);\n  --status-primary-surface-l2: rgba(76, 136, 255, 0.26);\n  --status-primary-surface-l3: rgba(76, 136, 255, 0.40);\n  --status-success-default: #2FB287;\n  --status-success-hover: #4FC59B;\n  --status-success-active: #1E8B56;\n  --status-success-surface-l1: rgba(64, 176, 139, 0.18);\n  --status-success-surface-l2: rgba(64, 176, 139, 0.26);\n  --status-success-surface-l3: rgba(64, 176, 139, 0.40);\n  --status-alert-default: #FFB700;\n  --status-alert-hover: #FFC633;\n  --status-alert-active: #E59100;\n  --status-alert-surface-l1: rgba(254, 169, 0, 0.16);\n  --status-alert-surface-l2: rgba(254, 169, 0, 0.24);\n  --status-alert-surface-l3: rgba(254, 169, 0, 0.40);\n  --status-warning-default: #F39A35;\n  --status-warning-hover: #F8B259;\n  --status-warning-active: #C46F11;\n  --status-warning-surface-l1: rgba(226, 121, 0, 0.16);\n  --status-warning-surface-l2: rgba(226, 121, 0, 0.24);\n  --status-warning-surface-l3: rgba(226, 121, 0, 0.40);\n  --status-error-default: #EA574C;\n  --status-error-hover: #F2736A;\n  --status-error-active: #C9382F;\n  --status-error-surface-l1: rgba(232, 70, 58, 0.18);\n  --status-error-surface-l2: rgba(232, 70, 58, 0.26);\n  --status-error-surface-l3: rgba(232, 70, 58, 0.40);\n\n  /* 代码配色（暗色） */\n  --code-text: #D4D4D4;\n  --code-doc: #8A94A6;\n  --code-link: #6BA0FF;\n  --code-number: #F78FB3;\n  --code-action: #C4A6FF;\n  --code-instruction: #D9A6FF;\n  --code-function: #FF9A8A;\n  --code-constant: #6CA8FF;\n  --code-parameter: #A6D957;\n  --code-attribute: #E5C07B;\n  --code-tag: #FF8A9C;\n\n  /* 图表 UI（底色随表面，其余提亮） */\n  --viz-ui-bg-chart: #1A1A1E;\n  --viz-ui-bg-tooltip: #2A2A30;\n  --viz-ui-chart-title: #EDEDED;\n  --viz-ui-chart-subtitle: #A1A1A1;\n  --viz-ui-chart-axis: rgba(255, 255, 255, 0.14);\n  --viz-ui-chart-tick: #A1A1A1;\n  --viz-ui-legend-label: #A1A1A1;\n  --viz-ui-legend-value: #EDEDED;\n  --special-bgtabsoverlay: rgba(0, 0, 0, 0.30);\n\n  /* 阴影：卡片 hover 微抬升（暗底用更深的黑影，保持"微"而非"浮起"） */\n  --shadow-card-hover: 0 2px 12px rgba(0, 0, 0, 0.45);\n}\n';
+
+// src/designsys/components.css
+var components_default = `/* ═══════════════════════════════════════════════════════════════
+   components.css — Design System Component and Atom Definitions
+   Component sections mirror preview/component-*.html marker blocks.
+   Stable atoms live here so downstream pages do not depend on preview shell CSS.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Shared Atoms ───────────────────────────────────────────── */
+.icon,
+.icon-img {
+  display: inline-block;
+  color: currentColor;
+  flex: 0 0 auto;
+  object-fit: contain;
+  vertical-align: middle;
+}
+
+.icon {
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
+}
+
+/* king_2026: icon mode B — currentColor 蒙版图标（契约见 library-consumption.json › iconPolicy）
+   语法：<span class="icon" style="--icon-url:url({图标文件相对消费方 CSS / 页面的路径}.svg)"></span>；SVG 由消费方自带，本包不再随附图标目录（\`assets/icons/\` 已于 2026-11-03 移除）
+   仅在元素显式给出 --icon-url 时生效，不影响已有内联 SVG 用法。
+   颜色继承自父级的 color（须解析为 token，如 var(--text-default) / var(--text-onbrand)）。 */
+.icon[style*="--icon-url"],
+.icon--mask {
+  background-color: currentColor;
+  -webkit-mask: var(--icon-url) center / contain no-repeat;
+  mask: var(--icon-url) center / contain no-repeat;
+}
+
+.icon-img {
+  width: 16px;
+  height: 16px;
+  flex-basis: 16px;
+}
+
+.mono,
+.num,
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--code-editor-font-family);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+.metric-value,
+.kpi-value,
+.scorecard-value {
+  font-family: var(--font-family-metric);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+.ds-tooltip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacer-6);
+  padding: var(--spacer-6) var(--spacer-8);
+  background: var(--bg-tooltip);
+  color: var(--text-default);
+  border: 1px solid var(--border-neutral-l2);
+  border-radius: var(--radius-8);
+  font-size: var(--body-sm-font-size);
+  line-height: var(--body-sm-line-height);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--text-default) 16%, transparent);
+}
+
+.ds-popover {
+  background: var(--bg-base-default);
+  border: 1px solid var(--border-neutral-l2);
+  border-radius: var(--radius-12);
+  padding: var(--spacer-8);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--text-default) 16%, transparent);
+}
+
+.ds-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--spacer-40) var(--spacer-24);
+  color: var(--text-tertiary);
+  text-align: center;
+  border: 1px dashed var(--border-neutral-l1);
+  border-radius: var(--radius-12);
+}
+
+.ds-empty__icon {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-neutral-l1);
+  margin-bottom: var(--spacer-12);
+  color: var(--icon-secondary);
+  border-radius: var(--radius-8);
+}
+
+.ds-empty__title {
+  color: var(--text-default);
+  font-size: var(--body-base-font-size);
+  font-weight: var(--font-weight-medium, 500);
+  margin-bottom: var(--spacer-4);
+}
+
+.ds-empty__desc {
+  font-size: var(--body-sm-font-size);
+}
+
+.ds-code {
+  background: var(--bg-overlay-l1);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-8);
+  padding: var(--spacer-12) var(--spacer-16);
+  color: var(--text-default);
+  font-family: var(--code-editor-font-family);
+  font-size: var(--code-editor-font-size);
+  line-height: var(--code-editor-line-height);
+  white-space: pre;
+  overflow: auto;
+}
+
+.ds-kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--spacer-6);
+  height: 20px;
+  background: transparent;
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-8);
+  box-shadow: none;
+  font-family: var(--body-md-font-family);
+  font-size: var(--body-md-font-size);
+  font-weight: var(--font-weight-default, 400);
+  font-variant-numeric: normal;
+  font-feature-settings: normal;
+  letter-spacing: var(--body-md-letter-spacing);
+  color: var(--text-secondary);
+}
+
+/* ── Alert ─────────────────────────────────────────────────── */
+/* ===== Notification / Toast ===== */
+    .ds-notif {
+      display: flex; align-items: flex-start;
+      gap: var(--spacer-8);
+      width: 100%; max-width: 560px;
+      padding: var(--spacer-8) var(--spacer-12);
+      border: 1px solid var(--border-neutral-l1);
+      background: var(--bg-base-secondary);
+      border-radius: var(--radius-8);
+      color: var(--text-default);
+      font-family: var(--body-md-font-family);
+      font-size: var(--body-md-font-size);
+      line-height: var(--body-md-line-height);
+      letter-spacing: var(--body-md-letter-spacing);
+      box-shadow: none;
+    }
+    .ds-notif__icon { flex: 0 0 16px; width: 16px; height: 16px; margin-top: var(--spacer-2); color: var(--icon-default); display: inline-flex; align-items: center; justify-content: center; }
+    .ds-notif__body { flex: 1; min-width: 0; }
+    .ds-notif__title { font-family: var(--body-md-strong-font-family); font-size: var(--body-md-strong-font-size); line-height: var(--body-md-strong-line-height); font-weight: var(--body-md-strong-font-weight); letter-spacing: var(--body-md-strong-letter-spacing); color: var(--text-default); }
+    .ds-notif__text { flex: 1; color: var(--text-default); }
+    .ds-notif__desc { margin-top: var(--spacer-2); color: var(--text-secondary); font-size: var(--body-md-font-size); line-height: var(--body-md-line-height); }
+    .ds-notif__actions { display: inline-flex; align-items: center; gap: var(--spacer-8); margin-top: var(--spacer-8); }
+    .ds-notif__close { flex-shrink: 0; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: none; cursor: pointer; color: var(--icon-secondary); border-radius: var(--radius-8); }
+    .ds-notif__close .icon { width: 14px; height: 14px; }
+    .ds-notif__close:hover { background: var(--bg-overlay-l2); color: var(--icon-default); }
+    .ds-notif--simple { align-items: center; }
+    .ds-notif--error { background: var(--status-error-surface-l1); border-color: var(--status-error-surface-l2); }
+    .ds-notif--error .ds-notif__icon { color: var(--status-error-default); }
+    .ds-notif--warning { background: var(--status-warning-surface-l1); border-color: var(--status-warning-surface-l2); }
+    .ds-notif--warning .ds-notif__icon { color: var(--status-warning-default); }
+    .ds-notif--alert { background: var(--status-alert-surface-l1); border-color: var(--status-alert-surface-l2); }
+    .ds-notif--alert .ds-notif__icon { color: var(--status-alert-default); }
+    .ds-notif--info { background: var(--status-primary-surface-l1); border-color: var(--status-primary-surface-l2); }
+    .ds-notif--info .ds-notif__icon { color: var(--status-primary-default); }
+    .ds-notif--success { background: var(--status-success-surface-l1); border-color: var(--status-success-surface-l2); }
+    .ds-notif--success .ds-notif__icon { color: var(--status-success-default); }
+
+    /* ===== Alert / Banner ===== */
+    .ds-alert {
+      display: flex; align-items: flex-start;
+      gap: var(--spacer-12);
+      padding: var(--spacer-12) var(--spacer-16);
+      background: var(--bg-base-secondary);
+      border: 1px solid var(--border-neutral-l1);
+      border-radius: var(--radius-8);
+      color: var(--text-default);
+      font-family: var(--body-md-font-family);
+      font-size: var(--body-md-font-size);
+      line-height: var(--body-md-line-height);
+      letter-spacing: var(--body-md-letter-spacing);
+    }
+    .ds-alert__icon { flex: 0 0 16px; width: 16px; height: 16px; margin-top: var(--spacer-2); color: var(--icon-default); display: inline-flex; align-items: center; justify-content: center; }
+    .ds-notif__icon .icon, .ds-alert__icon .icon { width: 16px; height: 16px; display: block; }
+    .ds-alert--success .ds-alert__icon { color: var(--status-success-default); }
+    .ds-alert--warning .ds-alert__icon { color: var(--status-warning-default); }
+    .ds-alert--danger .ds-alert__icon { color: var(--status-error-default); }
+    .ds-alert--info .ds-alert__icon { color: var(--status-primary-default); }
+    .ds-alert__title { font-family: var(--body-md-strong-font-family); font-size: var(--body-md-strong-font-size); line-height: var(--body-md-strong-line-height); font-weight: var(--body-md-strong-font-weight); letter-spacing: var(--body-md-strong-letter-spacing); margin-bottom: var(--spacer-4); }
+    .ds-alert__desc { color: var(--text-secondary); font-size: var(--body-md-font-size); line-height: var(--body-md-line-height); }
+
+/* ── Avatar ────────────────────────────────────────────────── */
+/* ===== Avatar ===== */
+    .ds-avatar {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 32px; height: 32px; border-radius: 999px;
+      background: var(--bg-overlay-l3);
+      color: var(--text-default);
+      font-family: var(--body-base-strong-font-family);
+      font-size: var(--body-base-strong-font-size);
+      font-weight: var(--body-base-strong-font-weight);
+      line-height: var(--body-base-strong-line-height);
+      flex-shrink: 0;
+    }
+    .ds-avatar--sm { width: 24px; height: 24px; font-size: var(--body-sm-font-size); }
+    .ds-avatar--lg { width: 40px; height: 40px; }
+
+/* ── Breadcrumb ────────────────────────────────────────────── */
+/* ===== Breadcrumb ===== */
+    .ds-breadcrumb { display: flex; align-items: center; gap: var(--spacer-8); font-size: var(--body-base-font-size); line-height: var(--body-base-line-height); color: var(--text-tertiary); }
+    .ds-breadcrumb a { display: inline-flex; align-items: center; color: var(--text-tertiary); }
+    .ds-breadcrumb a:hover { color: var(--text-brand); }
+    .ds-breadcrumb__sep { color: var(--text-tertiary); }
+    .ds-breadcrumb__current { color: var(--text-brand); }
+
+/* ── Buttons ───────────────────────────────────────────────── */
+/* ===== Buttons ===== */
+    .ds-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: var(--spacer-6);
+      height: 28px; padding: 0 var(--spacer-12);
+      border-radius: var(--radius-8);
+      border: 1px solid transparent;
+      cursor: pointer; user-select: none; white-space: nowrap;
+      font-family: var(--body-base-strong-font-family);
+      font-size: var(--body-base-strong-font-size);
+      line-height: var(--body-base-strong-line-height);
+      font-weight: var(--body-base-strong-font-weight);
+      letter-spacing: var(--body-base-strong-letter-spacing);
+      transition: background .12s ease, color .12s ease, border-color .12s ease, opacity .12s ease;
+    }
+    .ds-btn .icon {
+      display: inline-block;
+      width: var(--icon-size-16);
+      height: var(--icon-size-16);
+      flex: 0 0 auto;
+    }
+    .ds-btn .icon--12 { width: var(--icon-size-12); height: var(--icon-size-12); }
+    .ds-btn .icon--14 { width: var(--icon-size-14); height: var(--icon-size-14); }
+    .ds-btn .icon--16 { width: var(--icon-size-16); height: var(--icon-size-16); }
+    .ds-btn .icon--20 { width: var(--icon-size-20); height: var(--icon-size-20); }
+    .ds-btn .icon--24 { width: var(--icon-size-24); height: var(--icon-size-24); }
+    /* Button heights are fixed to 24 / 28 / 32px. */
+    .ds-btn--sm { height: 24px; padding: 0 var(--spacer-8); border-radius: var(--radius-8); font-size: var(--body-sm-font-size); }
+    .ds-btn--md { height: 28px; padding: 0 var(--spacer-12); border-radius: var(--radius-8); }
+    .ds-btn--lg { height: 32px; padding: 0 var(--spacer-16); border-radius: var(--radius-8); font-size: var(--body-base-font-size); }
+    .ds-btn--primary { background: var(--bg-brand); color: var(--text-onbrand); border-color: var(--bg-brand); }
+    .ds-btn--primary:hover { background: var(--bg-brand-hover); border-color: var(--bg-brand-hover); }
+    .ds-btn--primary:active { background: var(--bg-brand-active); border-color: var(--bg-brand-active); }
+    .ds-btn--primary[disabled] { background: var(--bg-brand-disabled); color: var(--text-onbrand); border-color: transparent; cursor: not-allowed; }
+    .ds-btn--secondary { background: var(--bg-overlay-l1); color: var(--text-default); border-color: var(--border-neutral-l1); }
+    .ds-btn--secondary:hover { background: var(--bg-overlay-l2); border-color: var(--border-neutral-l2); }
+    .ds-btn--secondary:active { background: var(--bg-overlay-l3); border-color: var(--border-neutral-l3); }
+    .ds-btn--secondary[disabled] { color: var(--text-disabled); cursor: not-allowed; opacity: .7; }
+    .ds-btn--tertiary,
+    .ds-btn--ghost { background: transparent; color: var(--text-default); border-color: transparent; }
+    .ds-btn--tertiary:hover,
+    .ds-btn--ghost:hover { background: var(--bg-overlay-l2); color: var(--text-default-hover); }
+    .ds-btn--tertiary:active,
+    .ds-btn--ghost:active { background: var(--bg-overlay-l3); }
+    .ds-btn--tertiary[disabled],
+    .ds-btn--ghost[disabled] { color: var(--text-disabled); cursor: not-allowed; }
+    .ds-btn--danger,
+    .ds-btn--danger-strong { background: var(--status-error-default); color: var(--text-onaccent); border-color: var(--status-error-default); }
+    .ds-btn--danger:hover,
+    .ds-btn--danger-strong:hover { background: var(--status-error-hover); border-color: var(--status-error-hover); }
+    .ds-btn--danger:active,
+    .ds-btn--danger-strong:active { background: var(--status-error-active); border-color: var(--status-error-active); }
+    .ds-btn--danger-subtle { background: var(--status-error-surface-l1); color: var(--status-error-default); border-color: var(--status-error-surface-l2); }
+    .ds-btn--danger-subtle:hover { background: var(--status-error-surface-l2); }
+    .ds-btn--danger-subtle:active { background: var(--status-error-surface-l3); }
+    .ds-btn--warning { background: var(--status-warning-default); color: var(--text-onaccent); border-color: var(--status-warning-default); }
+    .ds-btn--warning:hover { background: var(--status-warning-hover); border-color: var(--status-warning-hover); }
+    .ds-btn--warning:active { background: var(--status-warning-active); border-color: var(--status-warning-active); }
+    .ds-btn--link { background: transparent; color: var(--text-brand); border-color: transparent; padding: 0; height: auto; }
+    .ds-btn--link:hover { color: var(--text-brand-hover); text-decoration: none; }
+    .ds-btn--link:active { color: var(--text-brand-active); }
+    .ds-btn--link[disabled] { color: var(--text-disabled); text-decoration: none; cursor: not-allowed; }
+    .ds-btn--icon { width: 28px; padding: 0; justify-content: center; }
+    .ds-btn--icon.ds-btn--sm { width: 24px; }
+    .ds-btn--icon.ds-btn--lg { width: 32px; }
+    .ds-btn-group { display: inline-flex; }
+    .ds-btn-group > .ds-btn { border-radius: 0; margin-left: calc(-1 * var(--border-width-default)); }
+    .ds-btn-group > .ds-btn:first-child { border-top-left-radius: var(--radius-8); border-bottom-left-radius: var(--radius-8); margin-left: 0; }
+    .ds-btn-group > .ds-btn:last-child { border-top-right-radius: var(--radius-8); border-bottom-right-radius: var(--radius-8); }
+
+/* ── Cards ─────────────────────────────────────────────────── */
+/* ===== Card ===== */
+    .ds-card {
+      background: var(--bg-base-default);
+      border: 1px solid var(--border-neutral-l1);
+      border-radius: var(--radius-12);
+      padding: var(--spacer-20);
+      color: var(--text-default);
+      transition: background-color .15s ease;
+    }
+    .ds-card:hover { background: var(--bg-card-hover); } /* king_2026 2026-11-06 修订: 卡片带 1px 中性描边且恒定不变，hover 只置灰（#F6F6F6），不加投影 */
+    .ds-card__title { font-size: var(--heading-sm-font-size); line-height: var(--heading-sm-line-height); font-weight: var(--heading-sm-font-weight); margin-bottom: var(--spacer-8); }
+    .ds-card__desc { font-size: var(--body-base-font-size); line-height: var(--body-base-line-height); color: var(--text-secondary); }
+
+/* ── Dialog ────────────────────────────────────────────────── */
+/* ===== Dialog / Modal ===== */
+    .ds-backdrop { position: relative; background: var(--bg-overlay-l4); border: 1px solid var(--border-neutral-l1); padding: var(--spacer-32) var(--spacer-24); display: flex; align-items: center; justify-content: center; }
+    .ds-dialog { background: var(--bg-base-default); border: 1px solid var(--border-neutral-l1); border-radius: var(--radius-12); width: 100%; max-width: 520px; overflow: hidden; color: var(--text-default); box-shadow: 0 24px 64px color-mix(in srgb, var(--text-default) 14%, transparent), 0 4px 16px color-mix(in srgb, var(--text-default) 8%, transparent); }
+    .ds-dialog--form { max-width: 560px; }
+    .ds-dialog__head { padding: var(--spacer-16) var(--spacer-20); display: flex; align-items: center; justify-content: space-between; border-bottom: 0; }
+    .ds-dialog__title { font-size: var(--heading-sm-font-size); line-height: var(--heading-sm-line-height); font-weight: var(--heading-sm-font-weight); color: var(--text-default); }
+    .ds-dialog__close { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: none; color: var(--icon-secondary); cursor: pointer; border-radius: var(--radius-8); }
+    .ds-dialog__close:hover { background: var(--bg-overlay-l2); color: var(--icon-default); }
+    .ds-dialog__body { padding: var(--spacer-16) var(--spacer-20); color: var(--text-secondary); font-size: var(--body-base-font-size); line-height: var(--body-base-line-height); }
+    .ds-dialog__foot { padding: var(--spacer-12) var(--spacer-20); display: flex; justify-content: flex-end; gap: var(--spacer-8); border-top: 0; }
+    .ds-drawer { background: var(--bg-base-default); border: 1px solid var(--border-neutral-l1); border-radius: var(--radius-12); width: 100%; max-width: 360px; display: flex; flex-direction: column; box-shadow: 0 24px 64px color-mix(in srgb, var(--text-default) 14%, transparent), 0 4px 16px color-mix(in srgb, var(--text-default) 8%, transparent); }
+    .ds-drawer__head { padding: var(--spacer-16) var(--spacer-20); display: flex; justify-content: space-between; align-items: center; border-bottom: 0; }
+    .ds-drawer__body { padding: var(--spacer-16) var(--spacer-20); flex: 1; }
+    .dialog-form { display: grid; gap: var(--spacer-16); }
+    .dialog-field { display: flex; flex-direction: column; gap: var(--spacer-6); }
+    .dialog-field__label { color: var(--text-default); font-size: var(--body-base-font-size); line-height: var(--body-base-line-height); font-weight: var(--font-weight-medium); }
+    .dialog-field__hint { color: var(--text-tertiary); font-size: var(--body-base-font-size); line-height: var(--body-base-line-height); }
+    .dialog-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spacer-12); }
+    .dialog-form .ds-input,
+    .dialog-form .ds-select,
+    .dialog-form .ds-textarea { background: var(--bg-base-default); font-size: var(--body-base-font-size); line-height: var(--body-base-line-height); letter-spacing: var(--body-base-letter-spacing); }
+    .dialog-form .ds-input:focus-within,
+    .dialog-form .ds-select:focus,
+    .dialog-form .ds-textarea:focus { background: var(--bg-base-default); }
+    .dialog-form .ds-textarea { min-height: 72px; resize: none; }
+    .dialog-calendar-icon { width: 16px; height: 16px; color: var(--icon-secondary); object-fit: contain; }
+    @media (max-width: 720px) { .dialog-grid { grid-template-columns: 1fr; } }
+
+/* ── Forms ─────────────────────────────────────────────────── */
+/* ===== Input / Search ===== */
+    .ds-input { display: flex; align-items: center; gap: var(--spacer-8); min-height: 32px; padding: 0 var(--spacer-12); background: var(--bg-base-default); border: 1px solid var(--border-neutral-l1); border-radius: var(--radius-8); color: var(--text-default); width: 100%; font-family: var(--body-base-font-family); font-size: var(--body-base-font-size); line-height: var(--body-base-line-height); }
+    .ds-input:focus-within { border-color: var(--border-contrast); background: var(--bg-base-default); }
+    .ds-input input { flex: 1; background: transparent; border: none; outline: none; color: var(--text-default); font: inherit; min-width: 0; }
+    .ds-input input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+    .ds-input input[type="number"]::-webkit-outer-spin-button,
+    .ds-input input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .ds-input input::placeholder { color: var(--text-tertiary); }
+    .ds-input input:disabled { color: var(--text-disabled); cursor: not-allowed; }
+    .ds-input.is-error { border-color: var(--status-error-default); }
+    .ds-input.is-disabled { background: var(--bg-base-secondary); color: var(--text-disabled); cursor: not-allowed; }
+    .ds-input__icon { color: var(--icon-secondary); display: inline-flex; align-items: center; }
+    .ds-search { position: relative; }
+    .ds-select { width: 100%; height: 32px; padding: 0 var(--spacer-32) 0 var(--spacer-12); background-color: var(--bg-base-default); color: var(--text-default); border: 1px solid var(--border-neutral-l1); border-radius: var(--radius-8); appearance: none; -webkit-appearance: none; font: inherit; font-size: var(--body-base-font-size); }
+    .ds-select:focus { border-color: var(--border-contrast); background-color: var(--bg-base-default); outline: none; }
+    .ds-select:disabled { background-color: var(--bg-base-secondary); color: var(--text-disabled); cursor: not-allowed; opacity: 1; }
+    .ds-select-wrap { position: relative; width: 100%; }
+    .ds-select-wrap .ds-select { padding-right: var(--spacer-32); }
+    .ds-select__icon { position: absolute; right: var(--spacer-12); top: 50%; width: 16px; height: 16px; color: var(--icon-secondary); pointer-events: none; transform: translateY(-50%); object-fit: contain; }
+    .ds-select-wrap > .icon-img { position: absolute; top: 50%; right: var(--spacer-10); transform: translateY(-50%); color: var(--icon-secondary); pointer-events: none; }
+    .icon-img { display: inline-block; width: 16px; height: 16px; flex: 0 0 16px; object-fit: contain; vertical-align: middle; }
+    .icon-img--12 { width: 12px; height: 12px; flex-basis: 12px; }
+    .icon-img--14 { width: 14px; height: 14px; flex-basis: 14px; }
+    .ds-textarea { width: 100%; min-height: 96px; padding: var(--spacer-8) var(--spacer-12); background: var(--bg-base-default); border: 1px solid var(--border-neutral-l1); border-radius: var(--radius-8); color: var(--text-default); font-family: var(--body-base-font-family); font-size: var(--body-base-font-size); line-height: var(--body-base-line-height); resize: none; }
+    .ds-textarea:focus { outline: none; border-color: var(--border-contrast); background: var(--bg-base-default); }
+    .ds-textarea.is-error { border-color: var(--status-error-default); }
+    .ds-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; background: var(--bg-overlay-l3); border-radius: 999px; outline: none; }
+    .ds-slider--progress { background: var(--bg-overlay-l3); }
+    .ds-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 999px; background: var(--bg-base-default); border: 1px solid var(--border-neutral-l3); box-shadow: none; cursor: pointer; }
+    .ds-slider::-moz-range-track { height: 4px; background: var(--bg-overlay-l3); border-radius: 999px; }
+    .ds-slider--progress::-moz-range-progress { height: 4px; background: var(--bg-brand); border-radius: 999px; }
+    .ds-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 999px; background: var(--bg-base-default); border: 1px solid var(--border-neutral-l3); box-shadow: none; cursor: pointer; }
+    .ds-check, .ds-radio { display: inline-flex; align-items: center; gap: var(--spacer-8); min-height: 40px; font-size: var(--body-base-font-size); color: var(--text-default); cursor: pointer; user-select: none; }
+    .ds-check__box { width: 16px; height: 16px; border: 1px solid var(--border-neutral-l2); background: var(--bg-base-default); border-radius: var(--radius-4); display: inline-flex; align-items: center; justify-content: center; color: var(--text-onbrand); transition: background .12s, border-color .12s; }
+    .ds-check input { display: none; }
+    .ds-check input:checked + .ds-check__box { background: var(--bg-brand); border-color: var(--bg-brand); }
+    .ds-check input:checked + .ds-check__box::after { content: ''; width: 8px; height: 4px; border-left: 2px solid var(--text-onbrand); border-bottom: 2px solid var(--text-onbrand); transform: rotate(-45deg) translate(1px, -1px); }
+    .ds-check input:disabled + .ds-check__box { opacity: .5; cursor: not-allowed; }
+    .ds-radio__dot { width: 16px; height: 16px; border: 1px solid var(--border-neutral-l2); background: var(--bg-base-default); border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; }
+    .ds-radio input { display: none; }
+    .ds-radio input:checked + .ds-radio__dot { border-color: var(--bg-brand); }
+    .ds-radio input:checked + .ds-radio__dot::after { content: ''; width: 10px; height: 10px; border-radius: 999px; background: var(--bg-brand); }
+    .ds-switch { position: relative; display: inline-flex; width: 32px; height: 18px; background: var(--bg-overlay-l3); border: 1px solid var(--border-neutral-l1); border-radius: 999px; cursor: pointer; transition: background .15s, border-color .15s; }
+    .ds-switch input { display: none; }
+    .ds-switch__thumb { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; background: var(--bg-base-default); border-radius: 999px; transition: left .15s, background .15s; }
+    .ds-switch input:checked ~ .ds-switch__thumb { left: 16px; background: var(--icon-onbrand); }
+    .ds-switch:has(input:checked) { background: var(--bg-brand); border-color: var(--bg-brand); }
+    .input-affix { color: var(--text-tertiary); font-family: var(--body-base-font-family); font-size: var(--body-base-font-size); line-height: var(--body-base-line-height); white-space: nowrap; }
+    .ds-date-input { position: relative; }
+    .ds-date-input input { padding-right: var(--spacer-32); }
+    .ds-date-input input::-webkit-calendar-picker-indicator { opacity: 0; cursor: pointer; }
+    .ds-date-input .icon-img { position: absolute; top: 50%; right: var(--spacer-12); transform: translateY(-50%); color: var(--icon-secondary); pointer-events: none; }
+    .tag-field { display: flex; align-items: center; flex-wrap: wrap; gap: var(--spacer-6); min-height: 32px; padding: var(--spacer-4) var(--spacer-8); border: 1px solid var(--border-neutral-l1); border-radius: var(--radius-8); background: var(--bg-base-default); }
+    .tag-field:focus-within { border-color: var(--border-contrast); }
+    .tag-remove { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; padding: 0; border: 0; background: transparent; color: var(--icon-tertiary); cursor: pointer; border-radius: var(--radius-4); }
+    .tag-remove:hover { background: var(--bg-overlay-l2); color: var(--icon-default); }
+    .stepper { display: inline-flex; align-items: center; width: fit-content; border: 1px solid var(--border-neutral-l1); border-radius: var(--radius-8); overflow: hidden; background: var(--bg-base-default); }
+    .stepper button { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 0; background: transparent; color: var(--icon-secondary); cursor: pointer; }
+    .stepper button:hover { background: var(--bg-overlay-l2); color: var(--icon-default); }
+    .stepper input { width: 48px; height: 32px; padding: 0; border: 0; border-left: 1px solid var(--border-neutral-l1); border-right: 1px solid var(--border-neutral-l1); background: transparent; color: var(--text-default); text-align: center; font: inherit; line-height: var(--body-base-line-height); appearance: textfield; -moz-appearance: textfield; }
+    .stepper input::-webkit-outer-spin-button,
+    .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* ── Menu ──────────────────────────────────────────────────── */
+/* ===== Menu ===== */
+    .ds-menu { display: flex; flex-direction: column; gap: var(--spacer-2); background: var(--bg-menu); border: 1px solid var(--border-neutral-l1); border-radius: var(--radius-12); padding: var(--spacer-8); min-width: 180px; color: var(--text-default); box-shadow: 0 12px 32px color-mix(in srgb, var(--text-default) 12%, transparent), 0 2px 8px color-mix(in srgb, var(--text-default) 8%, transparent); }
+    .ds-menu__item { display: flex; align-items: center; gap: var(--spacer-8); min-height: 32px; padding: var(--spacer-6) var(--spacer-8); border-radius: var(--radius-8); color: var(--text-default); font-family: var(--body-base-font-family); font-size: var(--body-base-font-size); line-height: var(--body-base-line-height); font-weight: var(--body-base-font-weight); cursor: pointer; }
+    .ds-menu__item .icon { color: var(--icon-secondary); }
+    .ds-menu__icon { width: 16px; height: 16px; flex: 0 0 auto; object-fit: contain; }
+    .ds-menu__item:hover { background: var(--bg-overlay-l2); }
+    .ds-menu__item--danger { color: var(--status-error-default); }
+    .ds-menu__item--danger .icon,
+    .ds-menu__item--danger .ds-menu__icon { color: var(--status-error-default); }
+    .ds-menu__divider { height: 1px; background: var(--border-neutral-l1); margin: var(--spacer-4) 0; }
+    .ds-menu__shortcut { margin-left: auto; color: var(--text-tertiary); font-family: var(--body-md-font-family); font-size: var(--body-md-font-size); line-height: var(--body-md-line-height); font-weight: var(--body-md-font-weight); font-variant-numeric: normal; font-feature-settings: normal; }
+    .ds-menu__group-label { padding: var(--spacer-8); color: var(--text-tertiary); font-family: var(--body-md-font-family); font-size: var(--body-md-font-size); line-height: var(--body-md-line-height); font-weight: var(--body-md-font-weight); letter-spacing: var(--body-md-letter-spacing); text-transform: uppercase; }
+    .ds-popover .ds-menu { border: 0; padding: 0; box-shadow: none; }
+
+/* ── Pagination ────────────────────────────────────────────── */
+/* ===== Pagination ===== */
+    .ds-pagination { display: inline-flex; gap: var(--spacer-4); }
+    .ds-pagination__item { min-width: 32px; height: 32px; padding: 0 var(--spacer-8); display: inline-flex; align-items: center; justify-content: center; background: transparent; color: var(--text-secondary); border: 1px solid var(--border-neutral-l1); border-radius: var(--radius-8); font: inherit; font-size: var(--body-base-font-size); cursor: pointer; }
+    .ds-pagination__item:hover { background: var(--bg-overlay-l2); color: var(--text-default); }
+    .ds-pagination__item.is-active { background: var(--bg-brand); color: var(--text-onbrand); border-color: var(--bg-brand); }
+    .ds-pagination__item[disabled] { opacity: .4; cursor: not-allowed; }
+    .ds-pagination__range { color: var(--text-tertiary); font-family: var(--body-sm-font-family); font-size: var(--body-sm-font-size); line-height: var(--body-sm-line-height); font-weight: var(--body-sm-font-weight); letter-spacing: var(--body-sm-letter-spacing); }
+
+/* ── Progress ──────────────────────────────────────────────── */
+/* ===== Progress ===== */
+    .ds-progress { height: 6px; background: var(--bg-overlay-l2); border-radius: 999px; overflow: hidden; }
+    .ds-progress__bar { height: 100%; background: var(--bg-brand); border-radius: inherit; } /* king_2026: 进度条填充统一主题色，见 design-system-overview 规约 */
+
+/* ── Skeleton ──────────────────────────────────────────────── */
+/* ===== Skeleton ===== */
+    .ds-skeleton { display: block; background: var(--bg-overlay-l2); border-radius: var(--radius-8); position: relative; overflow: hidden; }
+    .ds-skeleton::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, var(--bg-overlay-l3), transparent); animation: ds-skeleton-shine 1.6s ease-in-out infinite; }
+    @keyframes ds-skeleton-shine { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+    .ds-skeleton--line { height: 12px; }
+    .ds-skeleton--title { height: 18px; width: 50%; }
+    .ds-skeleton--circle { width: 32px; height: 32px; border-radius: 999px; }
+
+/* ── Table ─────────────────────────────────────────────────── */
+/* ===== Table ===== */
+    .ds-table-card { overflow-x: auto; }
+    .ds-table { width: 100%; min-width: 720px; border-collapse: collapse; }
+    .ds-table--fixed { table-layout: fixed; }
+    .ds-table__col-member { width: 42%; }
+    .ds-table__col-role { width: 16%; }
+    .ds-table__col-active { width: 20%; }
+    .ds-table__col-status { width: 16%; }
+    .ds-table__col-actions { width: 6%; }
+    .ds-table th, .ds-table td { text-align: left; vertical-align: middle; padding: var(--spacer-16) var(--spacer-8); border-bottom: 1px solid var(--border-neutral-l1); font-size: var(--body-base-font-size); line-height: var(--body-base-line-height); }
+    .ds-table th { padding-top: var(--spacer-8); padding-bottom: var(--spacer-12); color: var(--text-tertiary); font-weight: var(--font-weight-medium); font-size: var(--body-md-font-size); line-height: var(--body-md-line-height); text-transform: uppercase; letter-spacing: var(--body-md-letter-spacing); background: transparent; }
+    .ds-table td { color: var(--text-secondary); }
+    .ds-table td:first-child { color: var(--text-default); }
+    .ds-table tr:last-child td { border-bottom: none; }
+    .ds-table td.num,
+    .ds-table th.num { text-align: right; font-family: var(--code-editor-font-family); font-variant-numeric: tabular-nums; }
+    .ds-table__member { display: flex; align-items: center; gap: var(--spacer-16); min-width: 0; }
+    .ds-table__member-meta { display: flex; flex-direction: column; gap: var(--spacer-2); min-width: 0; }
+    .ds-table__member-name { color: var(--text-default); font-weight: var(--font-weight-medium); white-space: nowrap; }
+    .ds-table__member-email { color: var(--text-tertiary); font-size: var(--body-md-font-size); line-height: var(--body-md-line-height); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ds-table td.ds-table__actions { width: 1%; text-align: right; }
+
+/* ── Tabs ──────────────────────────────────────────────────── */
+/* ===== Tabs ===== */
+    .ds-tabs { display: flex; gap: var(--spacer-24); border-bottom: 1px solid var(--border-neutral-l1); }
+    .ds-tab { display: inline-flex; align-items: center; padding: var(--spacer-12) 0; background: transparent; border: none; color: var(--text-tertiary); cursor: pointer; font: inherit; font-size: var(--body-base-font-size); line-height: var(--body-base-line-height); font-weight: var(--font-weight-medium); position: relative; }
+    .ds-tab:hover { color: var(--text-brand); }
+    .ds-tab.is-active { color: var(--text-brand); }
+    .ds-tab.is-active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--bg-brand); }
+    .ds-tab__count,
+    .ds-tab .ds-tag.num { margin-left: var(--spacer-6); min-width: 18px; height: 18px; padding: 0 var(--spacer-6); display: inline-grid; place-items: center; vertical-align: middle; border: none; border-radius: 999px; background: var(--bg-overlay-l2); color: var(--text-tertiary); font-family: var(--font-family-metric); font-size: var(--body-xs-font-size); line-height: var(--body-xs-line-height); font-weight: var(--body-xs-font-weight); font-variant-numeric: tabular-nums; }
+
+/* ── Tag ───────────────────────────────────────────────────── */
+/* ===== Tag / Badge ===== */
+    .ds-tag { display: inline-flex; align-items: center; gap: var(--spacer-4); height: 22px; padding: 0 var(--spacer-8); border-radius: var(--radius-8); font-size: var(--body-sm-font-size); line-height: var(--body-sm-line-height); background: var(--bg-overlay-l2); color: var(--text-secondary); border: 1px solid var(--border-neutral-l1); }
+    .ds-tag .icon { width: 12px; height: 12px; }
+    .ds-tag--brand { background: var(--bg-brand-popup); color: var(--text-brand); }
+    .ds-tag--success { background: var(--status-success-surface-l1); color: var(--status-success-default); }
+    .ds-tag--warning { background: var(--status-warning-surface-l1); color: var(--status-warning-default); }
+    .ds-tag--danger { background: var(--status-error-surface-l1); color: var(--status-error-default); }
+`;
+
+// src/styles.css
+var styles_default = "/**\n * Page-local layout, on top of the design system's atoms.\n *\n * Nothing here names a colour: every value is a semantic token from\n * `designsys/colors_and_type.css`, which carries both themes.  A rule that\n * needed a colour the tokens do not offer would be a signal that the rule is\n * wrong, not that a literal is missing.\n *\n * The one deviation from `.ds-card` is deliberate: `.ds-card` lights up on\n * hover, which is right for a card you can click and wrong for a panel you\n * read.  Static surfaces therefore use `.pbe-panel`, and interactive ones add\n * `.pbe-panel--link`.\n */\n\n/* ── shell ─────────────────────────────────────────────────────────────── */\n\n.pbe-root {\n  display: block;\n  min-height: 100%;\n  background: var(--bg-base-secondary);\n  color: var(--text-default);\n  font-family: var(--body-base-font-family);\n  font-size: var(--body-base-font-size);\n  line-height: var(--body-base-line-height);\n  -webkit-font-smoothing: antialiased;\n}\n\n/*\n * The rail and the module sit in one row that this file owns.\n *\n * Deliberately not expressed on `.pbe-root`: between the two there is antd's\n * `App` wrapper, whose display is the host build's business.  Relying on it\n * being a pass-through produced a page whose content started 100vh down the\n * screen — one row for the rail, another for everything else.\n */\n.pbe-shell {\n  display: flex;\n  flex-wrap: nowrap;\n  align-items: flex-start;\n  min-height: 100%;\n}\n\n.pbe-rail {\n  position: sticky;\n  top: 0;\n  display: flex;\n  flex: 0 0 var(--layout-sidebar);\n  flex-direction: column;\n  gap: var(--spacer-16);\n  width: var(--layout-sidebar);\n  height: 100vh;\n  padding: var(--spacer-16) var(--spacer-12);\n  border-right: 1px solid var(--border-neutral-l1);\n  background: var(--bg-menu);\n  box-sizing: border-box;\n}\n\n.pbe-rail__brand {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-8);\n  padding: 0 var(--spacer-8);\n  color: var(--text-default);\n  font-family: var(--font-family-heading);\n  font-size: var(--body-lg-font-size);\n  font-weight: 600;\n}\n\n.pbe-rail__nav {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n}\n\n.pbe-nav-item {\n  display: flex;\n  align-items: center;\n  gap: var(--sb-item-gap);\n  width: 100%;\n  height: var(--nav-item-h);\n  padding: 0 var(--sb-item-pad-x);\n  border: 0;\n  border-radius: var(--radius-8);\n  background: transparent;\n  color: var(--text-default);\n  font-family: inherit;\n  font-size: var(--body-base-font-size);\n  text-align: left;\n  cursor: pointer;\n}\n\n.pbe-nav-item:hover {\n  background: var(--bg-overlay-l1);\n}\n\n.pbe-nav-item[aria-current=\"page\"] {\n  background: var(--bg-overlay-l2);\n  font-weight: 500;\n}\n\n.pbe-nav-item__count {\n  margin-left: auto;\n  color: var(--text-tertiary);\n  font-family: var(--code-editor-font-family);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-rail__foot {\n  margin-top: auto;\n  padding: var(--spacer-12);\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-12);\n  background: var(--bg-base-default);\n  text-align: left;\n  cursor: pointer;\n  font: inherit;\n  color: inherit;\n  width: 100%;\n}\n\n.pbe-rail__foot:hover {\n  background: var(--bg-card-hover);\n}\n\n.pbe-main {\n  flex: 1 1 auto;\n  min-width: 0;\n  padding: var(--spacer-24) var(--spacer-32) var(--spacer-32);\n}\n\n/* ── page heading ──────────────────────────────────────────────────────── */\n\n.pbe-head {\n  display: flex;\n  align-items: flex-start;\n  gap: var(--spacer-16);\n  margin-bottom: var(--spacer-24);\n  /* The host parks a floating control (… and collapse) in the top-right corner\n     of every route; without this the primary button sits under it. */\n  padding-right: 76px;\n}\n\n.pbe-head__text {\n  min-width: 0;\n}\n\n.pbe-head__title {\n  margin: 0;\n  color: var(--text-default);\n  font-family: var(--font-family-heading);\n  font-size: var(--heading-lg-font-size);\n  font-weight: 600;\n  line-height: var(--heading-lg-line-height);\n}\n\n.pbe-head__sub {\n  margin-top: var(--spacer-4);\n  color: var(--text-secondary);\n  font-size: var(--body-base-font-size);\n}\n\n.pbe-head__actions {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin-left: auto;\n}\n\n/* ── surfaces ──────────────────────────────────────────────────────────── */\n\n.pbe-panel {\n  background: var(--bg-base-default);\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-12);\n}\n\n.pbe-panel--pad {\n  padding: var(--spacer-20);\n}\n\n.pbe-panel--link {\n  cursor: pointer;\n  transition: background-color 0.15s ease;\n}\n\n.pbe-panel--link:hover {\n  background: var(--bg-card-hover);\n}\n\n.pbe-grid {\n  display: grid;\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n  gap: var(--spacer-16);\n  align-items: start;\n}\n\n.pbe-grid--wide {\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n}\n\n@media (max-width: 1000px) {\n  .pbe-grid,\n  .pbe-grid--wide {\n    grid-template-columns: minmax(0, 1fr);\n  }\n}\n\n.pbe-span-all {\n  grid-column: 1 / -1;\n}\n\n/* ── metric row (C2 tier) ──────────────────────────────────────────────── */\n\n.pbe-metrics {\n  display: grid;\n  grid-template-columns: repeat(3, minmax(0, 1fr));\n  gap: var(--spacer-16);\n  margin-bottom: var(--spacer-24);\n}\n\n@media (max-width: 1000px) {\n  .pbe-metrics {\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n  }\n}\n\n@media (max-width: 680px) {\n  .pbe-metrics {\n    grid-template-columns: minmax(0, 1fr);\n  }\n}\n\n.pbe-metric {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-12);\n  height: 72px;\n  padding: var(--spacer-16);\n  box-sizing: border-box;\n}\n\n.pbe-tile {\n  display: inline-flex;\n  flex: 0 0 44px;\n  align-items: center;\n  justify-content: center;\n  width: 44px;\n  height: 44px;\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-8);\n  background: transparent;\n  color: var(--text-secondary);\n}\n\n.pbe-metric__body {\n  min-width: 0;\n}\n\n.pbe-metric__title {\n  color: var(--text-default);\n  font-size: var(--body-base-font-size);\n  font-weight: 600;\n  line-height: 20px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.pbe-metric__desc {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-6);\n  height: 20px;\n  color: var(--text-secondary);\n  font-size: var(--body-sm-font-size);\n  line-height: 20px;\n}\n\n.pbe-figure {\n  color: var(--text-default);\n  font-family: var(--font-family-metric);\n  font-variant-numeric: tabular-nums;\n  font-weight: 500;\n}\n\n.pbe-mono {\n  font-family: var(--code-editor-font-family);\n  font-variant-numeric: tabular-nums;\n}\n\n/* ── toolbar (filter / search, single row, labels inline) ──────────────── */\n\n.pbe-toolbar {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: var(--spacer-12);\n  margin-bottom: var(--spacer-16);\n}\n\n.pbe-toolbar__label {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  white-space: nowrap;\n}\n\n.pbe-toolbar__right {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin-left: auto;\n}\n\n/* ── table ─────────────────────────────────────────────────────────────── */\n\n.pbe-table-wrap {\n  overflow: hidden;\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-12);\n  background: var(--bg-base-default);\n}\n\n.pbe-table .ant-table {\n  background: transparent;\n}\n\n.pbe-table .ant-table-thead > tr > th {\n  background: transparent;\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  font-weight: 500;\n  letter-spacing: var(--body-sm-letter-spacing);\n  border-bottom: 1px solid var(--border-neutral-l1);\n}\n\n.pbe-table .ant-table-thead > tr > th::before {\n  display: none;\n}\n\n.pbe-table .ant-table-tbody > tr > td {\n  border-bottom: 1px solid var(--border-neutral-l1);\n}\n\n.pbe-table .ant-table-tbody > tr:last-child > td {\n  border-bottom: 0;\n}\n\n.pbe-table .ant-table-tbody > tr {\n  cursor: pointer;\n}\n\n.pbe-table__foot {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: var(--spacer-12);\n  padding: var(--spacer-12) var(--spacer-16);\n  border-top: 1px solid var(--border-neutral-l1);\n  color: var(--text-secondary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-cell-title {\n  color: var(--text-default);\n  font-weight: 500;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.pbe-cell-sub {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  line-height: var(--body-sm-line-height);\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n/* ── report ────────────────────────────────────────────────────────────── */\n\n.pbe-meta {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin-top: var(--spacer-8);\n  color: var(--text-secondary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-meta__sep {\n  color: var(--text-tertiary);\n}\n\n.pbe-scoreboard {\n  display: grid;\n  grid-template-columns: repeat(4, minmax(0, 1fr));\n  margin-bottom: var(--spacer-24);\n}\n\n@media (max-width: 900px) {\n  .pbe-scoreboard {\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n  }\n}\n\n.pbe-scoreboard__cell {\n  padding: 0 var(--spacer-16);\n  border-left: 1px solid var(--border-neutral-l1);\n}\n\n.pbe-scoreboard__cell:first-child {\n  border-left: 0;\n  padding-left: 0;\n}\n\n.pbe-scoreboard__label {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-scoreboard__value {\n  margin-top: var(--spacer-4);\n  color: var(--text-default);\n  font-family: var(--font-family-metric);\n  font-variant-numeric: tabular-nums;\n  font-size: var(--heading-md-font-size, 20px);\n  font-weight: 600;\n}\n\n.pbe-block {\n  padding: var(--spacer-12) var(--spacer-16);\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-8);\n  background: var(--bg-base-tertiary);\n  color: var(--text-default);\n  font-family: var(--code-editor-font-family);\n  font-size: var(--body-sm-font-size);\n  line-height: 1.6;\n  white-space: pre-wrap;\n  word-break: break-word;\n  overflow-x: auto;\n}\n\n.pbe-prompt {\n  max-height: 320px;\n  overflow-y: auto;\n  margin: 0;\n}\n\n.pbe-facts {\n  display: grid;\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n  gap: var(--spacer-12) var(--spacer-24);\n}\n\n@media (max-width: 760px) {\n  .pbe-facts {\n    grid-template-columns: minmax(0, 1fr);\n  }\n}\n\n.pbe-fact__label {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-fact__value {\n  margin-top: 2px;\n  color: var(--text-default);\n  word-break: break-word;\n}\n\n.pbe-rows {\n  display: flex;\n  flex-direction: column;\n}\n\n.pbe-row {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-12);\n  padding: var(--spacer-8) 0;\n  border-bottom: 1px solid var(--border-neutral-l1);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-row:last-child {\n  border-bottom: 0;\n}\n\n.pbe-row__grow {\n  flex: 1 1 auto;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.pbe-section-title {\n  margin: 0 0 var(--spacer-12);\n  color: var(--text-default);\n  font-size: var(--body-base-font-size);\n  font-weight: 600;\n}\n\n.pbe-timeline {\n  display: flex;\n  flex-direction: column;\n}\n\n.pbe-timeline__item {\n  display: grid;\n  grid-template-columns: 88px 96px minmax(0, 1fr);\n  gap: var(--spacer-12);\n  padding: var(--spacer-8) 0;\n  border-bottom: 1px solid var(--border-neutral-l1);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-timeline__item:last-child {\n  border-bottom: 0;\n}\n\n.pbe-timeline__at {\n  color: var(--text-tertiary);\n  font-family: var(--code-editor-font-family);\n}\n\n@media (max-width: 760px) {\n  .pbe-timeline__item {\n    grid-template-columns: minmax(0, 1fr);\n    gap: var(--spacer-4);\n  }\n}\n\n/* ── form (label left, control right — the system default) ─────────────── */\n\n.pbe-field {\n  display: flex;\n  align-items: flex-start;\n  gap: var(--spacer-12);\n  margin-bottom: var(--spacer-16);\n}\n\n.pbe-field__label {\n  flex: none;\n  width: 92px;\n  padding-top: var(--spacer-6);\n  color: var(--text-secondary);\n  font-size: var(--body-base-font-size);\n  text-align: right;\n}\n\n.pbe-field__control {\n  flex: 1 1 auto;\n  min-width: 0;\n}\n\n.pbe-field__hint {\n  margin-top: var(--spacer-4);\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-fieldset {\n  margin-bottom: var(--spacer-24);\n}\n\n.pbe-fieldset__title {\n  margin-bottom: var(--spacer-12);\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  letter-spacing: 0.04em;\n}\n\n.pbe-empty {\n  padding: var(--spacer-32);\n  color: var(--text-tertiary);\n  text-align: center;\n}\n\n.pbe-copy {\n  display: inline-flex;\n  align-items: center;\n  gap: var(--spacer-6);\n  max-width: 100%;\n  padding: 0;\n  border: 0;\n  background: transparent;\n  color: var(--text-secondary);\n  font-family: var(--code-editor-font-family);\n  font-size: var(--body-sm-font-size);\n  cursor: pointer;\n}\n\n.pbe-copy:hover {\n  color: var(--text-default);\n}\n\n.pbe-copy__value {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/* ── status pill ───────────────────────────────────────────────────────── */\n\n.pbe-pill {\n  display: inline-flex;\n  align-items: center;\n  gap: var(--spacer-6);\n  height: 20px;\n  padding: 0 var(--spacer-8);\n  border: 1px solid transparent;\n  border-radius: var(--radius-4);\n  font-size: var(--body-xs-font-size);\n  line-height: 20px;\n  white-space: nowrap;\n}\n\n.pbe-pill__dot {\n  width: 6px;\n  height: 6px;\n  border-radius: 999px;\n  background: currentColor;\n}\n\n.pbe-pill--ok {\n  background: var(--status-success-surface-l1);\n  color: var(--status-success-default);\n}\n\n.pbe-pill--warn {\n  background: var(--status-warning-surface-l1);\n  color: var(--status-warning-default);\n}\n\n.pbe-pill--err {\n  background: var(--status-error-surface-l1);\n  color: var(--status-error-default);\n}\n\n.pbe-pill--info {\n  background: var(--status-primary-surface-l1);\n  color: var(--status-primary-default);\n}\n\n.pbe-pill--muted {\n  background: var(--bg-overlay-l1);\n  color: var(--text-secondary);\n}\n";
+
+// src/host/sdk.ts
+var API_BASE = "/pawbench-eval";
+function host() {
+  const sdk = window.QwenPaw?.host;
+  if (!sdk) {
+    throw new Error("window.QwenPaw.host is not ready");
+  }
+  return sdk;
+}
+function icons() {
+  return host().antdIcons ?? {};
+}
+var HttpError = class extends Error {
+  constructor(status, message2, code = "", details = null) {
+    super(message2);
+    this.name = "HttpError";
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+};
+function authHeaders() {
+  const token = typeof host().getApiToken === "function" ? host().getApiToken() : "";
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+async function readResponse(response) {
+  const text = await response.text();
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { message: text.slice(0, 400) };
+    }
+  }
+  if (!response.ok) {
+    throw new HttpError(
+      response.status,
+      data && (data.message || data.error) || `HTTP ${response.status}`,
+      data && data.error || "",
+      (data && data.details) ?? null
+    );
+  }
+  return data;
+}
+async function call(method, path, body) {
+  const response = await fetch(host().getApiUrl(API_BASE + path), {
+    method,
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: body === void 0 ? void 0 : JSON.stringify(body)
+  });
+  return readResponse(response);
+}
+async function uploadRaw(path, file) {
+  const response = await fetch(host().getApiUrl(API_BASE + path), {
+    method: "POST",
+    headers: { "Content-Type": "application/zip", ...authHeaders() },
+    body: file
+  });
+  return readResponse(response);
+}
+async function download(path, filename) {
+  const response = await fetch(host().getApiUrl(API_BASE + path), { headers: authHeaders() });
+  if (!response.ok) {
+    throw new HttpError(response.status, `HTTP ${response.status}`);
+  }
+  saveBlob(await response.blob(), filename);
+}
+function saveBlob(blob, filename) {
+  const href = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = filename || "download";
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  window.setTimeout(() => URL.revokeObjectURL(href), 2e3);
+}
+async function copyText(value, label) {
+  if (!value) return false;
+  try {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+  }
+  return false;
+}
+function describeError(error) {
+  if (error instanceof HttpError) {
+    return { code: error.code || `http_${error.status}`, message: error.message };
+  }
+  return { code: "unexpected_error", message: String(error?.message ?? error) };
+}
+
+// src/host/antd.ts
+var antd = window.QwenPaw?.host?.antd;
+var Alert = antd.Alert;
+var App = antd.App;
+var Button = antd.Button;
+var ConfigProvider = antd.ConfigProvider;
+var DatePicker = antd.DatePicker;
+var Drawer = antd.Drawer;
+var Empty = antd.Empty;
+var Form = antd.Form;
+var Input = antd.Input;
+var InputNumber = antd.InputNumber;
+var Modal = antd.Modal;
+var Pagination = antd.Pagination;
+var Popconfirm = antd.Popconfirm;
+var Progress = antd.Progress;
+var Radio = antd.Radio;
+var Segmented = antd.Segmented;
+var Select = antd.Select;
+var Skeleton = antd.Skeleton;
+var Space = antd.Space;
+var Spin = antd.Spin;
+var Switch = antd.Switch;
+var Table = antd.Table;
+var Tabs = antd.Tabs;
+var Tag = antd.Tag;
+var Tooltip = antd.Tooltip;
+var Typography = antd.Typography;
+var Upload = antd.Upload;
+var message = antd.message;
+var theme = antd.theme;
+var Text = Typography.Text;
+var Title = Typography.Title;
+var Paragraph = Typography.Paragraph;
+
+// src/api.ts
+var q = encodeURIComponent;
+var api = {
+  config: () => call("GET", "/config"),
+  saveConfig: (body) => call("PUT", "/config", body),
+  probe: () => call("POST", "/config/probe", {}),
+  learnIdentity: (jobId) => call("POST", `/identity/${q(jobId)}`, {}),
+  jobs: () => call("GET", "/v1/jobs"),
+  job: (jobId) => call("GET", `/v1/jobs/${q(jobId)}`),
+  submit: (body) => call("POST", "/v1/jobs", body),
+  reorder: (jobId, target) => call("PATCH", `/v1/jobs/${q(jobId)}`, target),
+  cancel: (jobId, reason) => call("POST", `/v1/jobs/${q(jobId)}/cancel`, { reason }),
+  detail: (jobId, sensitivity) => call("GET", `/v1/jobs/${q(jobId)}/detail?sensitivity=${sensitivity}`),
+  taskDetail: (jobId, taskId, sensitivity, attempt) => call(
+    "GET",
+    `/v1/jobs/${q(jobId)}/tasks/${q(taskId)}/detail?sensitivity=${sensitivity}&attempt=${attempt}`
+  ),
+  results: (jobId) => call("GET", `/v1/jobs/${q(jobId)}/results`),
+  transcript: (jobId, taskId, attempt, cursor) => call(
+    "GET",
+    `/v1/jobs/${q(jobId)}/transcript?task_id=${q(taskId)}&attempt=${attempt}&cursor=${cursor}`
+  ),
+  report: (jobId, format, sensitivity) => call(
+    "GET",
+    `/v1/jobs/${q(jobId)}/report?format=${format}&sensitivity=${sensitivity}`
+  ),
+  datasets: () => call("GET", "/v1/datasets"),
+  categories: () => call("GET", "/v1/dataset-categories"),
+  resolve: (selector) => call("POST", "/v1/datasets/resolve", { selector }),
+  createDataset: (body) => call("POST", "/v1/datasets", body),
+  editDataset: (datasetId, body) => call("PUT", `/v1/datasets/${q(datasetId)}`, body),
+  deleteDataset: (datasetId) => call("DELETE", `/v1/datasets/${q(datasetId)}`),
+  uploadPackage: (file, query) => uploadRaw(`/v1/datasets/packages?${query}`, file),
+  createCategory: (body) => call("POST", "/v1/dataset-categories", body),
+  deleteCategory: (name) => call("DELETE", `/v1/dataset-categories/${q(name)}`)
+};
+
+// src/host/react.ts
+var React2 = window.QwenPaw?.host?.React;
+var useState = React2.useState;
+var useEffect = React2.useEffect;
+var useLayoutEffect = React2.useLayoutEffect;
+var useMemo = React2.useMemo;
+var useCallback = React2.useCallback;
+var useRef = React2.useRef;
+
+// src/theme.tsx
+var TOKENS = [
+  "--bg-base-default",
+  "--bg-base-secondary",
+  "--bg-base-tertiary",
+  "--bg-menu",
+  "--bg-brand",
+  "--bg-brand-hover",
+  "--bg-brand-active",
+  "--bg-card-hover",
+  "--bg-overlay-l1",
+  "--bg-overlay-l2",
+  "--bg-overlay-l3",
+  "--bg-tooltip",
+  "--border-neutral-l1",
+  "--border-neutral-l2",
+  "--border-neutral-l3",
+  "--border-brand",
+  "--border-contrast",
+  "--text-default",
+  "--text-secondary",
+  "--text-tertiary",
+  "--text-brand",
+  "--text-onbrand",
+  "--text-disabled",
+  "--icon-default",
+  "--icon-secondary",
+  "--icon-tertiary",
+  "--status-success-default",
+  "--status-success-surface-l1",
+  "--status-warning-default",
+  "--status-warning-surface-l1",
+  "--status-error-default",
+  "--status-error-surface-l1",
+  "--status-alert-default",
+  "--status-alert-surface-l1",
+  "--status-primary-default",
+  "--status-primary-surface-l1",
+  "--code-editor-font-family",
+  "--font-family-metric",
+  "--font-family-default",
+  "--font-family-heading",
+  "--body-base-font-size",
+  "--body-base-line-height",
+  "--body-sm-font-size",
+  "--body-sm-line-height",
+  "--heading-lg-font-size",
+  "--heading-lg-line-height",
+  "--radius-4",
+  "--radius-8",
+  "--radius-12",
+  "--spacer-4",
+  "--spacer-8",
+  "--spacer-12",
+  "--spacer-16",
+  "--spacer-20",
+  "--spacer-24",
+  "--spacer-32",
+  "--layout-sidebar"
+];
+function brightness(value) {
+  const text = String(value || "").trim();
+  let parts = [];
+  if (text.startsWith("#")) {
+    const hex = text.slice(1);
+    const full = hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex.slice(0, 6);
+    parts = [
+      parseInt(full.slice(0, 2), 16),
+      parseInt(full.slice(2, 4), 16),
+      parseInt(full.slice(4, 6), 16)
+    ];
+  } else {
+    parts = (text.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+  }
+  const [r = 255, g = 255, b = 255] = parts;
+  return (0.2126 * (r || 0) + 0.7152 * (g || 0) + 0.0722 * (b || 0)) / 255;
+}
+function readTokens(element) {
+  const styles = getComputedStyle(element);
+  const read = {};
+  for (const name of TOKENS) {
+    const value = styles.getPropertyValue(name).trim();
+    if (value) read[name] = value;
+  }
+  return read;
+}
+function antdTheme(tokens, isDark) {
+  const t = tokens;
+  return {
+    algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
+    token: {
+      colorPrimary: t["--bg-brand"],
+      colorInfo: t["--status-primary-default"],
+      colorSuccess: t["--status-success-default"],
+      colorWarning: t["--status-warning-default"],
+      colorError: t["--status-error-default"],
+      colorText: t["--text-default"],
+      colorTextSecondary: t["--text-secondary"],
+      colorTextTertiary: t["--text-tertiary"],
+      colorTextQuaternary: t["--text-tertiary"],
+      colorTextDisabled: t["--text-disabled"],
+      colorBgBase: t["--bg-base-default"],
+      colorBgContainer: t["--bg-base-default"],
+      colorBgElevated: t["--bg-menu"],
+      colorBgLayout: t["--bg-base-secondary"],
+      colorBorder: t["--border-neutral-l1"],
+      colorBorderSecondary: t["--border-neutral-l1"],
+      colorSplit: t["--border-neutral-l1"],
+      colorFill: t["--bg-overlay-l1"],
+      colorFillSecondary: t["--bg-overlay-l1"],
+      colorFillTertiary: t["--bg-overlay-l1"],
+      colorFillQuaternary: t["--bg-overlay-l1"],
+      borderRadius: 8,
+      borderRadiusLG: 12,
+      borderRadiusSM: 4,
+      borderRadiusXS: 4,
+      fontFamily: t["--font-family-default"],
+      fontFamilyCode: t["--code-editor-font-family"],
+      fontSize: 14,
+      controlHeight: 32,
+      wireframe: false
+    },
+    components: {
+      Table: {
+        headerBg: "transparent",
+        headerColor: t["--text-tertiary"],
+        headerSplitColor: "transparent",
+        borderColor: t["--border-neutral-l1"],
+        rowHoverBg: t["--bg-overlay-l1"],
+        cellPaddingBlock: 12,
+        cellPaddingInline: 12
+      },
+      Tabs: {
+        itemColor: t["--text-secondary"],
+        itemHoverColor: t["--text-brand"],
+        itemSelectedColor: t["--text-brand"],
+        inkBarColor: t["--bg-brand"],
+        titleFontSize: 14
+      },
+      Button: { primaryShadow: "none", defaultShadow: "none", dangerShadow: "none" },
+      Modal: {
+        contentBg: t["--bg-base-default"],
+        headerBg: t["--bg-base-default"],
+        titleColor: t["--text-default"]
+      },
+      Segmented: {
+        trackBg: t["--bg-overlay-l1"],
+        itemSelectedBg: t["--bg-base-default"],
+        itemColor: t["--text-secondary"],
+        itemSelectedColor: t["--text-default"]
+      },
+      Input: { activeShadow: "none" },
+      Select: { optionSelectedBg: t["--bg-overlay-l2"] },
+      Tooltip: { colorBgSpotlight: t["--bg-tooltip"] },
+      // A progress fill is information, not an action: brand purple stays
+      // reserved for the primary button and navigation, per the system.
+      Progress: { defaultColor: t["--status-primary-default"] }
+    }
+  };
+}
+function DesignScope(props) {
+  const hostToken = theme.useToken;
+  const host2 = typeof hostToken === "function" ? hostToken().token : {};
+  const isDark = brightness(String(host2.colorBgBase ?? "")) < 0.5;
+  const attribute = isDark ? "dark" : "light";
+  const [element, setElement] = useState(null);
+  const [tokens, setTokens] = useState(null);
+  useLayoutEffect(() => {
+    if (!element) return;
+    setTokens(readTokens(element));
+  }, [element, attribute]);
+  const themeConfig = useMemo(
+    () => antdTheme(tokens ?? {}, isDark),
+    [tokens, isDark]
+  );
+  const { ConfigProvider: ConfigProvider2 } = props;
+  return /* @__PURE__ */ __h(
+    "div",
+    {
+      className: props.className,
+      "data-theme": attribute,
+      "data-pbe-ready": tokens ? "true" : "false",
+      ref: setElement,
+      style: tokens ? void 0 : { visibility: "hidden" }
+    },
+    /* @__PURE__ */ __h(ConfigProvider2, { theme: themeConfig }, props.children)
+  );
+}
+
+// src/ui/feedback.ts
+var app = App;
+function useFeedback() {
+  const context = typeof app?.useApp === "function" ? app.useApp() : null;
+  return {
+    message: context?.message ?? message,
+    modal: context?.modal ?? Modal
+  };
+}
+
+// src/ui/primitives.tsx
+function jobStatus(status) {
+  switch (status) {
+    case "running":
+      return { tone: "info", label: "运行中" };
+    case "queued":
+      return { tone: "warn", label: "已排队" };
+    case "scheduled":
+      return { tone: "warn", label: "待起跑" };
+    case "finished":
+      return { tone: "ok", label: "已完成" };
+    case "failed":
+      return { tone: "err", label: "失败" };
+    case "canceled":
+      return { tone: "muted", label: "已取消" };
+    case "new":
+      return { tone: "muted", label: "已登记" };
+    default:
+      return { tone: "muted", label: status || "未知" };
+  }
+}
+function taskStatus(status, failureReason) {
+  if (failureReason) {
+    return { tone: "err", label: failureReason };
+  }
+  switch (status) {
+    case "skipped":
+      return { tone: "err", label: "跳过" };
+    case "no_artifacts":
+      return { tone: "err", label: "无产物" };
+    case "missing":
+      return { tone: "err", label: "缺失" };
+    default:
+      return jobStatus(status);
+  }
+}
+function StatusPill(props) {
+  return /* @__PURE__ */ __h("span", { className: `pbe-pill pbe-pill--${props.tone}` }, /* @__PURE__ */ __h("span", { className: "pbe-pill__dot", "aria-hidden": "true" }), props.label);
+}
+function PageHead(props) {
+  return /* @__PURE__ */ __h("div", { className: "pbe-head" }, /* @__PURE__ */ __h("div", { className: "pbe-head__text" }, /* @__PURE__ */ __h("h1", { className: "pbe-head__title" }, props.title), props.sub ? /* @__PURE__ */ __h("div", { className: "pbe-head__sub" }, props.sub) : null), props.actions ? /* @__PURE__ */ __h("div", { className: "pbe-head__actions" }, props.actions) : null);
+}
+function Panel(props) {
+  const classes = ["pbe-panel"];
+  if (props.pad !== false) classes.push("pbe-panel--pad");
+  if (props.link) classes.push("pbe-panel--link");
+  if (props.spanAll) classes.push("pbe-span-all");
+  if (props.className) classes.push(props.className);
+  return /* @__PURE__ */ __h("div", { className: classes.join(" "), onClick: props.onClick }, props.children);
+}
+function Figure(props) {
+  return /* @__PURE__ */ __h("span", { className: "pbe-figure" }, props.value);
+}
+function SectionTitle(props) {
+  return /* @__PURE__ */ __h("h2", { className: "pbe-section-title" }, props.children);
+}
+function Fact(props) {
+  return /* @__PURE__ */ __h("div", null, /* @__PURE__ */ __h("div", { className: "pbe-fact__label" }, props.label), /* @__PURE__ */ __h("div", { className: "pbe-fact__value" }, props.value));
+}
+function CopyId(props) {
+  const message2 = useFeedback().message;
+  const [copied, setCopied] = useState(false);
+  const value = String(props.value ?? "");
+  if (!value) return /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, "—");
+  const keep = props.keep ?? 12;
+  const short = value.length > keep ? `${value.slice(0, keep)}…` : value;
+  async function copy(event) {
+    event.stopPropagation();
+    const ok = await copyText(value, props.label ?? "id");
+    if (ok) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+      message2.success(`已复制${props.label ? ` ${props.label}` : ""}`);
+    } else {
+      message2.info(value);
+    }
+  }
+  return /* @__PURE__ */ __h(Tooltip, { title: copied ? "已复制" : `${props.label ?? "id"}：${value}（点击复制）` }, /* @__PURE__ */ __h("button", { type: "button", className: "pbe-copy", onClick: copy }, /* @__PURE__ */ __h("span", { className: "pbe-copy__value" }, short), /* @__PURE__ */ __h("span", { "aria-hidden": "true" }, "复制")));
+}
+function Field(props) {
+  return /* @__PURE__ */ __h("div", { className: "pbe-field" }, /* @__PURE__ */ __h("label", { className: "pbe-field__label" }, props.label), /* @__PURE__ */ __h("div", { className: "pbe-field__control" }, props.children, props.hint ? /* @__PURE__ */ __h("div", { className: "pbe-field__hint" }, props.hint) : null));
+}
+function Fieldset(props) {
+  return /* @__PURE__ */ __h("div", { className: "pbe-fieldset" }, /* @__PURE__ */ __h("div", { className: "pbe-fieldset__title" }, props.title), props.children);
+}
+function EmptyHint(props) {
+  return /* @__PURE__ */ __h("div", { className: "pbe-empty" }, props.children);
+}
+function fixed(value, digits = 2) {
+  if (value === null || value === void 0 || Number.isNaN(Number(value))) return "—";
+  return Number(value).toFixed(digits);
+}
+function bytes(value) {
+  if (!value) return "0 B";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+function duration(seconds) {
+  if (seconds === null || seconds === void 0) return "—";
+  const total = Math.max(0, Math.round(Number(seconds)));
+  if (total < 60) return `${total}s`;
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  if (minutes < 60) return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+function stamp(value) {
+  if (!value) return "—";
+  return String(value).replace("T", " ").replace(/(\.\d+)?\+00:00$/, "").replace(/Z$/, "");
+}
+function json(value) {
+  if (value === null || value === void 0) return "—";
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+// src/modules/datasets.tsx
+function DatasetsModule(props) {
+  const feedback = useFeedback();
+  const [datasets, setDatasets] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [viewOpen, setViewOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [categoryOpen, setCategoryOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  async function load() {
+    setLoading(true);
+    try {
+      const [list, cats] = await Promise.all([api.datasets(), api.categories()]);
+      setDatasets(list.datasets);
+      setCategories(cats.categories.map((item) => item.name));
+      setError("");
+    } catch (err) {
+      const info = describeError(err);
+      setError(`${info.code}：${info.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    void load();
+  }, []);
+  const shown = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return datasets;
+    return datasets.filter(
+      (item) => [item.id, item.name, item.description, item.categories.join(" ")].join(" ").toLowerCase().includes(needle)
+    );
+  }, [datasets, search]);
+  async function remove(item) {
+    try {
+      await api.deleteDataset(item.id);
+      feedback.message.success(`已删除 ${item.id}`);
+      void load();
+    } catch (err) {
+      const info = describeError(err);
+      feedback.message.error(`${info.code}：${info.message}`);
+    }
+  }
+  return /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h(
+    PageHead,
+    {
+      title: "数据集",
+      sub: "内置视图是筛选快照，自定义包是上传的题目集；两者在提交页里混选。",
+      actions: /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h(Button, { onClick: () => void load(), loading }, "刷新"), /* @__PURE__ */ __h(Button, { onClick: () => setCategoryOpen(true) }, "管理分类"), /* @__PURE__ */ __h(Button, { onClick: () => setUploadOpen(true) }, "上传任务包"), /* @__PURE__ */ __h(Button, { type: "primary", onClick: () => setViewOpen(true) }, "新建视图"))
+    }
+  ), error ? /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, error)) : null, /* @__PURE__ */ __h("div", { className: "pbe-toolbar" }, /* @__PURE__ */ __h("span", { className: "pbe-toolbar__label" }, "搜索"), /* @__PURE__ */ __h(
+    Input.Search,
+    {
+      allowClear: true,
+      placeholder: "名称 / id / 分类 / 描述",
+      style: { width: 280 },
+      value: search,
+      onChange: (event) => setSearch(event.target.value)
+    }
+  ), /* @__PURE__ */ __h("div", { className: "pbe-toolbar__right" }, /* @__PURE__ */ __h("span", { className: "pbe-toolbar__label" }, "共 ", datasets.length, " 个 · ", categories.length, " 个分类"))), /* @__PURE__ */ __h("div", { className: "pbe-table-wrap" }, /* @__PURE__ */ __h(
+    Table,
+    {
+      className: "pbe-table",
+      rowKey: "id",
+      size: "middle",
+      loading,
+      dataSource: shown,
+      pagination: false,
+      locale: { emptyText: /* @__PURE__ */ __h(EmptyHint, null, "还没有数据集。可以上传一个任务包，或从内置语料里切一个视图。") },
+      columns: [
+        {
+          title: "名称",
+          dataIndex: "name",
+          render: (_, item) => /* @__PURE__ */ __h("div", null, /* @__PURE__ */ __h("div", { className: "pbe-cell-title" }, item.name || item.id), /* @__PURE__ */ __h("div", { className: "pbe-cell-sub" }, item.description || item.id))
+        },
+        {
+          title: "类型",
+          dataIndex: "kind",
+          width: 130,
+          render: (value) => /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, value === "builtin_view" ? "内置视图" : value === "custom_package" ? "自定义包" : value)
+        },
+        {
+          title: "分类",
+          dataIndex: "categories",
+          width: 200,
+          render: (value) => /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, (value ?? []).join("、") || "—")
+        },
+        {
+          title: "题量",
+          dataIndex: "task_count",
+          width: 80,
+          render: (value) => /* @__PURE__ */ __h("span", { className: "pbe-mono" }, value)
+        },
+        {
+          title: "负责人",
+          dataIndex: "owner",
+          width: 110,
+          render: (value) => /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, value)
+        },
+        {
+          title: "更新",
+          dataIndex: "updated_at",
+          width: 150,
+          render: (value) => /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, stamp(value))
+        },
+        {
+          title: "操作",
+          dataIndex: "id",
+          width: 130,
+          render: (_, item) => props.subject && item.owner === props.subject ? /* @__PURE__ */ __h(
+            Popconfirm,
+            {
+              title: "删除这个数据集？",
+              description: "已经被作业引用过的数据集可能删不掉。",
+              okText: "删除",
+              cancelText: "不删",
+              onConfirm: () => remove(item)
+            },
+            /* @__PURE__ */ __h(Button, { size: "small", type: "text", danger: true }, "删除")
+          ) : /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, "只读")
+        }
+      ]
+    }
+  ), /* @__PURE__ */ __h("div", { className: "pbe-table__foot" }, /* @__PURE__ */ __h("span", null, "共 ", shown.length, " 条"), /* @__PURE__ */ __h("span", null, "删除只对自己创建的行开放"))), /* @__PURE__ */ __h(
+    CreateViewModal,
+    {
+      open: viewOpen,
+      categories,
+      onClose: () => setViewOpen(false),
+      onDone: () => {
+        setViewOpen(false);
+        void load();
+      }
+    }
+  ), /* @__PURE__ */ __h(
+    UploadModal,
+    {
+      open: uploadOpen,
+      categories,
+      onClose: () => setUploadOpen(false),
+      onDone: () => {
+        setUploadOpen(false);
+        void load();
+      }
+    }
+  ), /* @__PURE__ */ __h(
+    CategoryModal,
+    {
+      open: categoryOpen,
+      categories,
+      onClose: () => setCategoryOpen(false),
+      onDone: () => void load()
+    }
+  ));
+}
+function CreateViewModal(props) {
+  const feedback = useFeedback();
+  const [id, setId] = useState("");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [scenario, setScenario] = useState("");
+  const [capability, setCapability] = useState("");
+  const [complexity, setComplexity] = useState("");
+  const [filed, setFiled] = useState([]);
+  const [busy, setBusy] = useState(false);
+  async function submit() {
+    const filter = {};
+    if (scenario.trim()) filter.scenario = scenario.trim();
+    if (capability.trim()) {
+      filter.capability = capability.split(",").map((item) => item.trim()).filter(Boolean);
+    }
+    if (complexity.trim()) filter.complexity = complexity.trim();
+    if (!Object.keys(filter).length) {
+      feedback.message.error("至少要填一个筛选条件，否则等于整个语料");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.createDataset({
+        id: id.trim(),
+        name: name.trim() || id.trim(),
+        description: description.trim(),
+        filter,
+        categories: filed
+      });
+      feedback.message.success("视图已保存");
+      setId("");
+      setName("");
+      setDescription("");
+      setScenario("");
+      setCapability("");
+      setComplexity("");
+      setFiled([]);
+      props.onDone();
+    } catch (err) {
+      const info = describeError(err);
+      feedback.message.error(`${info.code}：${info.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return /* @__PURE__ */ __h(
+    Modal,
+    {
+      open: props.open,
+      title: "新建内置视图",
+      width: 620,
+      onCancel: props.onClose,
+      onOk: submit,
+      okText: "保存视图",
+      cancelText: "取消",
+      confirmLoading: busy
+    },
+    /* @__PURE__ */ __h(Fieldset, { title: "标识" }, /* @__PURE__ */ __h(Field, { label: "id", hint: "小写字母、数字与下划线，保存后不可改" }, /* @__PURE__ */ __h(Input, { value: id, onChange: (event) => setId(event.target.value), placeholder: "如 regression_smoke" })), /* @__PURE__ */ __h(Field, { label: "名称" }, /* @__PURE__ */ __h(Input, { value: name, onChange: (event) => setName(event.target.value), placeholder: "给人看的名字" })), /* @__PURE__ */ __h(Field, { label: "描述" }, /* @__PURE__ */ __h(Input, { value: description, onChange: (event) => setDescription(event.target.value) }))),
+    /* @__PURE__ */ __h(Fieldset, { title: "筛选（至少要有一项）" }, /* @__PURE__ */ __h(Field, { label: "场景", hint: "如 Software_Engineering/Code，留空表示不限" }, /* @__PURE__ */ __h(Input, { value: scenario, onChange: (event) => setScenario(event.target.value) })), /* @__PURE__ */ __h(Field, { label: "能力", hint: "多个用英文逗号分隔" }, /* @__PURE__ */ __h(Input, { value: capability, onChange: (event) => setCapability(event.target.value) })), /* @__PURE__ */ __h(Field, { label: "复杂度", hint: "L1 / L2 / L3" }, /* @__PURE__ */ __h(Input, { value: complexity, onChange: (event) => setComplexity(event.target.value) }))),
+    /* @__PURE__ */ __h(Field, { label: "分类" }, /* @__PURE__ */ __h(
+      Select,
+      {
+        mode: "tags",
+        style: { width: "100%" },
+        value: filed,
+        onChange: (value) => setFiled(value),
+        options: props.categories.map((name2) => ({ value: name2, label: name2 })),
+        placeholder: "选已有分类，或直接输入新名字"
+      }
+    ))
+  );
+}
+function UploadModal(props) {
+  const feedback = useFeedback();
+  const [id, setId] = useState("");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [filed, setFiled] = useState([]);
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  async function submit() {
+    if (!file) {
+      feedback.message.error("先选一个 zip 任务包");
+      return;
+    }
+    const query = new URLSearchParams();
+    query.set("id", id.trim());
+    query.set("name", name.trim() || id.trim());
+    query.set("description", description.trim());
+    for (const category of filed) query.append("categories", category);
+    setBusy(true);
+    try {
+      await api.uploadPackage(file, query.toString());
+      feedback.message.success("任务包已登记");
+      setFile(null);
+      setId("");
+      setName("");
+      setDescription("");
+      setFiled([]);
+      props.onDone();
+    } catch (err) {
+      const info = describeError(err);
+      feedback.message.error(`${info.code}：${info.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return /* @__PURE__ */ __h(
+    Modal,
+    {
+      open: props.open,
+      title: "上传任务包",
+      width: 620,
+      onCancel: props.onClose,
+      onOk: submit,
+      okText: "上传并登记",
+      cancelText: "取消",
+      confirmLoading: busy
+    },
+    /* @__PURE__ */ __h(Field, { label: "zip 文件" }, /* @__PURE__ */ __h(
+      "input",
+      {
+        type: "file",
+        accept: ".zip",
+        onChange: (event) => setFile(event.target.files?.[0] ?? null)
+      }
+    )),
+    /* @__PURE__ */ __h(Field, { label: "id", hint: "登记后作为数据集 id，小写字母、数字与下划线" }, /* @__PURE__ */ __h(Input, { value: id, onChange: (event) => setId(event.target.value), placeholder: "如 office_batch_2" })),
+    /* @__PURE__ */ __h(Field, { label: "名称" }, /* @__PURE__ */ __h(Input, { value: name, onChange: (event) => setName(event.target.value) })),
+    /* @__PURE__ */ __h(Field, { label: "描述" }, /* @__PURE__ */ __h(Input, { value: description, onChange: (event) => setDescription(event.target.value) })),
+    /* @__PURE__ */ __h(Field, { label: "分类" }, /* @__PURE__ */ __h(
+      Select,
+      {
+        mode: "tags",
+        style: { width: "100%" },
+        value: filed,
+        onChange: (value) => setFiled(value),
+        options: props.categories.map((value) => ({ value, label: value }))
+      }
+    ))
+  );
+}
+function CategoryModal(props) {
+  const feedback = useFeedback();
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function add() {
+    if (!draft.trim()) return;
+    setBusy(true);
+    try {
+      await api.createCategory({ name: draft.trim() });
+      setDraft("");
+      feedback.message.success("分类已创建");
+      props.onDone();
+    } catch (err) {
+      const info = describeError(err);
+      feedback.message.error(`${info.code}：${info.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function remove(name) {
+    try {
+      await api.deleteCategory(name);
+      feedback.message.success(`已删除分类 ${name}`);
+      props.onDone();
+    } catch (err) {
+      const info = describeError(err);
+      feedback.message.error(`${info.code}：${info.message}`);
+    }
+  }
+  return /* @__PURE__ */ __h(Modal, { open: props.open, title: "分类", width: 520, onCancel: props.onClose, footer: /* @__PURE__ */ __h(Button, { onClick: props.onClose }, "完成") }, /* @__PURE__ */ __h(Field, { label: "新分类", hint: "分类只用来归拢数据集，选中它等于选中其下所有数据集" }, /* @__PURE__ */ __h(
+    Input.Search,
+    {
+      value: draft,
+      onChange: (event) => setDraft(event.target.value),
+      onSearch: add,
+      enterButton: "创建",
+      loading: busy
+    }
+  )), /* @__PURE__ */ __h("div", { className: "pbe-rows" }, props.categories.length ? props.categories.map((name) => /* @__PURE__ */ __h("div", { className: "pbe-row", key: name }, /* @__PURE__ */ __h("span", { className: "pbe-row__grow" }, /* @__PURE__ */ __h(CopyId, { value: name, label: "分类", keep: 40 })), /* @__PURE__ */ __h(Popconfirm, { title: "删除这个分类？", okText: "删除", cancelText: "不删", onConfirm: () => remove(name) }, /* @__PURE__ */ __h(Button, { size: "small", type: "text", danger: true }, "删除")))) : /* @__PURE__ */ __h(EmptyHint, null, "还没有分类")));
+}
+
+// src/modules/jobs.tsx
+var PAGE_SIZE = 20;
+var ORDERABLE = /* @__PURE__ */ new Set(["queued", "scheduled"]);
+var FINISHED = /* @__PURE__ */ new Set(["finished", "failed", "canceled"]);
+function progressOf(job) {
+  const total = Math.max(0, Number(job.task_count) || 0);
+  const finished = Math.max(0, Number(job.tasks_finished) || 0);
+  return { finished, total, ratio: total ? Math.min(1, finished / total) : 0 };
+}
+function scoreTone(score) {
+  if (score === null || score === void 0) return "";
+  if (score >= 0.8) return " pbe-score--ok";
+  if (score < 0.5) return " pbe-score--low";
+  return "";
+}
+function JobsModule(props) {
+  const feedback = useFeedback();
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [busy, setBusy] = useState("");
+  const stats = useMemo(() => {
+    const running = props.jobs.filter((job) => job.status === "running").length;
+    const waiting = props.jobs.filter((job) => ORDERABLE.has(job.status)).length;
+    const done = props.jobs.filter((job) => job.status === "finished").length;
+    const scored = props.jobs.map((job) => job.score).filter((score) => typeof score === "number");
+    const mean = scored.length ? scored.reduce((sum, value) => sum + value, 0) / scored.length : null;
+    return { running, waiting, done, mean, scored: scored.length };
+  }, [props.jobs]);
+  const visible = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return props.jobs.filter((job) => {
+      if (filter === "running" && job.status !== "running") return false;
+      if (filter === "waiting" && !ORDERABLE.has(job.status)) return false;
+      if (filter === "done" && !FINISHED.has(job.status)) return false;
+      if (!needle) return true;
+      return [job.purpose, job.product, job.job_id, job.submitter, job.acp_url].join(" ").toLowerCase().includes(needle);
+    });
+  }, [props.jobs, filter, search]);
+  const paged = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return visible.slice(start, start + PAGE_SIZE);
+  }, [visible, page]);
+  const canReorder = (job) => ORDERABLE.has(job.status) && (!props.subject || job.submitter === props.subject);
+  async function reorder(job, target) {
+    setBusy(job.job_id);
+    try {
+      await api.reorder(job.job_id, { target });
+      props.onRefresh();
+    } catch (error) {
+      const info = describeError(error);
+      feedback.message.error(`${info.code}：${info.message}`);
+    } finally {
+      setBusy("");
+    }
+  }
+  async function cancel(job) {
+    setBusy(job.job_id);
+    try {
+      await api.cancel(job.job_id, "dashboard");
+      feedback.message.success("已取消");
+      props.onRefresh();
+    } catch (error) {
+      const info = describeError(error);
+      feedback.message.error(`${info.code}：${info.message}`);
+    } finally {
+      setBusy("");
+    }
+  }
+  const icon = icons();
+  const Play = icon.PlayCircleOutlined;
+  const Clock = icon.ClockCircleOutlined;
+  const Check = icon.CheckCircleOutlined;
+  const Gauge = icon.DashboardOutlined;
+  const columns = [
+    {
+      title: "状态",
+      dataIndex: "status",
+      width: 124,
+      render: (_, job) => {
+        const meta = jobStatus(job.status);
+        return /* @__PURE__ */ __h("div", null, /* @__PURE__ */ __h(StatusPill, { tone: meta.tone, label: meta.label }), ORDERABLE.has(job.status) && job.queue_pos !== null ? /* @__PURE__ */ __h("div", { className: "pbe-cell-sub" }, "队列 #", Number(job.queue_pos).toFixed(1)) : null);
+      }
+    },
+    {
+      title: "评测",
+      dataIndex: "purpose",
+      render: (_, job) => /* @__PURE__ */ __h("div", { style: { minWidth: 0 } }, /* @__PURE__ */ __h("div", { className: "pbe-cell-title" }, job.purpose || "（未命名）"), /* @__PURE__ */ __h("div", { className: "pbe-cell-sub" }, job.product || "—", " · ", job.job_id))
+    },
+    {
+      title: "题目",
+      dataIndex: "task_count",
+      width: 156,
+      render: (_, job) => {
+        const progress = progressOf(job);
+        return /* @__PURE__ */ __h("div", null, /* @__PURE__ */ __h("div", { className: "pbe-cell-sub", style: { marginBottom: 4 } }, /* @__PURE__ */ __h("span", { className: "pbe-mono" }, progress.finished, " / ", progress.total || "?"), job.tasks_failed ? ` · ${job.tasks_failed} 失败` : ""), /* @__PURE__ */ __h(
+          Progress,
+          {
+            percent: Math.round(progress.ratio * 100),
+            size: "small",
+            showInfo: false,
+            status: job.tasks_failed ? "exception" : job.status === "running" ? "active" : "normal"
+          }
+        ));
+      }
+    },
+    {
+      title: "分数",
+      dataIndex: "score",
+      width: 92,
+      render: (_, job) => /* @__PURE__ */ __h("span", { className: `pbe-figure${scoreTone(job.score)}` }, job.score === null || job.score === void 0 ? "—" : fixed(job.score))
+    },
+    {
+      title: "提交人",
+      dataIndex: "submitter",
+      width: 104,
+      render: (value) => /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, value || "—")
+    },
+    {
+      title: "时间",
+      dataIndex: "created_at",
+      width: 156,
+      render: (_, job) => /* @__PURE__ */ __h("div", null, /* @__PURE__ */ __h("div", { className: "pbe-cell-sub" }, stamp(job.created_at)), job.finished_at ? /* @__PURE__ */ __h("div", { className: "pbe-cell-sub" }, "耗时 ", duration(secondsBetween(job))) : job.not_before ? /* @__PURE__ */ __h("div", { className: "pbe-cell-sub" }, "起跑 ", stamp(job.not_before)) : null)
+    },
+    {
+      title: "操作",
+      dataIndex: "job_id",
+      width: 150,
+      render: (_, job) => {
+        const disabled = !canReorder(job) || busy === job.job_id;
+        const why = !ORDERABLE.has(job.status) ? "已经不在队列里了" : props.subject && job.submitter !== props.subject ? "只能调自己提交的作业" : "";
+        return /* @__PURE__ */ __h("div", { style: { display: "flex", gap: 4 }, onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ __h(Tooltip, { title: why || "上移" }, /* @__PURE__ */ __h(
+          Button,
+          {
+            size: "small",
+            type: "text",
+            "aria-label": "上移",
+            disabled,
+            onClick: () => reorder(job, "up")
+          },
+          "↑"
+        )), /* @__PURE__ */ __h(Tooltip, { title: why || "下移" }, /* @__PURE__ */ __h(
+          Button,
+          {
+            size: "small",
+            type: "text",
+            "aria-label": "下移",
+            disabled,
+            onClick: () => reorder(job, "down")
+          },
+          "↓"
+        )), /* @__PURE__ */ __h(Tooltip, { title: "打开报告" }, /* @__PURE__ */ __h(Button, { size: "small", type: "text", "aria-label": "打开报告", onClick: () => props.onOpen(job.job_id) }, "报告")), ORDERABLE.has(job.status) || job.status === "running" ? /* @__PURE__ */ __h(
+          Popconfirm,
+          {
+            title: "取消这次评测？",
+            description: job.status === "running" ? "运行中的会话会被停掉，已跑完的题保留。" : "排队中的作业会被移出队列。",
+            okText: "取消作业",
+            cancelText: "先不取消",
+            onConfirm: () => cancel(job)
+          },
+          /* @__PURE__ */ __h(Tooltip, { title: "取消" }, /* @__PURE__ */ __h(Button, { size: "small", type: "text", danger: true, "aria-label": "取消", disabled }, "取消"))
+        ) : null);
+      }
+    }
+  ];
+  return /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h(
+    PageHead,
+    {
+      title: "评测",
+      sub: "一次提交一行。点任意一行打开报告；行内能看到题目进度和平均分。",
+      actions: /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h(Tooltip, { title: "重新拉取列表" }, /* @__PURE__ */ __h(Button, { "aria-label": "刷新", onClick: props.onRefresh, loading: props.loading }, "刷新")), /* @__PURE__ */ __h(Button, { type: "primary", onClick: props.onNew }, "新建评测"))
+    }
+  ), /* @__PURE__ */ __h("div", { className: "pbe-metrics" }, /* @__PURE__ */ __h(
+    MetricItem,
+    {
+      icon: Play ? /* @__PURE__ */ __h(Play, null) : null,
+      title: "运行中",
+      figure: stats.running,
+      note: stats.running ? "占着并发槽" : "当前空闲"
+    }
+  ), /* @__PURE__ */ __h(
+    MetricItem,
+    {
+      icon: Clock ? /* @__PURE__ */ __h(Clock, null) : null,
+      title: "等待中",
+      figure: stats.waiting,
+      note: stats.waiting ? "含排队与待起跑" : "队列为空"
+    }
+  ), /* @__PURE__ */ __h(
+    MetricItem,
+    {
+      icon: Gauge ? /* @__PURE__ */ __h(Gauge, null) : null,
+      title: "已完成",
+      figure: stats.done,
+      note: `平均分 ${stats.mean === null ? "—" : fixed(stats.mean)}${stats.scored ? ` · ${stats.scored} 次计分` : ""}`
+    }
+  )), /* @__PURE__ */ __h("div", { className: "pbe-toolbar" }, /* @__PURE__ */ __h("span", { className: "pbe-toolbar__label" }, "筛选"), /* @__PURE__ */ __h(
+    Segmented,
+    {
+      value: filter,
+      onChange: (value) => {
+        setFilter(value);
+        setPage(1);
+      },
+      options: [
+        { value: "all", label: `全部 ${props.jobs.length}` },
+        { value: "running", label: "运行中" },
+        { value: "waiting", label: "等待中" },
+        { value: "done", label: "已结束" }
+      ]
+    }
+  ), /* @__PURE__ */ __h("div", { className: "pbe-toolbar__right" }, /* @__PURE__ */ __h(
+    Input.Search,
+    {
+      allowClear: true,
+      placeholder: "按目的、产品、提交人、job id 搜索",
+      style: { width: 260 },
+      value: search,
+      onChange: (event) => {
+        setSearch(event.target.value);
+        setPage(1);
+      }
+    }
+  ))), /* @__PURE__ */ __h("div", { className: "pbe-table-wrap" }, /* @__PURE__ */ __h(
+    Table,
+    {
+      className: "pbe-table",
+      rowKey: "job_id",
+      size: "middle",
+      loading: props.loading && !props.jobs.length,
+      columns,
+      dataSource: paged,
+      pagination: false,
+      onRow: (job) => ({ onClick: () => props.onOpen(job.job_id) }),
+      locale: {
+        emptyText: /* @__PURE__ */ __h(EmptyHint, null, "还没有评测。点右上角「新建评测」提交一次，或检查「配置」里的服务地址。")
+      }
+    }
+  ), /* @__PURE__ */ __h("div", { className: "pbe-table__foot" }, /* @__PURE__ */ __h("span", null, "共 ", visible.length, " 条"), /* @__PURE__ */ __h(
+    Pagination,
+    {
+      size: "small",
+      current: page,
+      pageSize: PAGE_SIZE,
+      total: visible.length,
+      showSizeChanger: false,
+      onChange: (next) => setPage(next),
+      hideOnSinglePage: true
+    }
+  ))), /* @__PURE__ */ __h("div", { className: "pbe-toolbar", style: { marginTop: "var(--spacer-16)" } }, /* @__PURE__ */ __h("span", { className: "pbe-toolbar__label" }, "「等待中」才可调序；「已结束」才有报告。分数显示「—」表示没有可计分的题，不等于 0 分。"), /* @__PURE__ */ __h("div", { className: "pbe-toolbar__right" }, /* @__PURE__ */ __h(Check, { style: { color: "var(--status-success-default)" } }), /* @__PURE__ */ __h("span", { className: "pbe-toolbar__label" }, "列表会在运行中自动刷新"))));
+}
+function MetricItem(props) {
+  return /* @__PURE__ */ __h("div", { className: "pbe-panel pbe-metric" }, /* @__PURE__ */ __h("span", { className: "pbe-tile", "aria-hidden": "true" }, props.icon), /* @__PURE__ */ __h("div", { className: "pbe-metric__body" }, /* @__PURE__ */ __h("div", { className: "pbe-metric__title" }, props.title), /* @__PURE__ */ __h("div", { className: "pbe-metric__desc" }, /* @__PURE__ */ __h("span", { className: "pbe-figure" }, props.figure), /* @__PURE__ */ __h("span", null, props.note))));
+}
+function secondsBetween(job) {
+  if (!job.started_at || !job.finished_at) return null;
+  const start = Date.parse(job.started_at);
+  const end = Date.parse(job.finished_at);
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+  return Math.max(0, (end - start) / 1e3);
+}
+
+// src/modules/new-job.tsx
+function NewJobModal(props) {
+  const feedback = useFeedback();
+  const [acpUrl, setAcpUrl] = useState("");
+  const [product, setProduct] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [datasets, setDatasets] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [kind, setKind] = useState("immediate");
+  const [range, setRange] = useState(null);
+  const [catalog, setCatalog] = useState({
+    datasets: null,
+    categories: null
+  });
+  const [resolved, setResolved] = useState(null);
+  const [resolving, setResolving] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!props.open) return;
+    let alive = true;
+    Promise.all([api.datasets(), api.categories()]).then(([list, cats]) => {
+      if (alive) setCatalog({ datasets: list, categories: cats });
+    }).catch((err) => {
+      const info = describeError(err);
+      feedback.message.error(`${info.code}：${info.message}`);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [props.open]);
+  const selection = useMemo(() => ({ categories, datasets }), [categories, datasets]);
+  useEffect(() => {
+    if (!props.open) return;
+    if (!categories.length && !datasets.length) {
+      setResolved(null);
+      return;
+    }
+    let alive = true;
+    setResolving(true);
+    api.resolve(selection).then((result) => {
+      if (alive) setResolved(result);
+    }).catch(() => {
+      if (alive) setResolved(null);
+    }).finally(() => {
+      if (alive) setResolving(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [categories, datasets, props.open]);
+  async function submit() {
+    const window2 = { kind };
+    if (kind === "custom") {
+      if (!range || !range[0] || !range[1]) {
+        feedback.message.error("自定义区间要选开始和结束时间");
+        return;
+      }
+      window2.not_before = toIso(range[0]);
+      window2.not_after = toIso(range[1]);
+    }
+    setBusy(true);
+    try {
+      const job = await api.submit({
+        acp_url: acpUrl.trim(),
+        product: product.trim(),
+        purpose: purpose.trim(),
+        selector: { categories, datasets },
+        window: window2
+      });
+      feedback.message.success(`已提交 ${job.job_id}`);
+      api.learnIdentity(job.job_id).then((result) => result.subject && props.onIdentity(result.subject)).catch(() => void 0);
+      setAcpUrl("");
+      setProduct("");
+      setPurpose("");
+      setCategories([]);
+      setDatasets([]);
+      setKind("immediate");
+      setRange(null);
+      props.onSubmitted(job);
+    } catch (err) {
+      const info = describeError(err);
+      feedback.message.error(`${info.code}：${info.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const serviceTz = "Asia/Shanghai";
+  return /* @__PURE__ */ __h(
+    Modal,
+    {
+      open: props.open,
+      title: "新建评测",
+      width: 680,
+      onCancel: props.onClose,
+      onOk: submit,
+      okText: "提交评测",
+      cancelText: "取消",
+      confirmLoading: busy,
+      destroyOnClose: true,
+      footer: /* @__PURE__ */ __h("div", { style: { display: "flex", justifyContent: "flex-end", gap: "var(--spacer-8)" } }, /* @__PURE__ */ __h(Button, { onClick: props.onClose }, "取消"), /* @__PURE__ */ __h(
+        Button,
+        {
+          type: "primary",
+          loading: busy,
+          disabled: !acpUrl.trim() || !product.trim() || !purpose.trim(),
+          onClick: submit
+        },
+        "提交评测"
+      ))
+    },
+    /* @__PURE__ */ __h(Fieldset, { title: "目标" }, /* @__PURE__ */ __h(Field, { label: "ACP 地址", hint: "被测 agent 的 ACP 端点，http:// 或 https:// 开头" }, /* @__PURE__ */ __h(
+      Input,
+      {
+        value: acpUrl,
+        onChange: (event) => setAcpUrl(event.target.value),
+        placeholder: "http://127.0.0.1:8472/acp"
+      }
+    )), /* @__PURE__ */ __h(Field, { label: "产品" }, /* @__PURE__ */ __h(
+      Input,
+      {
+        value: product,
+        onChange: (event) => setProduct(event.target.value),
+        placeholder: "被评测的是什么，如 QwenPaw 2.3"
+      }
+    )), /* @__PURE__ */ __h(Field, { label: "目的", hint: "一周后回看，能解释这条曲线为什么跳的就是这两栏" }, /* @__PURE__ */ __h(
+      Input,
+      {
+        value: purpose,
+        onChange: (event) => setPurpose(event.target.value),
+        placeholder: "如 夜间冒烟 / 回归 / 发版前"
+      }
+    ))),
+    /* @__PURE__ */ __h(Fieldset, { title: "选题" }, /* @__PURE__ */ __h(Field, { label: "分类", hint: "选中一个分类等于选中它下面所有数据集" }, /* @__PURE__ */ __h(
+      Select,
+      {
+        mode: "multiple",
+        allowClear: true,
+        style: { width: "100%" },
+        value: categories,
+        onChange: (value) => setCategories(value),
+        placeholder: "按分类整组选",
+        options: (catalog.categories?.categories ?? []).map((item) => ({
+          value: item.name,
+          label: item.name
+        }))
+      }
+    )), /* @__PURE__ */ __h(Field, { label: "数据集" }, /* @__PURE__ */ __h(
+      Select,
+      {
+        mode: "multiple",
+        allowClear: true,
+        style: { width: "100%" },
+        value: datasets,
+        onChange: (value) => setDatasets(value),
+        placeholder: "选单个数据集",
+        options: (catalog.datasets?.datasets ?? []).map((item) => ({
+          value: item.id,
+          label: `${item.name || item.id}（${item.task_count} 题）`
+        }))
+      }
+    )), /* @__PURE__ */ __h(Field, { label: "题量" }, /* @__PURE__ */ __h("div", { className: "pbe-cell-sub" }, resolving ? /* @__PURE__ */ __h(Spin, { size: "small" }) : resolved ? /* @__PURE__ */ __h(__Fragment, null, "将跑 ", /* @__PURE__ */ __h(Figure, { value: resolved.task_count }), " 道题", resolved.duplicates_removed ? ` · 去重 ${resolved.duplicates_removed} 道` : "", resolved.unknown_ids?.length ? ` · ${resolved.unknown_ids.length} 个选择项不存在` : "") : "选完分类或数据集后，这里显示服务算出来的题量"))),
+    /* @__PURE__ */ __h(Fieldset, { title: "窗口" }, /* @__PURE__ */ __h(Field, { label: "何时跑" }, /* @__PURE__ */ __h(
+      Segmented,
+      {
+        value: kind,
+        onChange: (value) => setKind(value),
+        options: [
+          { value: "immediate", label: "立即" },
+          { value: "night", label: "夜间固定窗" },
+          { value: "custom", label: "自定义区间" }
+        ]
+      }
+    )), kind === "custom" ? /* @__PURE__ */ __h(Field, { label: "区间", hint: `按本机时区选择（${tz}）` }, /* @__PURE__ */ __h(
+      DatePicker.RangePicker,
+      {
+        showTime: true,
+        style: { width: "100%" },
+        value: range,
+        onChange: (value) => setRange(value)
+      }
+    )) : null, kind !== "immediate" ? /* @__PURE__ */ __h(
+      Alert,
+      {
+        type: "info",
+        showIcon: true,
+        message: `服务在 ${serviceTz} 判断窗口`,
+        description: kind === "night" ? `夜间固定窗由服务配置决定，本机时区是 ${tz}；两者不同的话，以服务为准。` : `你按 ${tz} 选的时间会换算成 UTC 发给服务，报告里显示的是 UTC。`
+      }
+    ) : null)
+  );
+}
+function toIso(value) {
+  if (value && typeof value.toISOString === "function") return value.toISOString();
+  if (value && typeof value.toDate === "function") return value.toDate().toISOString();
+  return new Date(value).toISOString();
+}
+
+// src/modules/report.tsx
+var FORMATS = [
+  { value: "md", label: "Markdown", hint: "一页读完，适合贴进 issue 或 wiki" },
+  { value: "html", label: "HTML", hint: "同内容带样式，适合发给不装工具的人" },
+  { value: "json", label: "JSON", hint: "原始字段，适合二次处理" },
+  { value: "zip", label: "ZIP", hint: "报告 + 产物原文件", fullOnly: true }
+];
+function isBad(task) {
+  return task.status !== "finished" || Boolean(task.failure_reason);
+}
+function lowScore(task) {
+  return typeof task.score === "number" && task.score < 0.8;
+}
+function ReportModule(props) {
+  const feedback = useFeedback();
+  const [detail, setDetail] = useState(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState("overview");
+  const [openTask, setOpenTask] = useState(null);
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [format, setFormat] = useState("md");
+  const [exporting, setExporting] = useState(false);
+  const [lastExport, setLastExport] = useState(
+    null
+  );
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    api.detail(props.jobId, props.sensitivity).then((next) => {
+      if (!alive) return;
+      setDetail(next);
+      setError(null);
+    }).catch((err) => {
+      if (!alive) return;
+      setError(describeError(err));
+    }).finally(() => {
+      if (alive) setLoading(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [props.jobId, props.sensitivity]);
+  const tasks = detail?.tasks ?? [];
+  const shown = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return tasks.filter((task) => {
+      if (filter === "bad" && !isBad(task)) return false;
+      if (filter === "low" && !lowScore(task)) return false;
+      if (filter === "unscored" && typeof task.score === "number") return false;
+      if (!needle) return true;
+      return [task.task_id, task.name, task.labels?.scenario, task.trace_id, task.session_id].join(" ").toLowerCase().includes(needle);
+    });
+  }, [tasks, filter, search]);
+  async function generate() {
+    setExporting(true);
+    try {
+      const link = await api.report(props.jobId, format, props.sensitivity);
+      setLastExport({ filename: link.filename, size: link.size, url: link.url });
+      window.open(link.url, "_blank", "noopener");
+    } catch (err) {
+      const info = describeError(err);
+      feedback.message.error(`${info.code}：${info.message}`);
+    } finally {
+      setExporting(false);
+    }
+  }
+  const scores = tasks.map((task) => task.score).filter((value) => typeof value === "number");
+  const high = scores.length ? Math.max(...scores) : null;
+  const low = scores.length ? Math.min(...scores) : null;
+  const summary = typeof detail?.score === "number" ? null : detail?.score ?? null;
+  const mean = typeof detail?.score === "number" ? detail.score : summary?.mean ?? null;
+  const scoreCount = summary?.count ?? scores.length;
+  const linkFor = `${window.location.origin}${window.location.pathname}?job=${props.jobId}`;
+  const progress = detail?.progress ?? {};
+  const byStatus = progress.by_status ?? {};
+  const statusRows = Object.entries(byStatus);
+  const totalTasks = progress.total ?? tasks.length;
+  const finishedTasks = byStatus.finished ?? tasks.filter((task) => task.status === "finished").length;
+  const failedTasks = byStatus.failed ?? tasks.filter((task) => task.status === "failed").length;
+  return /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h(
+    PageHead,
+    {
+      title: detail?.purpose || "报告",
+      sub: /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h("span", null, detail?.product || "—", " · ", detail?.submitter || "—"), /* @__PURE__ */ __h("span", { className: "pbe-meta" }, /* @__PURE__ */ __h("span", { className: "pbe-meta__sep" }, "·"), /* @__PURE__ */ __h(CopyId, { value: props.jobId, label: "job id", keep: 20 }), /* @__PURE__ */ __h("span", { className: "pbe-meta__sep" }, "·"), /* @__PURE__ */ __h(
+        StatusPill,
+        {
+          tone: detail ? jobStatus(detail.status).tone : "muted",
+          label: detail ? jobStatus(detail.status).label : "读取中"
+        }
+      ), /* @__PURE__ */ __h("span", { className: "pbe-meta__sep" }, "·"), /* @__PURE__ */ __h(CopyId, { value: linkFor, label: "报告链接", keep: 30 }))),
+      actions: /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h(Button, { onClick: props.onBack }, "返回列表"), /* @__PURE__ */ __h(
+        Segmented,
+        {
+          value: props.sensitivity,
+          onChange: (value) => props.onSensitivity(value),
+          options: [
+            { value: "shared", label: "shared" },
+            { value: "full", label: "完整版" }
+          ]
+        }
+      ))
+    }
+  ), error ? /* @__PURE__ */ __h(
+    Alert,
+    {
+      type: "error",
+      showIcon: true,
+      message: error.code,
+      description: error.message,
+      style: { marginBottom: "var(--spacer-16)" }
+    }
+  ) : null, detail?.error ? /* @__PURE__ */ __h(
+    Alert,
+    {
+      type: "warning",
+      showIcon: true,
+      message: "这次运行没有跑完",
+      description: detail.error,
+      style: { marginBottom: "var(--spacer-16)" }
+    }
+  ) : null, /* @__PURE__ */ __h(Panel, { pad: false }, /* @__PURE__ */ __h("div", { style: { padding: "var(--spacer-20) var(--spacer-24)" } }, /* @__PURE__ */ __h("div", { className: "pbe-scoreboard" }, /* @__PURE__ */ __h(Cell, { label: "总分", value: mean === null ? "—" : fixed(mean), note: detail?.score ? `计分 ${scoreCount} 题` : void 0 }), /* @__PURE__ */ __h(
+    Cell,
+    {
+      label: "完成",
+      value: `${finishedTasks} / ${totalTasks}`,
+      note: failedTasks ? `${failedTasks} 失败` : "无失败"
+    }
+  ), /* @__PURE__ */ __h(Cell, { label: "分数区间", value: high === null ? "—" : `${fixed(low)} – ${fixed(high)}`, note: `${scores.length} 题计分` }), /* @__PURE__ */ __h(Cell, { label: "耗时", value: duration(secondsBetween2(detail)), note: stamp(detail?.started_at) })))), /* @__PURE__ */ __h(
+    Tabs,
+    {
+      activeKey: tab,
+      onChange: setTab,
+      items: [
+        {
+          key: "overview",
+          label: "总览",
+          children: /* @__PURE__ */ __h("div", { className: "pbe-grid", style: { marginTop: "var(--spacer-16)" } }, /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "总分与状态分布"), /* @__PURE__ */ __h("div", { style: { display: "flex", alignItems: "center", gap: "var(--spacer-24)" } }, /* @__PURE__ */ __h(
+            Progress,
+            {
+              type: "dashboard",
+              size: 132,
+              percent: mean === null ? 0 : Math.round(mean * 100),
+              format: () => mean === null ? "—" : fixed(mean)
+            }
+          ), /* @__PURE__ */ __h("div", { className: "pbe-rows", style: { flex: 1 } }, /* @__PURE__ */ __h(Row, { label: "计分题", value: String(progress.scored ?? scores.length) }), /* @__PURE__ */ __h(Row, { label: "没计分的", value: String(Math.max(0, totalTasks - (progress.scored ?? 0))) }), /* @__PURE__ */ __h(
+            Row,
+            {
+              label: "最高 / 最低",
+              value: high === null ? "—" : `${fixed(high)} / ${fixed(low)}`
+            }
+          ), /* @__PURE__ */ __h(Row, { label: "生成时间", value: stamp(detail?.generated_at) }))), statusRows.length ? /* @__PURE__ */ __h("div", { className: "pbe-rows", style: { marginTop: "var(--spacer-12)" } }, statusRows.map(([key, value]) => /* @__PURE__ */ __h(Row, { key, label: jobStatus(key).label, value: `${value} 题` }))) : null), /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "切片"), /* @__PURE__ */ __h(Slices, { title: "能力", data: detail?.slices?.capability }), /* @__PURE__ */ __h(Slices, { title: "场景", data: detail?.slices?.scenario }), /* @__PURE__ */ __h(Slices, { title: "复杂度", data: detail?.slices?.complexity })), /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "数据来源"), (detail?.sources ?? []).length ? /* @__PURE__ */ __h("div", { className: "pbe-rows" }, detail.sources.map((source) => /* @__PURE__ */ __h(
+            Row,
+            {
+              key: source.dataset_id,
+              label: String(source.name || source.dataset_id),
+              value: `${source.task_count} 题`
+            }
+          ))) : /* @__PURE__ */ __h(EmptyHint, null, "这次运行没有记录数据来源")), /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "运行配置"), /* @__PURE__ */ __h("div", { className: "pbe-facts" }, /* @__PURE__ */ __h(Fact, { label: "ACP 地址", value: /* @__PURE__ */ __h("span", { className: "pbe-mono" }, detail?.acp_url) }), /* @__PURE__ */ __h(
+            Fact,
+            {
+              label: "窗口",
+              value: detail ? `${detail.window.kind}${detail.window.start ? ` · ${stamp(detail.window.start)}` : ""}` : "—"
+            }
+          ), /* @__PURE__ */ __h(Fact, { label: "提交时间", value: stamp(detail?.created_at) }), /* @__PURE__ */ __h(Fact, { label: "结束时间", value: stamp(detail?.finished_at) }))), /* @__PURE__ */ __h(Panel, { spanAll: true }, /* @__PURE__ */ __h(SectionTitle, null, "环境指纹"), /* @__PURE__ */ __h("div", { className: "pbe-block", style: { maxHeight: 240 } }, json(detail?.env_fingerprint ?? "这次提交没有带指纹"))))
+        },
+        {
+          key: "tasks",
+          label: `题目 ${tasks.length}`,
+          children: /* @__PURE__ */ __h("div", { style: { marginTop: "var(--spacer-16)" } }, /* @__PURE__ */ __h("div", { className: "pbe-toolbar" }, /* @__PURE__ */ __h("span", { className: "pbe-toolbar__label" }, "筛选"), /* @__PURE__ */ __h(
+            Segmented,
+            {
+              value: filter,
+              onChange: (value) => setFilter(value),
+              options: [
+                { value: "all", label: `全部 ${tasks.length}` },
+                { value: "bad", label: `异常 ${tasks.filter(isBad).length}` },
+                { value: "low", label: `低分 ${tasks.filter(lowScore).length}` },
+                { value: "unscored", label: "未计分" }
+              ]
+            }
+          ), /* @__PURE__ */ __h("div", { className: "pbe-toolbar__right" }, /* @__PURE__ */ __h(
+            Input.Search,
+            {
+              allowClear: true,
+              placeholder: "题目名 / task id / trace id",
+              style: { width: 260 },
+              value: search,
+              onChange: (event) => setSearch(event.target.value)
+            }
+          ))), /* @__PURE__ */ __h("div", { className: "pbe-table-wrap" }, /* @__PURE__ */ __h(
+            Table,
+            {
+              className: "pbe-table",
+              rowKey: (task) => `${task.task_id}-${task.attempt}`,
+              size: "middle",
+              loading,
+              dataSource: shown,
+              pagination: false,
+              onRow: (task) => ({ onClick: () => setOpenTask(task) }),
+              locale: { emptyText: /* @__PURE__ */ __h(EmptyHint, null, "没有符合筛选的题目") },
+              columns: taskColumns()
+            }
+          ), /* @__PURE__ */ __h("div", { className: "pbe-table__foot" }, /* @__PURE__ */ __h("span", null, "共 ", shown.length, " 条"), /* @__PURE__ */ __h("span", null, "点一行看题干、判据与轨迹"))))
+        },
+        {
+          key: "export",
+          label: "导出",
+          children: /* @__PURE__ */ __h("div", { className: "pbe-grid", style: { marginTop: "var(--spacer-16)" } }, /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "生成报告"), /* @__PURE__ */ __h(
+            Radio.Group,
+            {
+              value: format,
+              onChange: (event) => setFormat(event.target.value),
+              style: { display: "flex", flexDirection: "column", gap: "var(--spacer-12)" }
+            },
+            FORMATS.map((item) => {
+              const disabled = Boolean(item.fullOnly) && props.sensitivity !== "full";
+              return /* @__PURE__ */ __h(Radio, { key: item.value, value: item.value, disabled }, /* @__PURE__ */ __h("span", null, item.label), /* @__PURE__ */ __h("span", { className: "pbe-cell-sub", style: { marginLeft: 8 } }, disabled ? `${item.hint}（需要完整版）` : item.hint));
+            })
+          ), /* @__PURE__ */ __h("div", { style: { marginTop: "var(--spacer-20)", display: "flex", gap: "var(--spacer-8)" } }, /* @__PURE__ */ __h(Button, { type: "primary", loading: exporting, onClick: generate }, "生成并打开"), /* @__PURE__ */ __h(Tooltip, { title: "submissions/*.json 的形状，排行榜直接吃得下" }, /* @__PURE__ */ __h(Button, { onClick: () => void saveSubmissions(props.jobId) }, "另存 submissions JSON")))), /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "刚刚生成的"), lastExport ? /* @__PURE__ */ __h("div", { className: "pbe-facts" }, /* @__PURE__ */ __h(Fact, { label: "文件", value: /* @__PURE__ */ __h("span", { className: "pbe-mono" }, lastExport.filename) }), /* @__PURE__ */ __h(Fact, { label: "大小", value: bytes(lastExport.size) }), /* @__PURE__ */ __h(
+            Fact,
+            {
+              label: "链接",
+              value: /* @__PURE__ */ __h(Button, { type: "link", style: { padding: 0 }, onClick: () => window.open(lastExport.url, "_blank", "noopener") }, "再打开一次")
+            }
+          ), /* @__PURE__ */ __h(
+            Fact,
+            {
+              label: "保存到本地",
+              value: /* @__PURE__ */ __h(
+                Button,
+                {
+                  type: "link",
+                  style: { padding: 0 },
+                  onClick: () => {
+                    void downloadToFile(props.jobId, format, props.sensitivity, lastExport.filename);
+                  }
+                },
+                "通过代理下载"
+              )
+            }
+          )) : /* @__PURE__ */ __h(EmptyHint, null, "还没有生成。选一种格式，点左边「生成并打开」。"), props.sensitivity !== "full" ? /* @__PURE__ */ __h("div", { className: "pbe-cell-sub", style: { marginTop: "var(--spacer-12)" } }, "当前是 shared 档：判分依据、工作目录、产物下载链接不在报告里。切到「完整版」再导出。") : null))
+        }
+      ]
+    }
+  ), openTask ? /* @__PURE__ */ __h(
+    TaskDialog,
+    {
+      jobId: props.jobId,
+      task: openTask,
+      sensitivity: props.sensitivity,
+      onClose: () => setOpenTask(null)
+    }
+  ) : null);
+}
+async function saveSubmissions(jobId) {
+  const payload = await api.results(jobId);
+  saveBlob(
+    new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }),
+    `${jobId}.json`
+  );
+}
+async function downloadToFile(jobId, format, sensitivity, filename) {
+  await download(`/v1/reports/${jobId}/${encodeURIComponent(filename)}`, filename);
+}
+function Cell(props) {
+  return /* @__PURE__ */ __h("div", { className: "pbe-scoreboard__cell" }, /* @__PURE__ */ __h("div", { className: "pbe-scoreboard__label" }, props.label), /* @__PURE__ */ __h("div", { className: "pbe-scoreboard__value" }, props.value), props.note ? /* @__PURE__ */ __h("div", { className: "pbe-scoreboard__label" }, props.note) : null);
+}
+function Row(props) {
+  return /* @__PURE__ */ __h("div", { className: "pbe-row" }, /* @__PURE__ */ __h("span", { className: "pbe-row__grow" }, props.label), /* @__PURE__ */ __h("span", { className: "pbe-mono" }, props.value));
+}
+function Slices(props) {
+  const entries = Object.entries(props.data ?? {});
+  if (!entries.length) {
+    return /* @__PURE__ */ __h("div", { className: "pbe-cell-sub" }, "没有", props.title, "切片");
+  }
+  return /* @__PURE__ */ __h("div", { style: { marginBottom: "var(--spacer-12)" } }, /* @__PURE__ */ __h("div", { className: "pbe-cell-sub", style: { marginBottom: "var(--spacer-8)" } }, props.title), entries.map(([name, score]) => /* @__PURE__ */ __h("div", { key: name, style: { marginBottom: "var(--spacer-8)" } }, /* @__PURE__ */ __h("div", { style: { display: "flex", justifyContent: "space-between" } }, /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, name), /* @__PURE__ */ __h("span", { className: "pbe-mono" }, fixed(score))), /* @__PURE__ */ __h(Progress, { percent: Math.round(Number(score) * 100), size: "small", showInfo: false }))));
+}
+function taskColumns() {
+  return [
+    {
+      title: "题目",
+      dataIndex: "name",
+      render: (_, task) => /* @__PURE__ */ __h("div", null, /* @__PURE__ */ __h("div", { className: "pbe-cell-title" }, task.name || task.task_id), /* @__PURE__ */ __h("div", { className: "pbe-cell-sub" }, task.task_id, task.attempt > 1 ? ` · 第 ${task.attempt} 次尝试` : ""))
+    },
+    {
+      title: "标签",
+      dataIndex: "labels",
+      width: 220,
+      render: (_, task) => /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, String(task.labels?.scenario ?? "—"))
+    },
+    {
+      title: "状态",
+      dataIndex: "status",
+      width: 140,
+      render: (_, task) => {
+        const meta = taskStatus(task.status, task.failure_reason);
+        return /* @__PURE__ */ __h(StatusPill, { tone: meta.tone, label: meta.label });
+      }
+    },
+    {
+      title: "分数",
+      dataIndex: "score",
+      width: 84,
+      render: (_, task) => /* @__PURE__ */ __h(Figure, { value: typeof task.score === "number" ? fixed(task.score) : "—" })
+    },
+    {
+      title: "耗时",
+      dataIndex: "duration_s",
+      width: 96,
+      render: (_, task) => /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, duration(task.duration_s))
+    },
+    {
+      title: "trace_id",
+      dataIndex: "trace_id",
+      width: 148,
+      render: (_, task) => /* @__PURE__ */ __h(CopyId, { value: task.trace_id, label: "trace_id", keep: 12 })
+    }
+  ];
+}
+function TaskDialog(props) {
+  const [page, setPage] = useState(null);
+  const [cursor, setCursor] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [detail, setDetail] = useState(props.task);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    api.taskDetail(props.jobId, props.task.task_id, props.sensitivity, props.task.attempt).then((next) => {
+      if (!alive) return;
+      setDetail(next);
+      setPage(next.transcript);
+      setCursor(next.transcript.cursor);
+      setError("");
+    }).catch((err) => {
+      if (!alive) return;
+      setError(describeError(err).message);
+    }).finally(() => {
+      if (alive) setLoading(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [props.jobId, props.task.task_id, props.task.attempt, props.sensitivity]);
+  async function goPage(next) {
+    setLoading(true);
+    try {
+      const pageOut = await api.transcript(props.jobId, props.task.task_id, props.task.attempt, next);
+      setPage(pageOut);
+      setCursor(pageOut.cursor);
+    } catch (err) {
+      setError(describeError(err).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  const breakdown = Object.entries(detail.automated_breakdown ?? {});
+  const meta = taskStatus(detail.status, detail.failure_reason);
+  return /* @__PURE__ */ __h(
+    Modal,
+    {
+      open: true,
+      width: 1040,
+      onCancel: props.onClose,
+      footer: /* @__PURE__ */ __h(Button, { onClick: props.onClose }, "关闭"),
+      title: /* @__PURE__ */ __h("div", { style: { display: "flex", alignItems: "center", gap: "var(--spacer-12)" } }, /* @__PURE__ */ __h("span", null, detail.name || detail.task_id), /* @__PURE__ */ __h(StatusPill, { tone: meta.tone, label: meta.label }), /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, typeof detail.score === "number" ? `得分 ${fixed(detail.score)}` : "未计分"))
+    },
+    error ? /* @__PURE__ */ __h(Alert, { type: "error", showIcon: true, message: "读不到这一题", description: error }) : null,
+    /* @__PURE__ */ __h(SectionTitle, null, "题干"),
+    /* @__PURE__ */ __h("pre", { className: "pbe-block pbe-prompt" }, detail.prompt || "（这次运行没有记录题干）"),
+    /* @__PURE__ */ __h("div", { style: { height: "var(--spacer-20)" } }),
+    /* @__PURE__ */ __h(SectionTitle, null, "这次执行"),
+    /* @__PURE__ */ __h("div", { className: "pbe-facts" }, /* @__PURE__ */ __h(Fact, { label: "判分方式", value: detail.grading_type || "—" }), /* @__PURE__ */ __h(Fact, { label: "耗时", value: duration(detail.duration_s) }), /* @__PURE__ */ __h(Fact, { label: "协议写回 / 带外", value: `${detail.protocol_written} / ${detail.out_of_band_count}` }), /* @__PURE__ */ __h(
+      Fact,
+      {
+        label: "自报模型",
+        value: (detail.subject_model_reported ?? []).join("、") || "—"
+      }
+    ), /* @__PURE__ */ __h(Fact, { label: "解析自", value: (detail.resolved_from ?? []).join("、") || "—" }), /* @__PURE__ */ __h(Fact, { label: "trace_id", value: /* @__PURE__ */ __h(CopyId, { value: detail.trace_id, label: "trace_id", keep: 16 }) }), /* @__PURE__ */ __h(Fact, { label: "session_id", value: /* @__PURE__ */ __h(CopyId, { value: detail.session_id, label: "session_id", keep: 24 }) })),
+    breakdown.length ? /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h("div", { style: { height: "var(--spacer-20)" } }), /* @__PURE__ */ __h(SectionTitle, null, "判据逐项"), /* @__PURE__ */ __h("div", { className: "pbe-rows" }, breakdown.map(([name, value]) => /* @__PURE__ */ __h("div", { className: "pbe-row", key: name }, /* @__PURE__ */ __h("span", { className: "pbe-row__grow" }, name), /* @__PURE__ */ __h(
+      StatusPill,
+      {
+        tone: Number(value) >= 1 ? "ok" : Number(value) > 0 ? "warn" : "err",
+        label: fixed(value)
+      }
+    ))))) : null,
+    /* @__PURE__ */ __h("div", { style: { height: "var(--spacer-20)" } }),
+    /* @__PURE__ */ __h(SectionTitle, null, "产物"),
+    detail.artifacts.length ? /* @__PURE__ */ __h("div", { className: "pbe-rows" }, detail.artifacts.map((artifact) => /* @__PURE__ */ __h("div", { className: "pbe-row", key: artifact.path }, /* @__PURE__ */ __h("span", { className: "pbe-row__grow pbe-mono" }, artifact.path), /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, bytes(artifact.size)), /* @__PURE__ */ __h(Tooltip, { title: artifact.sha256 }, /* @__PURE__ */ __h("span", { className: "pbe-cell-sub pbe-mono" }, artifact.sha256.slice(0, 12))), props.sensitivity === "full" ? /* @__PURE__ */ __h(
+      Button,
+      {
+        type: "link",
+        size: "small",
+        style: { padding: 0 },
+        onClick: () => {
+          void download(
+            `/v1/jobs/${props.jobId}/tasks/${detail.task_id}/attempts/${detail.attempt}/artifacts?path=${encodeURIComponent(artifact.path)}`,
+            artifact.path.split("/").pop() || "artifact"
+          );
+        }
+      },
+      "下载"
+    ) : null))) : /* @__PURE__ */ __h(EmptyHint, null, "这次没有产物"),
+    detail.rubric_excerpt || detail.judge_notes ? /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h("div", { style: { height: "var(--spacer-20)" } }), /* @__PURE__ */ __h(SectionTitle, null, "评分依据（完整版）"), detail.rubric_excerpt ? /* @__PURE__ */ __h("pre", { className: "pbe-block" }, detail.rubric_excerpt) : null, detail.judge_notes ? /* @__PURE__ */ __h("pre", { className: "pbe-block", style: { marginTop: "var(--spacer-8)" } }, detail.judge_notes) : null) : null,
+    /* @__PURE__ */ __h("div", { style: { height: "var(--spacer-20)" } }),
+    /* @__PURE__ */ __h(SectionTitle, null, "轨迹"),
+    /* @__PURE__ */ __h("div", { className: "pbe-toolbar" }, /* @__PURE__ */ __h("span", { className: "pbe-toolbar__label" }, page ? `${page.cursor + 1}–${page.cursor + page.events.length} / ${page.total_events} 步` : "读取中", page && page.damaged_events ? ` · ${page.damaged_events} 条损坏` : ""), /* @__PURE__ */ __h("div", { className: "pbe-toolbar__right" }, /* @__PURE__ */ __h(Button, { size: "small", disabled: !page || page.cursor === 0 || loading, onClick: () => goPage(0) }, "回到开头"), /* @__PURE__ */ __h(Button, { size: "small", disabled: !page || !page.next_cursor || loading, onClick: () => page && page.next_cursor !== null && goPage(page.next_cursor) }, "下一页"))),
+    /* @__PURE__ */ __h("div", { className: "pbe-timeline" }, (page?.events ?? []).map((event, index) => /* @__PURE__ */ __h(TimelineRow, { key: `${cursor}-${index}`, event })), page && !page.events.length ? /* @__PURE__ */ __h(EmptyHint, null, "没有轨迹事件") : null)
+  );
+}
+var KIND = {
+  agent_message_chunk: "输出",
+  agent_thought_chunk: "思考",
+  tool_call: "调用",
+  tool_call_update: "结果",
+  plan: "计划",
+  plan_update: "计划",
+  user_message_chunk: "输入",
+  available_commands_update: "命令",
+  usage_update: "用量",
+  current_mode_update: "模式",
+  session_info_update: "会话",
+  config_option_update: "配置"
+};
+function TimelineRow(props) {
+  const event = props.event;
+  const label = KIND[event.kind] ?? event.kind;
+  const args = event.args && Object.keys(event.args).length ? Object.keys(event.args).join("、") : "";
+  const summary = event.tool || args || (event.chars ? `${event.chars} 字符` : "") || (event.result_chars ? `${event.result_chars} 字符` : "");
+  return /* @__PURE__ */ __h("div", { className: "pbe-timeline__item" }, /* @__PURE__ */ __h("span", { className: "pbe-timeline__at" }, String(event.at).replace("T", " ").slice(11, 19)), /* @__PURE__ */ __h("span", null, /* @__PURE__ */ __h(StatusPill, { tone: event.status === "completed" ? "ok" : "muted", label })), /* @__PURE__ */ __h("span", { className: "pbe-cell-sub", style: { whiteSpace: "normal" } }, summary || "—"));
+}
+function secondsBetween2(detail) {
+  if (!detail?.started_at || !detail.finished_at) return null;
+  const start = Date.parse(detail.started_at);
+  const end = Date.parse(detail.finished_at);
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+  return Math.max(0, (end - start) / 1e3);
+}
+
+// src/modules/settings.tsx
+var SOURCE_TEXT = {
+  file: "来自本机保存的配置",
+  env: "来自环境变量（PAWBENCH_EVAL_*）",
+  none: "还没有配置"
+};
+function SettingsModule(props) {
+  const feedback = useFeedback();
+  const [baseUrl, setBaseUrl] = useState("");
+  const [token, setToken] = useState("");
+  const [subject, setSubject] = useState("");
+  const [busy, setBusy] = useState("");
+  const [probe, setProbe] = useState(null);
+  const [probeError, setProbeError] = useState("");
+  useEffect(() => {
+    const config2 = props.config;
+    if (!config2) return;
+    setBaseUrl(config2.base_url || "");
+    setSubject(config2.subject || "");
+  }, [props.config]);
+  async function save(thenProbe) {
+    setBusy(thenProbe ? "save" : "save");
+    try {
+      const body = {
+        base_url: baseUrl.trim(),
+        subject: subject.trim()
+      };
+      if (token.trim()) body.token = token.trim();
+      const saved = await api.saveConfig(body);
+      props.onSaved(saved);
+      setToken("");
+      feedback.message.success("已保存");
+      if (thenProbe) await runProbe();
+    } catch (err) {
+      const info = describeError(err);
+      feedback.message.error(`${info.code}：${info.message}`);
+    } finally {
+      setBusy("");
+    }
+  }
+  async function runProbe() {
+    setBusy("probe");
+    setProbeError("");
+    try {
+      const result = await api.probe();
+      setProbe(result);
+    } catch (err) {
+      const info = describeError(err);
+      setProbe(null);
+      setProbeError(`${info.code}：${info.message}`);
+    } finally {
+      setBusy("");
+    }
+  }
+  const config = props.config;
+  return /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h(
+    PageHead,
+    {
+      title: "配置",
+      sub: "页面通过本插件后端访问评测服务，token 只在后端保存，浏览器里始终没有它。",
+      actions: /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h(Button, { onClick: runProbe, loading: busy === "probe" }, "只探测"), /* @__PURE__ */ __h(Button, { type: "primary", onClick: () => void save(true), loading: busy === "save" }, "保存并探测"))
+    }
+  ), /* @__PURE__ */ __h("div", { className: "pbe-grid" }, /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "服务连接"), /* @__PURE__ */ __h(Field, { label: "服务地址", hint: "评测服务的根地址，页面会调到它下面的 /v1/*" }, /* @__PURE__ */ __h(
+    Input,
+    {
+      value: baseUrl,
+      onChange: (event) => setBaseUrl(event.target.value),
+      placeholder: "http://127.0.0.1:8471"
+    }
+  )), /* @__PURE__ */ __h(
+    Field,
+    {
+      label: "访问 token",
+      hint: config?.has_token ? `已保存 ${config.token_hint}；留空表示不改，填新值会替换` : "还没有 token。在服务端用 auth CLI 铸造一个，粘贴到这里。"
+    },
+    /* @__PURE__ */ __h(
+      Input.Password,
+      {
+        value: token,
+        onChange: (event) => setToken(event.target.value),
+        placeholder: config?.has_token ? "••••••••（留空不改）" : "粘贴 token"
+      }
+    )
+  ), /* @__PURE__ */ __h(Field, { label: "身份", hint: "服务用它判断某一行是不是你的；提交过一次后会自动学到" }, /* @__PURE__ */ __h(
+    Input,
+    {
+      value: subject,
+      onChange: (event) => setSubject(event.target.value),
+      placeholder: "你的 allowlist subject"
+    }
+  )), probeError ? /* @__PURE__ */ __h(Alert, { type: "error", showIcon: true, message: "探测失败", description: probeError }) : null), /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "服务状态"), probe ? /* @__PURE__ */ __h("div", { className: "pbe-facts" }, /* @__PURE__ */ __h(
+    Fact,
+    {
+      label: "可达",
+      value: probe.reachable ? "是" : "否"
+    }
+  ), /* @__PURE__ */ __h(Fact, { label: "被认可", value: probe.authorized ? "是" : "否" }), /* @__PURE__ */ __h(Fact, { label: "说明", value: String(probe.detail || "—") }), /* @__PURE__ */ __h(Fact, { label: "配置来源", value: SOURCE_TEXT[config?.source ?? "none"] ?? config?.source ?? "—" })) : /* @__PURE__ */ __h("div", { className: "pbe-facts" }, /* @__PURE__ */ __h(Fact, { label: "配置来源", value: SOURCE_TEXT[config?.source ?? "none"] ?? config?.source ?? "—" }), /* @__PURE__ */ __h(Fact, { label: "地址", value: config?.base_url || "还没填" }), /* @__PURE__ */ __h(Fact, { label: "token", value: config?.has_token ? `已保存 ${config.token_hint}` : "还没有" }), /* @__PURE__ */ __h(Fact, { label: "身份", value: config?.subject || "还没学到" })), /* @__PURE__ */ __h("div", { className: "pbe-cell-sub", style: { marginTop: "var(--spacer-16)" } }, "探测会打服务的 /healthz：先看能不能连上，再看 token 认不认，最后报服务自己的版本。")), /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "报告默认值"), /* @__PURE__ */ __h(Fieldset, { title: "" }, /* @__PURE__ */ __h(Field, { label: "档位", hint: "shared 给任何人看；完整版带判分依据与产物" }, /* @__PURE__ */ __h(
+    Segmented,
+    {
+      value: props.sensitivity,
+      onChange: (value) => props.onSensitivity(value),
+      options: [
+        { value: "shared", label: "shared" },
+        { value: "full", label: "完整版" }
+      ]
+    }
+  )), /* @__PURE__ */ __h(Field, { label: "导出格式" }, /* @__PURE__ */ __h(
+    Segmented,
+    {
+      value: props.format,
+      onChange: (value) => props.onFormat(value),
+      options: [
+        { value: "md", label: "Markdown" },
+        { value: "html", label: "HTML" },
+        { value: "json", label: "JSON" },
+        { value: "zip", label: "ZIP" }
+      ]
+    }
+  ))), /* @__PURE__ */ __h("div", { className: "pbe-cell-sub" }, "这两个只影响打开报告时的默认选择，存在这台浏览器里。")), /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "关于 token"), /* @__PURE__ */ __h("div", { className: "pbe-cell-sub", style: { lineHeight: 1.8 } }, "页面调的是 ", /* @__PURE__ */ __h("span", { className: "pbe-mono" }, "/api/pawbench-eval/v1/…"), "，插件后端在转发时加上", /* @__PURE__ */ __h("span", { className: "pbe-mono" }, " Authorization: Bearer …"), "。所以：", /* @__PURE__ */ __h("br", null), "· 浏览器里没有 token 的副本，同事来屏幕共享也看不到；", /* @__PURE__ */ __h("br", null), "· 换机器要重新填一次，因为它跟着这台机器的插件目录走；", /* @__PURE__ */ __h("br", null), "· 轮换 token 之后，页面学到的提交人身份会作废，第一次提交时重新学。"))));
+}
+
+// src/shell.tsx
+var SENSITIVITY_KEY = "pawbench-eval.sensitivity";
+var FORMAT_KEY = "pawbench-eval.format";
+function readStored(key, allowed, fallback) {
+  try {
+    const value = window.localStorage.getItem(key);
+    return value && allowed.includes(value) ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function store(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+  }
+}
+function Shell() {
+  const [view, setView] = useState("jobs");
+  const [jobId, setJobId] = useState(() => {
+    const query = new URLSearchParams(window.location.search);
+    return query.get("job") ?? "";
+  });
+  const [jobs, setJobs] = useState([]);
+  const [jobsLoading, setJobsLoading] = useState(true);
+  const [jobsError, setJobsError] = useState(null);
+  const [config, setConfig] = useState(null);
+  const [bootError, setBootError] = useState("");
+  const [newOpen, setNewOpen] = useState(false);
+  const [sensitivity, setSensitivity] = useState(
+    () => readStored(SENSITIVITY_KEY, ["shared", "full"], "shared")
+  );
+  const [format, setFormat] = useState(
+    () => readStored(FORMAT_KEY, ["md", "html", "json", "zip"], "md")
+  );
+  const refreshJobs = useCallback(async () => {
+    setJobsLoading(true);
+    try {
+      const list = await api.jobs();
+      setJobs(list.jobs);
+      setJobsError(null);
+    } catch (err) {
+      setJobsError(describeError(err));
+    } finally {
+      setJobsLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    api.config().then(setConfig).catch((err) => {
+      const info = describeError(err);
+      setBootError(`${info.code}：${info.message}`);
+    });
+    void refreshJobs();
+  }, [refreshJobs]);
+  const live = useMemo(
+    () => jobs.some((job) => job.status === "running" || job.status === "queued" || job.status === "scheduled"),
+    [jobs]
+  );
+  useEffect(() => {
+    if (!live) return;
+    const timer = window.setInterval(() => void refreshJobs(), 5e3);
+    return () => window.clearInterval(timer);
+  }, [live, refreshJobs]);
+  const openReport = useCallback((id) => {
+    setJobId(id);
+    const url = new URL(window.location.href);
+    url.searchParams.set("job", id);
+    window.history.replaceState({}, "", url.toString());
+  }, []);
+  const backToList = useCallback(() => {
+    setJobId("");
+    const url = new URL(window.location.href);
+    url.searchParams.delete("job");
+    window.history.replaceState({}, "", url.toString());
+  }, []);
+  const running = jobs.filter((job) => job.status === "running").length;
+  const icon = icons();
+  const Flask = icon.ExperimentOutlined;
+  const Database = icon.DatabaseOutlined;
+  const Setting = icon.SettingOutlined;
+  const Reload = icon.ReloadOutlined;
+  const nav = [
+    { key: "jobs", label: "评测", count: running || null, glyph: Flask ? /* @__PURE__ */ __h(Flask, null) : null },
+    { key: "datasets", label: "数据集", count: null, glyph: Database ? /* @__PURE__ */ __h(Database, null) : null },
+    { key: "settings", label: "配置", count: null, glyph: Setting ? /* @__PURE__ */ __h(Setting, null) : null }
+  ];
+  return /* @__PURE__ */ __h(DesignScope, { ConfigProvider, className: "pbe-root" }, /* @__PURE__ */ __h(App, null, /* @__PURE__ */ __h("div", { className: "pbe-shell" }, /* @__PURE__ */ __h("aside", { className: "pbe-rail" }, /* @__PURE__ */ __h("div", { className: "pbe-rail__brand" }, /* @__PURE__ */ __h("span", { "aria-hidden": "true" }, "🧪"), /* @__PURE__ */ __h("span", null, "PawBench 评测")), /* @__PURE__ */ __h("nav", { className: "pbe-rail__nav", "aria-label": "模块" }, nav.map((item) => /* @__PURE__ */ __h(
+    "button",
+    {
+      key: item.key,
+      type: "button",
+      className: "pbe-nav-item",
+      "aria-current": view === item.key && !jobId ? "page" : void 0,
+      onClick: () => {
+        setView(item.key);
+        backToList();
+      }
+    },
+    item.glyph,
+    /* @__PURE__ */ __h("span", null, item.label),
+    item.count ? /* @__PURE__ */ __h("span", { className: "pbe-nav-item__count" }, item.count) : null
+  ))), /* @__PURE__ */ __h(Tooltip, { title: "点一下重新探测服务" }, /* @__PURE__ */ __h(
+    "button",
+    {
+      type: "button",
+      className: "pbe-rail__foot",
+      onClick: () => {
+        setView("settings");
+        backToList();
+      }
+    },
+    /* @__PURE__ */ __h("div", { style: { display: "flex", alignItems: "center", gap: "var(--spacer-6)" } }, /* @__PURE__ */ __h(
+      StatusPill,
+      {
+        tone: jobsError ? "err" : config?.has_token ? "ok" : "warn",
+        label: jobsError ? "服务不可用" : config?.has_token ? "已连接" : "未配置 token"
+      }
+    ), jobsLoading ? /* @__PURE__ */ __h(Reload, { style: { fontSize: 12, color: "var(--text-tertiary)" } }) : null),
+    /* @__PURE__ */ __h("div", { className: "pbe-cell-sub", style: { marginTop: "var(--spacer-4)" } }, config?.base_url || "还没有填写地址")
+  ))), /* @__PURE__ */ __h("main", { className: "pbe-main" }, bootError ? /* @__PURE__ */ __h(
+    Alert,
+    {
+      type: "warning",
+      showIcon: true,
+      closable: true,
+      message: "读不到连接配置",
+      description: bootError,
+      style: { marginBottom: "var(--spacer-16)" }
+    }
+  ) : null, jobsError ? /* @__PURE__ */ __h(
+    Alert,
+    {
+      type: "error",
+      showIcon: true,
+      closable: true,
+      message: jobsError.code,
+      description: /* @__PURE__ */ __h(__Fragment, null, jobsError.message, /* @__PURE__ */ __h("br", null), "去看「配置」里的服务地址与 token；也可以点左边连接卡重新探测。"),
+      style: { marginBottom: "var(--spacer-16)" }
+    }
+  ) : null, jobId ? /* @__PURE__ */ __h(
+    ReportModule,
+    {
+      jobId,
+      sensitivity,
+      onSensitivity: (value) => {
+        setSensitivity(value);
+        store(SENSITIVITY_KEY, value);
+      },
+      onBack: backToList
+    }
+  ) : view === "jobs" ? /* @__PURE__ */ __h(
+    JobsModule,
+    {
+      jobs,
+      loading: jobsLoading,
+      subject: config?.subject ?? "",
+      onOpen: openReport,
+      onRefresh: () => void refreshJobs(),
+      onNew: () => setNewOpen(true)
+    }
+  ) : view === "datasets" ? /* @__PURE__ */ __h(DatasetsModule, { subject: config?.subject ?? "" }) : /* @__PURE__ */ __h(
+    SettingsModule,
+    {
+      config,
+      sensitivity,
+      format,
+      onSaved: (next) => {
+        setConfig(next);
+        void refreshJobs();
+      },
+      onSensitivity: (value) => {
+        setSensitivity(value);
+        store(SENSITIVITY_KEY, value);
+      },
+      onFormat: (value) => {
+        setFormat(value);
+        store(FORMAT_KEY, value);
+      }
+    }
+  ))), /* @__PURE__ */ __h(
+    NewJobModal,
+    {
+      open: newOpen,
+      onClose: () => setNewOpen(false),
+      onIdentity: (subject) => setConfig((prev) => prev ? { ...prev, subject } : prev),
+      onSubmitted: (job) => {
+        setNewOpen(false);
+        void refreshJobs();
+        openReport(job.job_id);
+      }
+    }
+  )));
+}
+
+// src/index.tsx
+var STYLE_ID = "pawbench-eval-styles";
+function injectStyles() {
+  if (document.getElementById(STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = STYLE_ID;
+  style.textContent = [colors_and_type_default, components_default, styles_default].join("\n");
+  document.head.appendChild(style);
+}
+function main() {
+  const sdk = window.QwenPaw;
+  if (!sdk?.host || typeof sdk.registerRoutes !== "function") {
     console.error("[pawbench-eval] window.QwenPaw host SDK is not ready");
     return;
   }
-
-  var host = Q.host;
-  var React = host.React;
-  var antd = host.antd;
-  var icons = host.antdIcons || {};
-  var h = React.createElement;
-  var useState = React.useState;
-  var useEffect = React.useEffect;
-  var useMemo = React.useMemo;
-  var useCallback = React.useCallback;
-
-  var Button = antd.Button;
-  var Table = antd.Table;
-  var Tag = antd.Tag;
-  var Space = antd.Space;
-  var Select = antd.Select;
-  var Input = antd.Input;
-  var Modal = antd.Modal;
-  var Tabs = antd.Tabs;
-  var Segmented = antd.Segmented;
-  var Alert = antd.Alert;
-  var Tooltip = antd.Tooltip;
-  var Empty = antd.Empty;
-  var Spin = antd.Spin;
-  var Popconfirm = antd.Popconfirm;
-  var DatePicker = antd.DatePicker;
-  var Upload = antd.Upload;
-  var Typography = antd.Typography;
-  var Progress = antd.Progress;
-  var message = antd.message;
-  var useToken = antd.theme.useToken;
-
-  var Text = Typography.Text;
-  var Paragraph = Typography.Paragraph;
-
-  // ── constants ───────────────────────────────────────────────────────────
-
-  var API = "/pawbench-eval";
-  var POLL_MS = 5000;
-  var LS = "pawbench-eval.";
-  var ORDERABLE = { queued: 1, scheduled: 1 };
-  var TERMINAL = { finished: 1, failed: 1, canceled: 1 };
-  var REPORT_FORMATS = ["json", "md", "html", "zip"];
-  var FILTER_KEYS = [
-    "scenario",
-    "capability",
-    "complexity",
-    "environment",
-    "modality",
-    "source",
-    "grading_type",
-  ];
-
-  //: Task statuses that are not job statuses: the runner records these per task
-  //: and they have no Chinese spelling, so they are shown as the token an
-  //: operator would grep for.
-  var TASK_STATUS_TEXT = { skipped: "跳过", no_artifacts: "无产物", missing: "缺失" };
-
-  // ── helpers ─────────────────────────────────────────────────────────────
-
-  function pad(value) {
-    return value < 10 ? "0" + value : String(value);
-  }
-
-  function localZone() {
-    try {
-      return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-    } catch (err) {
-      return "";
-    }
-  }
-
-  function offsetLabel(date) {
-    var minutes = -date.getTimezoneOffset();
-    var sign = minutes >= 0 ? "+" : "-";
-    var abs = Math.abs(minutes);
-    return "UTC" + sign + pad(Math.floor(abs / 60)) + ":" + pad(abs % 60);
-  }
-
-  function asDate(iso) {
-    if (!iso) return null;
-    var date = new Date(iso);
-    return isNaN(date.getTime()) ? null : date;
-  }
-
-  /** `MM-DD HH:mm` in the reader's own zone — the one they schedule in. */
-  function fmtShort(iso) {
-    var date = asDate(iso);
-    if (!date) return "—";
-    return (
-      pad(date.getMonth() + 1) + "-" + pad(date.getDate()) + " " +
-      pad(date.getHours()) + ":" + pad(date.getMinutes())
-    );
-  }
-
-  function fmtFull(iso) {
-    var date = asDate(iso);
-    if (!date) return "—";
-    return (
-      date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()) + " " +
-      pad(date.getHours()) + ":" + pad(date.getMinutes()) + ":" + pad(date.getSeconds())
-    );
-  }
-
-  function fmtUtc(iso) {
-    var date = asDate(iso);
-    if (!date) return "—";
-    return (
-      date.getUTCFullYear() + "-" + pad(date.getUTCMonth() + 1) + "-" + pad(date.getUTCDate()) + " " +
-      pad(date.getUTCHours()) + ":" + pad(date.getUTCMinutes())
-    );
-  }
-
-  /** "还有 2 小时 13 分起跑" — an empty cell reads as broken, this reads as waiting. */
-  function untilText(iso) {
-    var date = asDate(iso);
-    if (!date) return "";
-    var diff = date.getTime() - Date.now();
-    if (diff <= 0) return "已到时间，等待调度";
-    var minutes = Math.floor(diff / 60000);
-    var days = Math.floor(minutes / 1440);
-    var hours = Math.floor((minutes % 1440) / 60);
-    var rest = minutes % 60;
-    if (days > 0) return "还有 " + days + " 天 " + hours + " 小时";
-    if (hours > 0) return "还有 " + hours + " 小时 " + rest + " 分";
-    if (minutes > 0) return "还有 " + rest + " 分";
-    return "不到 1 分钟";
-  }
-
-  /** How long the run itself took, in the units a reader thinks in. */
-  function fmtDuration(seconds) {
-    var value = Number(seconds);
-    if (!isFinite(value) || value <= 0) return "—";
-    if (value < 60) return value.toFixed(1) + "s";
-    var minutes = Math.floor(value / 60);
-    var rest = Math.round(value % 60);
-    if (minutes < 60) return minutes + "m " + rest + "s";
-    return Math.floor(minutes / 60) + "h " + (minutes % 60) + "m";
-  }
-
-  function fmtPct(value) {
-    if (value === null || value === undefined || isNaN(value)) return "—";
-    return (Number(value) * 100).toFixed(1) + "%";
-  }
-
-  function fmtNum(value, digits) {
-    if (value === null || value === undefined || isNaN(value)) return "—";
-    return Number(value).toFixed(digits === undefined ? 3 : digits);
-  }
-
-  function shortId(id) {
-    if (!id) return "";
-    return id.replace(/^job-/, "").slice(0, 8);
-  }
-
-  function statusMeta(status) {
-    switch (status) {
-      case "running":
-        return { text: "运行中", color: "processing" };
-      case "queued":
-        return { text: "已排队", color: "blue" };
-      case "scheduled":
-        return { text: "待起跑", color: "gold" };
-      case "finished":
-        return { text: "已完成", color: "success" };
-      case "failed":
-        return { text: "失败", color: "error" };
-      case "canceled":
-        return { text: "已取消", color: "default" };
-      case "new":
-        return { text: "已登记", color: "default" };
-      default:
-        return { text: status || "未知", color: "default" };
-    }
-  }
-
-  function windowLabel(kind) {
-    if (kind === "immediate") return "即时";
-    if (kind === "night") return "夜间固定窗";
-    if (kind === "custom") return "自定义区间";
-    return kind || "—";
-  }
-
-  function errOf(err) {
-    return {
-      code: (err && err.code) || "request_failed",
-      message: (err && err.message) || "请求失败",
-      details: (err && err.details) || null,
-    };
-  }
-
-  function iconOf(name, fallback) {
-    var Component = icons[name];
-    return Component ? h(Component) : fallback;
-  }
-
-  function readLS(key, fallback) {
-    try {
-      var value = window.localStorage.getItem(LS + key);
-      return value === null ? fallback : value;
-    } catch (err) {
-      return fallback;
-    }
-  }
-
-  function writeLS(key, value) {
-    try {
-      window.localStorage.setItem(LS + key, value);
-    } catch (err) {
-      /* private mode: the form still works, it just forgets */
-    }
-  }
-
-  function copyText(value, label) {
-    if (!value) return;
-    try {
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(String(value));
-        message.success((label || "已复制") + "：" + String(value).slice(0, 40));
-        return;
-      }
-    } catch (err) {
-      /* fall through to the hint below */
-    }
-    message.info(String(value));
-  }
-
-  // ── api ─────────────────────────────────────────────────────────────────
-
-  function call(method, path, body) {
-    var url = host.getApiUrl(API + path);
-    var headers = { "Content-Type": "application/json" };
-    var token = typeof host.getApiToken === "function" ? host.getApiToken() : "";
-    if (token) headers.Authorization = "Bearer " + token;
-    return fetch(url, {
-      method: method,
-      headers: headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    }).then(readResponse);
-  }
-
-  function readResponse(response) {
-    return response.text().then(function (text) {
-      var data = null;
-      if (text) {
-        try {
-          data = JSON.parse(text);
-        } catch (err) {
-          data = { message: text.slice(0, 400) };
-        }
-      }
-      if (!response.ok) {
-        var error = new Error((data && (data.message || data.error)) || "HTTP " + response.status);
-        error.status = response.status;
-        error.code = data && data.error;
-        error.details = data && data.details;
-        throw error;
-      }
-      return data;
-    });
-  }
-
-  /** A raw-body upload: the package bytes are the body, metadata is the query. */
-  function uploadPackage(file, query) {
-    var url = host.getApiUrl(API + "/v1/datasets/packages?" + query);
-    var headers = {};
-    var token = typeof host.getApiToken === "function" ? host.getApiToken() : "";
-    if (token) headers.Authorization = "Bearer " + token;
-    headers["Content-Type"] = "application/zip";
-    return fetch(url, { method: "POST", headers: headers, body: file }).then(readResponse);
-  }
-
-  /** Fetch a protected file through the proxy, then hand it to the browser. */
-  function downloadPath(path, filename) {
-    var url = host.getApiUrl(API + path);
-    var headers = {};
-    var token = typeof host.getApiToken === "function" ? host.getApiToken() : "";
-    if (token) headers.Authorization = "Bearer " + token;
-    return fetch(url, { headers: headers })
-      .then(function (response) {
-        if (!response.ok) throw new Error("HTTP " + response.status);
-        return response.blob();
-      })
-      .then(function (blob) {
-        saveBlob(blob, filename);
-      });
-  }
-
-  function saveBlob(blob, filename) {
-    var href = URL.createObjectURL(blob);
-    var anchor = document.createElement("a");
-    anchor.href = href;
-    anchor.download = filename || "download";
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    setTimeout(function () {
-      URL.revokeObjectURL(href);
-    }, 2000);
-  }
-
-  var api = {
-    config: function () {
-      return call("GET", "/config");
-    },
-    saveConfig: function (body) {
-      return call("PUT", "/config", body);
-    },
-    probe: function () {
-      return call("POST", "/config/probe", {});
-    },
-    learnIdentity: function (jobId) {
-      return call("POST", "/identity/" + encodeURIComponent(jobId), {});
-    },
-    datasets: function () {
-      return call("GET", "/v1/datasets");
-    },
-    categories: function () {
-      return call("GET", "/v1/dataset-categories");
-    },
-    resolve: function (selector) {
-      return call("POST", "/v1/datasets/resolve", { selector: selector });
-    },
-    jobs: function () {
-      return call("GET", "/v1/jobs");
-    },
-    job: function (jobId) {
-      return call("GET", "/v1/jobs/" + encodeURIComponent(jobId));
-    },
-    submit: function (body) {
-      return call("POST", "/v1/jobs", body);
-    },
-    reorder: function (jobId, target) {
-      return call("PATCH", "/v1/jobs/" + encodeURIComponent(jobId), target);
-    },
-    cancel: function (jobId, reason) {
-      return call("POST", "/v1/jobs/" + encodeURIComponent(jobId) + "/cancel", {
-        reason: reason || "",
-      });
-    },
-    detail: function (jobId, sensitivity) {
-      return call(
-        "GET",
-        "/v1/jobs/" + encodeURIComponent(jobId) + "/detail?sensitivity=" + sensitivity,
-      );
-    },
-    taskDetail: function (jobId, taskId, sensitivity, attempt) {
-      return call(
-        "GET",
-        "/v1/jobs/" + encodeURIComponent(jobId) + "/tasks/" + encodeURIComponent(taskId) +
-          "/detail?sensitivity=" + sensitivity +
-          (attempt ? "&attempt=" + attempt : ""),
-      );
-    },
-    results: function (jobId) {
-      return call("GET", "/v1/jobs/" + encodeURIComponent(jobId) + "/results");
-    },
-    transcript: function (jobId, taskId, attempt, cursor) {
-      return call(
-        "GET",
-        "/v1/jobs/" + encodeURIComponent(jobId) + "/transcript?task_id=" +
-          encodeURIComponent(taskId) + "&attempt=" + attempt + "&cursor=" + (cursor || 0),
-      );
-    },
-    report: function (jobId, format, sensitivity) {
-      return call(
-        "GET",
-        "/v1/jobs/" + encodeURIComponent(jobId) + "/report?format=" + format +
-          "&sensitivity=" + sensitivity,
-      );
-    },
-    createDataset: function (body) {
-      return call("POST", "/v1/datasets", body);
-    },
-    editDataset: function (datasetId, body) {
-      return call("PUT", "/v1/datasets/" + encodeURIComponent(datasetId), body);
-    },
-    deleteDataset: function (datasetId) {
-      return call("DELETE", "/v1/datasets/" + encodeURIComponent(datasetId));
-    },
-    createCategory: function (body) {
-      return call("POST", "/v1/dataset-categories", body);
-    },
-    deleteCategory: function (name) {
-      return call("DELETE", "/v1/dataset-categories/" + encodeURIComponent(name));
-    },
-  };
-
-  // ── design system ───────────────────────────────────────────────────────
-
-  function useStyles() {
-    var token = useToken();
-    return {
-      token: token,
-      // Surfaces
-      page: { display: "flex", minHeight: "calc(100vh - 96px)", background: token.colorBgLayout },
-      rail: {
-        width: 216,
-        flex: "0 0 216px",
-        borderRight: "1px solid " + token.colorBorderSecondary,
-        background: token.colorBgContainer,
-        display: "flex",
-        flexDirection: "column",
-        padding: "18px 12px",
-        position: "sticky",
-        top: 0,
-        alignSelf: "flex-start",
-        maxHeight: "100vh",
-      },
-      main: {
-        flex: 1,
-        minWidth: 0,
-        padding: "22px 26px 56px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 16,
-      },
-      card: {
-        background: token.colorBgContainer,
-        // ``colorBorderSecondary`` is nearly the layout background on a bright
-        // screen, so a card drawn with it reads as one continuous sheet.  The
-        // stronger border plus the host's own tertiary shadow is what makes two
-        // stacked surfaces separable -- and both come from the token set, so
-        // dark mode is the same code path.
-        border: "1px solid " + token.colorBorder,
-        borderRadius: token.borderRadiusLG,
-        boxShadow: token.boxShadowTertiary,
-      },
-      // Type
-      h1: { fontSize: 20, fontWeight: 600, color: token.colorText, lineHeight: "28px", margin: 0 },
-      h2: { fontSize: 15, fontWeight: 600, color: token.colorText, margin: 0 },
-      muted: { color: token.colorTextSecondary, fontSize: 12 },
-      tiny: { color: token.colorTextTertiary, fontSize: 12 },
-      mono: {
-        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-        fontSize: 12,
-      },
-      //: An inner surface (a row of a list, an artifact, a trace).  The fill
-      //: alone is nearly white on a white card, so the border does the work.
-      block: {
-        background: token.colorFillQuaternary,
-        border: "1px solid " + token.colorBorder,
-        borderRadius: token.borderRadius,
-      },
-      num: { fontVariantNumeric: "tabular-nums" },
-      // Layout
-      row: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
-      stack: { display: "flex", flexDirection: "column", gap: 12 },
-      grid: {
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-        gap: 12,
-      },
-      sectionHead: {
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 12,
-        flexWrap: "wrap",
-        marginBottom: 12,
-      },
-    };
-  }
-
-  /** A card whose header is drawn by hand, so sections share one rhythm. */
-  function Panel(props) {
-    var s = useStyles();
-    return h(
-      "section",
-      { style: Object.assign({}, s.card, props.style, { padding: props.pad === false ? 0 : 16 }) },
-      props.title || props.extra
-        ? h(
-            "div",
-            { style: Object.assign({}, s.sectionHead, { marginBottom: props.title ? 12 : 0 }) },
-            h(
-              "div",
-              { style: { minWidth: 0 } },
-              props.title ? h("div", { style: s.h2 }, props.title) : null,
-              props.hint ? h("div", { style: s.tiny, marginTop: 2 }, props.hint) : null,
-            ),
-            props.extra || null,
-          )
-        : null,
-      props.children,
-    );
-  }
-
-  function Field(props) {
-    var s = useStyles();
-    return h(
-      "div",
-      { style: { marginBottom: props.last ? 0 : 12 } },
-      h(
-        "div",
-        { style: Object.assign({}, s.muted, { marginBottom: 4 }) },
-        props.label,
-        props.hint
-          ? h("span", { style: { marginLeft: 6, color: s.token.colorTextTertiary } }, props.hint)
-          : null,
-      ),
-      props.children,
-    );
-  }
-
-  function Dot(props) {
-    return h("span", {
-      style: {
-        display: "inline-block",
-        width: 7,
-        height: 7,
-        borderRadius: "50%",
-        background: props.color,
-        marginRight: 6,
-        flex: "0 0 auto",
-      },
-    });
-  }
-
-  /** The one place a status becomes a colour, so two views cannot disagree. */
-  function StatusPill(props) {
-    var s = useStyles();
-    var map = {
-      processing: s.token.colorProcessing,
-      success: s.token.colorSuccess,
-      error: s.token.colorError,
-      warning: s.token.colorWarning,
-      blue: s.token.colorInfo,
-      gold: s.token.colorWarning,
-      default: s.token.colorTextTertiary,
-    };
-    var color = map[props.color] || s.token.colorTextTertiary;
-    var text = props.text;
-    if (props.taskStatus) {
-      text = TASK_STATUS_TEXT[props.taskStatus] || statusMeta(props.taskStatus).text;
-      if (TASK_STATUS_TEXT[props.taskStatus]) color = s.token.colorError;
-    }
-    return h(
-      "span",
-      {
-        title: props.title || "",
-        style: {
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 5,
-          padding: "1px 8px",
-          borderRadius: 999,
-          fontSize: 12,
-          lineHeight: "18px",
-          color: color,
-          background: s.token.colorFillQuaternary,
-          border: "1px solid " + s.token.colorBorderSecondary,
-          whiteSpace: "nowrap",
-        },
-      },
-      h(Dot, { color: color }),
-      text,
-    );
-  }
-
-  function StatCard(props) {
-    var s = useStyles();
-    return h(
-      "div",
-      { style: Object.assign({}, s.card, { padding: "14px 16px", minWidth: 0 }) },
-      h("div", { style: s.muted }, props.label),
-      h(
-        "div",
-        {
-          style: Object.assign({}, s.num, {
-            fontSize: 24,
-            fontWeight: 600,
-            lineHeight: "32px",
-            color: props.color || s.token.colorText,
-            marginTop: 2,
-          }),
-        },
-        props.value,
-      ),
-      props.hint ? h("div", { style: Object.assign({}, s.tiny, { marginTop: 2 }) }, props.hint) : null,
-    );
-  }
-
-  /** One of the four numbers across the top of a report, with an optional bar. */
-  function ReportMetric(props) {
-    var s = useStyles();
-    return h(
-      "div",
-      {
-        style: {
-          padding: "0 14px",
-          borderLeft: "1px solid " + s.token.colorBorderSecondary,
-          minWidth: 0,
-        },
-      },
-      h("div", { style: s.tiny }, props.label),
-      h(
-        "div",
-        { style: Object.assign({}, s.num, { fontSize: 23, fontWeight: 600, lineHeight: "30px" }) },
-        props.value,
-      ),
-      props.bar ? props.bar : h("div", { style: s.tiny }, props.hint || ""),
-    );
-  }
-
-  function ScoreText(props) {
-    var s = useStyles();
-    var value = props.value;
-    if (value === null || value === undefined) {
-      return h("span", { style: Object.assign({}, s.tiny, s.num) }, "—");
-    }
-    var color =
-      value >= 0.8 ? s.token.colorSuccess : value >= 0.5 ? s.token.colorWarning : s.token.colorError;
-    return h(
-      "span",
-      { style: Object.assign({}, s.num, { color: color, fontWeight: props.bold ? 600 : 400 }) },
-      fmtNum(value, 3),
-    );
-  }
-
-  /** A tiny bar under a number: reads as "how full" without a tooltip. */
-  function MiniBar(props) {
-    var s = useStyles();
-    var percent = Math.max(0, Math.min(100, Math.round((Number(props.percent) || 0) * 100)));
-    var color = props.color || s.token.colorPrimary;
-    return h(
-      "div",
-      {
-        style: {
-          height: 6,
-          borderRadius: 3,
-          background: s.token.colorFill,
-          overflow: "hidden",
-          minWidth: 48,
-        },
-      },
-      h("div", { style: { width: percent + "%", height: "100%", background: color } }),
-    );
-  }
-
-  /** An id a reader will want to paste into a log search. */
-  function CopyId(props) {
-    var s = useStyles();
-    var value = props.value || "";
-    if (!value) return h("span", { style: s.tiny }, "—");
-    return h(
-      "span",
-      { style: Object.assign({}, s.row, { gap: 4, flexWrap: "nowrap" }) },
-      h("code", { style: Object.assign({}, s.mono, { color: s.token.colorText }) }, props.full ? value : value.slice(0, 12)),
-      h(
-        Button,
-        {
-          size: "small",
-          type: "text",
-          style: { padding: "0 4px", height: 18 },
-          onClick: function (event) {
-            if (event && event.stopPropagation) event.stopPropagation();
-            copyText(value, props.label || "已复制");
-          },
-        },
-        "复制",
-      ),
-    );
-  }
-
-  function EmptyState(props) {
-    var s = useStyles();
-    return h(
-      "div",
-      { style: { padding: "48px 16px", textAlign: "center" } },
-      h("div", { style: { fontSize: 30, lineHeight: "40px", marginBottom: 8 } }, props.glyph || "◇"),
-      h("div", { style: { fontSize: 14, color: s.token.colorText, marginBottom: 4 } }, props.title),
-      h("div", { style: Object.assign({}, s.muted, { margin: "0 auto 14px", maxWidth: 420 }) }, props.hint),
-      props.action || null,
-    );
-  }
-
-  function NavItem(props) {
-    var s = useStyles();
-    var active = props.active;
-    return h(
-      "button",
-      {
-        type: "button",
-        onClick: props.onClick,
-        style: {
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          width: "100%",
-          padding: "9px 10px",
-          border: "none",
-          borderRadius: s.token.borderRadius,
-          background: active ? s.token.colorPrimaryBg : "transparent",
-          color: active ? s.token.colorPrimary : s.token.colorText,
-          fontWeight: active ? 600 : 400,
-          fontSize: 13,
-          cursor: "pointer",
-          textAlign: "left",
-        },
-      },
-      h("span", { style: { width: 18, textAlign: "center", opacity: active ? 1 : 0.75 } }, props.glyph),
-      h("span", { style: { flex: 1 } }, props.label),
-      props.badge
-        ? h(
-            "span",
-            {
-              style: {
-                fontSize: 11,
-                padding: "0 6px",
-                borderRadius: 999,
-                background: s.token.colorFillSecondary,
-                color: s.token.colorTextSecondary,
-              },
-            },
-            props.badge,
-          )
-        : null,
-    );
-  }
-
-  // ── dataset picker + resolve ────────────────────────────────────────────
-
-  function SelectorPanel(props) {
-    var s = useStyles();
-    if (props.loading) {
-      return h("div", { style: Object.assign({}, s.card, { padding: 12 }) },
-        h(Spin, { size: "small" }), " 正在解析选择…");
-    }
-    if (props.error) {
-      return h(Alert, {
-        type: "error",
-        showIcon: true,
-        message: "解析失败：" + props.error.code,
-        description: props.error.message,
-      });
-    }
-    var res = props.resolved;
-    if (!res) {
-      return h(
-        "div",
-        { style: Object.assign({}, s.card, { padding: 14, background: s.token.colorFillQuaternary }) },
-        h("div", { style: s.muted }, "选定分类或数据集后，这里显示这次会跑到哪些题。"),
-      );
-    }
-    var bySource = res.by_dataset || {};
-    return h(
-      "div",
-      { style: Object.assign({}, s.card, { padding: 14 }) },
-      h(
-        "div",
-        { style: s.row },
-        h("span", { style: { fontSize: 22, fontWeight: 600 } }, res.task_count),
-        h("span", { style: s.muted }, "道题"),
-        h("span", { style: s.tiny }, "摘要 " + (res.task_ids_digest || "")),
-      ),
-      Object.keys(bySource).length
-        ? h(
-            "div",
-            { style: Object.assign({}, s.row, { marginTop: 6 }) },
-            h("span", { style: s.tiny }, "按来源："),
-            Object.keys(bySource).map(function (key) {
-              return h(Tag, { key: key, bordered: false }, key + " " + bySource[key]);
-            }),
-          )
-        : null,
-      Object.keys(res.by_category || {}).length
-        ? h(
-            "div",
-            { style: Object.assign({}, s.row, { marginTop: 4 }) },
-            h("span", { style: s.tiny }, "分类展开："),
-            Object.keys(res.by_category).map(function (key) {
-              return h(Tag, { key: key, bordered: false }, key + " " + res.by_category[key]);
-            }),
-          )
-        : null,
-      (res.task_ids || []).length
-        ? h(
-            "details",
-            { style: { marginTop: 8 } },
-            h("summary", { style: Object.assign({}, s.tiny, { cursor: "pointer" }) },
-              "题目清单（前 40 条）"),
-            h(
-              "div",
-              { style: Object.assign({}, s.mono, { marginTop: 6, maxHeight: 160, overflow: "auto" }) },
-              (res.task_ids || []).slice(0, 40).map(function (id) {
-                return h("div", { key: id }, id);
-              }),
-            ),
-          )
-        : null,
-    );
-  }
-
-  // ── module: jobs list ───────────────────────────────────────────────────
-
-  function JobsModule(props) {
-    var s = useStyles();
-    var jobs = props.jobs || [];
-    var [status, setStatus] = useState("all");
-    var [query, setQuery] = useState("");
-    var [busy, setBusy] = useState("");
-
-    var waiting = useMemo(function () {
-      return jobs
-        .filter(function (job) {
-          return ORDERABLE[job.status];
-        })
-        .sort(function (a, b) {
-          return a.queue_pos - b.queue_pos;
-        });
-    }, [jobs]);
-
-    var stats = useMemo(
-      function () {
-        var running = 0;
-        var done = 0;
-        var scores = [];
-        jobs.forEach(function (job) {
-          if (job.status === "running") running += 1;
-          if (job.status === "finished") done += 1;
-          if (typeof job.score === "number") scores.push(job.score);
-        });
-        var mean = scores.length
-          ? scores.reduce(function (a, b) {
-              return a + b;
-            }, 0) / scores.length
-          : null;
-        return { running: running, waiting: waiting.length, done: done, mean: mean, total: jobs.length };
-      },
-      [jobs, waiting],
-    );
-
-    var rows = useMemo(
-      function () {
-        var needle = query.trim().toLowerCase();
-        return jobs
-          .filter(function (job) {
-            if (status === "running" && job.status !== "running") return false;
-            if (status === "waiting" && !ORDERABLE[job.status]) return false;
-            if (status === "done" && !TERMINAL[job.status]) return false;
-            if (!needle) return true;
-            return [job.job_id, job.purpose, job.product, job.submitter, job.acp_url]
-              .join(" ")
-              .toLowerCase()
-              .indexOf(needle) >= 0;
-          })
-          .sort(function (a, b) {
-            // Waiting first in queue order, then everything else newest first:
-            // the two questions this list answers are "what runs next" and
-            // "what did I just do".
-            var aWaiting = ORDERABLE[a.status] ? 0 : 1;
-            var bWaiting = ORDERABLE[b.status] ? 0 : 1;
-            if (aWaiting !== bWaiting) return aWaiting - bWaiting;
-            if (aWaiting === 0) return a.queue_pos - b.queue_pos;
-            return String(b.created_at || "").localeCompare(String(a.created_at || ""));
-          });
-      },
-      [jobs, status, query],
-    );
-
-    function move(job, direction) {
-      var index = waiting.indexOf(job);
-      var target = null;
-      if (direction === "up") {
-        var previous = waiting[index - 1];
-        if (previous) target = { before_id: previous.job_id };
-      } else {
-        var next = waiting[index + 1];
-        if (next) target = { after_id: next.job_id };
-      }
-      if (!target) return;
-      setBusy(job.job_id);
-      api
-        .reorder(job.job_id, target)
-        .then(function () {
-          return props.onRefresh();
-        })
-        .catch(function (err) {
-          message.error("调序被拒：" + errOf(err).message);
-          return props.onRefresh();
-        })
-        .then(function () {
-          setBusy("");
-        });
-    }
-
-    function cancel(job) {
-      setBusy(job.job_id);
-      api
-        .cancel(job.job_id, "")
-        .then(function () {
-          message.success("已取消");
-          return props.onRefresh();
-        })
-        .catch(function (err) {
-          message.error("取消失败：" + errOf(err).message);
-          return props.onRefresh();
-        })
-        .then(function () {
-          setBusy("");
-        });
-    }
-
-    var columns = [
-      {
-        title: "状态",
-        dataIndex: "status",
-        width: 100,
-        render: function (value, row) {
-          var meta = statusMeta(value);
-          return h(
-            "div",
-            { style: { display: "flex", flexDirection: "column", gap: 4 } },
-            h(StatusPill, { text: meta.text, color: meta.color }),
-            value === "queued" || value === "scheduled"
-              ? h("span", { style: s.tiny }, "位置 " + fmtNum(row.queue_pos, 0))
-              : null,
-          );
-        },
-      },
-      {
-        title: "评测",
-        dataIndex: "purpose",
-        render: function (_, job) {
-          var mine = props.subject && job.submitter === props.subject;
-          return h(
-            "div",
-            { style: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 } },
-            h(
-              "div",
-              { style: s.row },
-              h(Text, { strong: true }, job.purpose || "（未写目的）"),
-              mine ? h(Tag, { color: "blue", bordered: false }, "我的") : null,
-            ),
-            h(
-              "div",
-              { style: Object.assign({}, s.row, { gap: 6 }) },
-              h("span", { style: s.mono }, shortId(job.job_id)),
-              job.product ? h("span", { style: s.tiny }, job.product) : null,
-              job.acp_url
-                ? h("span", {
-                    style: Object.assign({}, s.tiny, {
-                      maxWidth: 260,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }),
-                    title: job.acp_url,
-                  }, job.acp_url)
-                : null,
-            ),
-          );
-        },
-      },
-      {
-        title: "题目",
-        width: 150,
-        render: function (_, job) {
-          var total = Number(job.task_count) || 0;
-          var finished = Number(job.tasks_finished) || 0;
-          var failed = Number(job.tasks_failed) || 0;
-          if (!total) return h("span", { style: s.tiny }, "—");
-          return h(
-            "div",
-            { style: { display: "flex", flexDirection: "column", gap: 4 } },
-            h(
-              "div",
-              { style: Object.assign({}, s.row, { gap: 4 }) },
-              h("span", { style: Object.assign({}, s.num, { fontSize: 12 }) }, finished + " / " + total),
-              failed ? h("span", { style: { fontSize: 12, color: s.token.colorError } }, "败 " + failed) : null,
-            ),
-            h(Progress, {
-              percent: total ? Math.round((finished / total) * 100) : 0,
-              size: "small",
-              showInfo: false,
-              status: "normal",
-              strokeColor: failed ? s.token.colorError : s.token.colorPrimary,
-            }),
-          );
-        },
-      },
-      {
-        title: "分数",
-        dataIndex: "score",
-        width: 92,
-        render: function (value) {
-          return h(ScoreText, { value: value, bold: true });
-        },
-      },
-      { title: "提交人", dataIndex: "submitter", width: 100 },
-      {
-        title: "时间",
-        dataIndex: "created_at",
-        width: 132,
-        render: function (_, job) {
-          return h(
-            "div",
-            { style: { display: "flex", flexDirection: "column" } },
-            h("span", { style: { fontSize: 12 } }, fmtShort(job.created_at)),
-            h("span", { style: s.tiny },
-              TERMINAL[job.status] ? "结束 " + fmtShort(job.finished_at) : untilText(job.not_before)),
-          );
-        },
-      },
-      {
-        title: "",
-        width: 168,
-        render: function (_, job) {
-          var mine = !props.subject || job.submitter === props.subject;
-          var movable = ORDERABLE[job.status] && mine;
-          var index = waiting.indexOf(job);
-          return h(
-            Space,
-            { size: 2 },
-            movable
-              ? h(
-                  Tooltip,
-                  { title: "上移一位" },
-                  h(Button, {
-                    size: "small",
-                    type: "text",
-                    disabled: index <= 0 || busy === job.job_id,
-                    onClick: function (event) {
-                      event.stopPropagation();
-                      move(job, "up");
-                    },
-                  }, "↑"),
-                )
-              : null,
-            movable
-              ? h(
-                  Tooltip,
-                  { title: "下移一位" },
-                  h(Button, {
-                    size: "small",
-                    type: "text",
-                    disabled: index >= waiting.length - 1 || busy === job.job_id,
-                    onClick: function (event) {
-                      event.stopPropagation();
-                      move(job, "down");
-                    },
-                  }, "↓"),
-                )
-              : null,
-            TERMINAL[job.status]
-              ? h(
-                  Button,
-                  {
-                    size: "small",
-                    type: "link",
-                    onClick: function (event) {
-                      event.stopPropagation();
-                      props.onOpen(job.job_id);
-                    },
-                  },
-                  "报告",
-                )
-              : h(
-                  Popconfirm,
-                  {
-                    title: "取消这个评测？",
-                    description:
-                      job.status === "running"
-                        ? "运行中的会话会被停掉，已跑完的题保留。"
-                        : "取消后不能恢复。",
-                    okText: "取消评测",
-                    cancelText: "算了",
-                    onConfirm: function () {
-                      cancel(job);
-                    },
-                  },
-                  h(
-                    Button,
-                    { size: "small", type: "text", danger: true, loading: busy === job.job_id },
-                    "取消",
-                  ),
-                ),
-            h(
-              Button,
-              {
-                size: "small",
-                type: "text",
-                onClick: function (event) {
-                  event.stopPropagation();
-                  props.onOpen(job.job_id);
-                },
-              },
-              "详情",
-            ),
-          );
-        },
-      },
-    ];
-
-    return h(
-      "div",
-      { style: { display: "flex", flexDirection: "column", gap: 16 } },
-      h(
-        "div",
-        { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 } },
-        h(StatCard, { label: "运行中", value: stats.running, hint: stats.running ? "占着并发槽" : "当前空闲" }),
-        h(StatCard, { label: "等待中", value: stats.waiting, hint: stats.waiting ? "可调序" : "队列为空" }),
-        h(StatCard, { label: "已完成", value: stats.done, hint: "全部 " + stats.total + " 次提交" }),
-        h(StatCard, {
-          label: "平均分",
-          value: stats.mean === null ? "—" : fmtPct(stats.mean),
-          color: stats.mean === null ? undefined : stats.mean >= 0.8 ? s.token.colorSuccess : undefined,
-          hint: "有分数的评测",
-        }),
-      ),
-      h(
-        Panel,
-        {
-          pad: false,
-          title: null,
-          children: h(
-            "div",
-            null,
-            h(
-              "div",
-              { style: Object.assign({}, s.sectionHead, { padding: "14px 16px", marginBottom: 0 }) },
-              h(
-                "div",
-                { style: s.row },
-                h(Segmented, {
-                  size: "small",
-                  value: status,
-                  onChange: setStatus,
-                  options: [
-                    { value: "all", label: "全部" },
-                    { value: "running", label: "运行中" },
-                    { value: "waiting", label: "等待中" },
-                    { value: "done", label: "已结束" },
-                  ],
-                }),
-                h(Input, {
-                  allowClear: true,
-                  size: "small",
-                  placeholder: "搜目的、job id、产品、提交人",
-                  style: { width: 240 },
-                  value: query,
-                  onChange: function (event) {
-                    setQuery(event.target.value);
-                  },
-                }),
-              ),
-              h(
-                "div",
-                { style: s.row },
-                h(Button, { size: "small", onClick: props.onRefresh }, "刷新"),
-                h(
-                  Button,
-                  { size: "small", type: "primary", onClick: props.onNew },
-                  "＋ 新建评测",
-                ),
-              ),
-            ),
-            h(Table, {
-              size: "middle",
-              rowKey: "job_id",
-              dataSource: rows,
-              columns: columns,
-              pagination: rows.length > 12 ? { pageSize: 12, size: "small" } : false,
-              scroll: { x: 1040 },
-              onHeaderRow: function () {
-                return { style: { background: s.token.colorFillQuaternary } };
-              },
-              onRow: function (job) {
-                return {
-                  onClick: function () {
-                    props.onOpen(job.job_id);
-                  },
-                  style: { cursor: "pointer" },
-                };
-              },
-              locale: {
-                emptyText: h(EmptyState, {
-                  glyph: "🧪",
-                  title: jobs.length ? "这个筛选下没有评测" : "还没有评测",
-                  hint: jobs.length
-                    ? "换个筛选条件，或者清空搜索词。"
-                    : "点右上角「新建评测」，填一个 ACP 地址和要跑的题就能排队。",
-                  action: jobs.length
-                    ? null
-                    : h(Button, { type: "primary", onClick: props.onNew }, "新建评测"),
-                }),
-              },
-            }),
-          ),
-        },
-      ),
-    );
-  }
-
-  // ── modal: new job ──────────────────────────────────────────────────────
-
-  function NewJobModal(props) {
-    var s = useStyles();
-    var catalog = props.catalog || { datasets: [], categories: [] };
-    var [acpUrl, setAcpUrl] = useState(readLS("acpUrl", ""));
-    var [product, setProduct] = useState(readLS("product", "qwenpaw-desktop"));
-    var [purpose, setPurpose] = useState("");
-    var [datasetIds, setDatasetIds] = useState([]);
-    var [categoryNames, setCategoryNames] = useState([]);
-    var [kind, setKind] = useState("immediate");
-    var [start, setStart] = useState("");
-    var [end, setEnd] = useState("");
-    var [resolved, setResolved] = useState(null);
-    var [resolving, setResolving] = useState(false);
-    var [resolveError, setResolveError] = useState(null);
-    var [submitting, setSubmitting] = useState(false);
-    var [receipt, setReceipt] = useState(null);
-    var [serviceZone, setServiceZone] = useState(readLS("serviceZone", ""));
-
-    var selector = useMemo(
-      function () {
-        return { datasets: datasetIds, categories: categoryNames };
-      },
-      [datasetIds, categoryNames],
-    );
-    var selectorEmpty = datasetIds.length === 0 && categoryNames.length === 0;
-
-    // A fresh modal is a fresh submission: the previous receipt would otherwise
-    // read as this one's result.
-    useEffect(
-      function () {
-        if (props.open) return;
-        setReceipt(null);
-        setSubmitting(false);
-      },
-      [props.open],
-    );
-
-    useEffect(
-      function () {
-        if (selectorEmpty) {
-          setResolved(null);
-          setResolveError(null);
-          return undefined;
-        }
-        var alive = true;
-        setResolving(true);
-        var timer = setTimeout(function () {
-          api
-            .resolve(selector)
-            .then(function (result) {
-              if (!alive) return;
-              setResolved(result);
-              setResolveError(null);
-            })
-            .catch(function (err) {
-              if (!alive) return;
-              setResolved(null);
-              setResolveError(errOf(err));
-            })
-            .then(function () {
-              if (alive) setResolving(false);
-            });
-        }, 250);
-        return function () {
-          alive = false;
-          clearTimeout(timer);
-        };
-      },
-      [selector, selectorEmpty],
-    );
-
-    function isoFromPick(value) {
-      if (!value) return "";
-      var parsed = new Date(value.replace(" ", "T"));
-      return isNaN(parsed.getTime()) ? "" : parsed.toISOString();
-    }
-
-    var customStart = isoFromPick(start);
-    var customEnd = isoFromPick(end);
-    var windowProblem = null;
-    if (kind === "custom") {
-      if (!customStart || !customEnd) windowProblem = "自定义区间要填开始和结束两个时间";
-      else if (new Date(customEnd) <= new Date(customStart)) windowProblem = "结束时间必须晚于开始时间";
-      else if (new Date(customStart) < new Date()) windowProblem = "开始时间已经在过去";
-    }
-    var canSubmit =
-      !submitting && acpUrl.trim() && !selectorEmpty && resolved && !resolving && !windowProblem;
-
-    function submit() {
-      setSubmitting(true);
-      setReceipt(null);
-      var body = {
-        acp_url: acpUrl.trim(),
-        selector: selector,
-        product: product.trim(),
-        purpose: purpose.trim(),
-        window:
-          kind === "custom"
-            ? { kind: "custom", not_before: customStart, not_after: customEnd }
-            : { kind: kind },
-      };
-      api
-        .submit(body)
-        .then(function (result) {
-          writeLS("acpUrl", acpUrl.trim());
-          writeLS("product", product.trim());
-          if (result.window && result.window.tz) {
-            setServiceZone(result.window.tz);
-            writeLS("serviceZone", result.window.tz);
-          }
-          message.success("已排队，位置 " + fmtNum(result.queue_pos, 1));
-          if (props.onSubmitted) props.onSubmitted(result);
-          // The service has no "who am I" route; the row this job wrote does.
-          return api
-            .learnIdentity(result.job_id)
-            .then(function (identity) {
-              if (identity && identity.subject && props.onIdentity) {
-                props.onIdentity(identity.subject);
-              }
-            })
-            .catch(function () {
-              /* identity is a nicety, never a reason to fail a submission */
-            });
-        })
-        .catch(function (err) {
-          setReceipt({ error: errOf(err) });
-        })
-        .then(function () {
-          setSubmitting(false);
-        });
-    }
-
-    var datasetOptions = (catalog.datasets || []).map(function (entry) {
-      var unfiled = !entry.categories || entry.categories.length === 0;
-      return {
-        value: entry.id,
-        label: entry.name + " · " + entry.task_count + " 题" + (unfiled ? "（未分类）" : ""),
-      };
-    });
-    var categoryOptions = (catalog.categories || []).map(function (entry) {
-      return { value: entry.name, label: entry.name + " · " + (entry.dataset_count || 0) + " 个数据集" };
-    });
-
-    return h(
-      Modal,
-      {
-        open: props.open,
-        onCancel: props.onClose,
-        title: h(
-          "div",
-          { style: { display: "flex", flexDirection: "column", gap: 2 } },
-          h("span", { style: { fontSize: 16, fontWeight: 600 } }, "新建评测"),
-          h("span", { style: s.tiny }, "填一个被评测端的 ACP 地址，选题，然后排队"),
-        ),
-        width: 820,
-        style: { top: 32 },
-        footer: h(
-          "div",
-          { style: Object.assign({}, s.row, { justifyContent: "space-between" }) },
-          h(
-            "span",
-            { style: s.tiny },
-            resolved
-              ? "将跑 " + resolved.task_count + " 道题 · 摘要 " + (resolved.task_ids_digest || "")
-              : "选题后显示题量",
-          ),
-          h(
-            Space,
-            null,
-            h(Button, { onClick: props.onClose }, "取消"),
-            h(
-              Button,
-              { type: "primary", loading: submitting, disabled: !canSubmit, onClick: submit },
-              "提交排队",
-            ),
-          ),
-        ),
-      },
-      h(
-        "div",
-        { style: { display: "flex", flexDirection: "column", gap: 14 } },
-        h(
-          "div",
-          { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12 } },
-          h(
-            Field,
-            { label: "ACP 地址", hint: "被评测端", last: true },
-            h(Input, {
-              value: acpUrl,
-              placeholder: "http://127.0.0.1:8765",
-              onChange: function (event) {
-                setAcpUrl(event.target.value);
-              },
-            }),
-          ),
-          h(
-            Field,
-            { label: "评测产品", last: true },
-            h(Input, {
-              value: product,
-              placeholder: "qwenpaw-desktop",
-              onChange: function (event) {
-                setProduct(event.target.value);
-              },
-            }),
-          ),
-          h(
-            Field,
-            { label: "评测目的", hint: "给自己看的", last: true },
-            h(Input, {
-              value: purpose,
-              placeholder: "夜间冒烟 / 回归 / 发版前",
-              onChange: function (event) {
-                setPurpose(event.target.value);
-              },
-            }),
-          ),
-        ),
-        h("div", { style: { height: 1, background: s.token.colorBorderSecondary } }),
-        h(
-          "div",
-          { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 } },
-          h(
-            Field,
-            { label: "分类（整组）", hint: "与数据集混选", last: true },
-            h(Select, {
-              mode: "multiple",
-              allowClear: true,
-              style: { width: "100%" },
-              placeholder: "按分类整组加入",
-              value: categoryNames,
-              options: categoryOptions,
-              onChange: setCategoryNames,
-            }),
-          ),
-          h(
-            Field,
-            { label: "数据集", last: true },
-            h(Select, {
-              mode: "multiple",
-              allowClear: true,
-              style: { width: "100%" },
-              placeholder: "挑具体的数据集",
-              value: datasetIds,
-              options: datasetOptions,
-              onChange: setDatasetIds,
-            }),
-          ),
-        ),
-        selectorEmpty
-          ? h(
-              "div",
-              { style: Object.assign({}, s.card, { padding: 14, background: s.token.colorFillQuaternary }) },
-              h("div", { style: s.muted }, "还没有选题。先选一个数据集或分类，这里会显示题量与题目清单。"),
-            )
-          : h(SelectorPanel, { resolved: resolved, loading: resolving, error: resolveError }),
-        h("div", { style: { height: 1, background: s.token.colorBorderSecondary } }),
-        h(
-          "div",
-          { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12 } },
-          h(
-            Field,
-            { label: "可运行时间", last: true },
-            h(Segmented, {
-              value: kind,
-              onChange: setKind,
-              options: [
-                { value: "immediate", label: "即时" },
-                { value: "night", label: "夜间" },
-                { value: "custom", label: "自定义" },
-              ],
-            }),
-          ),
-          kind === "custom"
-            ? h(
-                Field,
-                { label: "开始（本地）", last: true },
-                h(DatePicker, {
-                  showTime: { format: "HH:mm" },
-                  format: "YYYY-MM-DD HH:mm",
-                  placeholder: "选择日期时间",
-                  style: { width: "100%" },
-                  onChange: function (_, text) {
-                    setStart(text);
-                  },
-                }),
-              )
-            : null,
-          kind === "custom"
-            ? h(
-                Field,
-                { label: "结束（本地）", last: true },
-                h(DatePicker, {
-                  showTime: { format: "HH:mm" },
-                  format: "YYYY-MM-DD HH:mm",
-                  placeholder: "选择日期时间",
-                  style: { width: "100%" },
-                  onChange: function (_, text) {
-                    setEnd(text);
-                  },
-                }),
-              )
-            : null,
-        ),
-        kind === "night"
-          ? h(Alert, {
-              type: "info",
-              showIcon: true,
-              message: "夜间窗口由服务的 schedule.night_window 决定，提交后回填区间。",
-            })
-          : null,
-        h(
-          "div",
-          { style: Object.assign({}, s.row, { gap: 16 }, s.tiny) },
-          h("span", null, "本地 " + localZone() + " " + offsetLabel(new Date())),
-          h("span", null, "服务 " + (serviceZone || "未知（提交后回填）")),
-          customStart ? h("span", null, "起跑 " + fmtFull(customStart) + " / " + fmtUtc(customStart) + " UTC") : null,
-        ),
-        windowProblem ? h(Alert, { type: "warning", showIcon: true, message: windowProblem }) : null,
-        receipt && receipt.error
-          ? h(Alert, {
-              type: "error",
-              showIcon: true,
-              message: "提交被拒：" + receipt.error.code,
-              description: h(
-                "div",
-                null,
-                h("div", null, receipt.error.message),
-                receipt.error.details
-                  ? h(
-                      "pre",
-                      { style: Object.assign({}, s.mono, { margin: "6px 0 0", whiteSpace: "pre-wrap" }) },
-                      JSON.stringify(receipt.error.details, null, 1),
-                    )
-                  : null,
-              ),
-            })
-          : null,
-      ),
-    );
-  }
-
-  // ── module: one report ──────────────────────────────────────────────────
-
-  /** A score in a ring, with the denominator spelled out underneath. */
-  function ScoreDial(props) {
-    var s = useStyles();
-    var score = props.score;
-    if (score === null || score === undefined) {
-      return h(
-        "div",
-        { style: { textAlign: "center" } },
-        h("div", { style: Object.assign({}, s.num, { fontSize: 34, fontWeight: 600, color: s.token.colorTextTertiary }) }, "—"),
-        h("div", { style: s.tiny }, "没有计分题"),
-      );
-    }
-    var color =
-      score >= 0.8 ? s.token.colorSuccess : score >= 0.5 ? s.token.colorWarning : s.token.colorError;
-    return h(
-      "div",
-      { style: { textAlign: "center" } },
-      h(Progress, {
-        type: "dashboard",
-        percent: Math.round(score * 1000) / 10,
-        size: 132,
-        strokeColor: color,
-        trailColor: s.token.colorFillSecondary,
-        format: function () {
-          return h(
-            "span",
-            { style: Object.assign({}, s.num, { fontSize: 26, fontWeight: 600, color: color }) },
-            fmtNum(score, 3),
-          );
-        },
-      }),
-      h("div", { style: s.tiny }, props.caption || ""),
-    );
-  }
-
-  function SliceBars(props) {
-    var s = useStyles();
-    var entries = Object.keys(props.data || {});
-    if (!entries.length) return h("span", { style: s.tiny }, "暂无可用切片");
-    var rows = entries
-      .map(function (name) {
-        return { name: name, value: props.data[name] };
-      })
-      .sort(function (a, b) {
-        return Number(b.value) - Number(a.value);
-      });
-    return h(
-      "div",
-      { style: { display: "flex", flexDirection: "column", gap: 6 } },
-      rows.map(function (row) {
-        return h(
-          "div",
-          { key: row.name, style: { display: "flex", alignItems: "center", gap: 10 } },
-          h("span", { style: Object.assign({ width: 168, flex: "0 0 168px" }, s.tiny), title: row.name }, row.name),
-          h(
-            "div",
-            { style: { flex: 1, minWidth: 80 } },
-            h(Progress, {
-              percent: Math.round((Number(row.value) || 0) * 100),
-              size: "small",
-              showInfo: false,
-              status: "normal",
-              strokeColor: s.token.colorPrimary,
-            }),
-          ),
-          h(
-            "span",
-            { style: Object.assign({ width: 52, textAlign: "right", flex: "0 0 52px" }, s.num) },
-            h(ScoreText, { value: row.value }),
-          ),
-        );
-      }),
-    );
-  }
-
-  function Fact(props) {
-    var s = useStyles();
-    return h(
-      "div",
-      { style: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 } },
-      h("span", { style: s.tiny }, props.label),
-      h("span", { style: { fontSize: 13, color: s.token.colorText, wordBreak: "break-word" } }, props.children),
-    );
-  }
-
-  function BrokenDown(props) {
-    var s = useStyles();
-    var entries = Object.keys(props.data || {});
-    if (!entries.length) return h("span", { style: s.tiny }, "没有逐项判分（非规则判分或未产出）");
-    return h(
-      "div",
-      { style: { display: "flex", flexDirection: "column", gap: 6 } },
-      entries.map(function (name) {
-        var value = Number(props.data[name]);
-        var ok = value >= 1;
-        return h(
-          "div",
-          {
-            key: name,
-            style: Object.assign({}, s.block, {
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "6px 10px",
-            }),
-          },
-          h(
-            "span",
-            {
-              style: {
-                width: 18,
-                textAlign: "center",
-                color: ok ? s.token.colorSuccess : s.token.colorError,
-                fontWeight: 600,
-              },
-            },
-            ok ? "✓" : "✗",
-          ),
-          h("span", { style: Object.assign({ flex: 1 }, s.mono) }, name),
-          h(
-            "span",
-            {
-              style: Object.assign({}, s.mono, s.num, {
-                color: ok ? s.token.colorSuccess : s.token.colorError,
-              }),
-            },
-            fmtNum(value, 3),
-          ),
-        );
-      }),
-    );
-  }
-
-  /** The event stream, one row per line, with the kind translated. */
-  function Timeline(props) {
-    var s = useStyles();
-    var events = props.events || [];
-    if (!events.length) {
-      return h("span", { style: s.tiny }, props.hint || "这次运行没有可读的轨迹");
-    }
-    var KIND = {
-      agent_message_chunk: "输出",
-      agent_thought_chunk: "思考",
-      tool_call: "调用",
-      tool_call_update: "结果",
-      plan: "计划",
-      plan_update: "计划",
-      user_message_chunk: "输入",
-      available_commands_update: "命令",
-      usage_update: "用量",
-      current_mode_update: "模式",
-      session_info_update: "会话",
-      config_option_update: "配置",
-    };
-    return h(
-      "div",
-      {
-        style: {
-          display: "flex",
-          flexDirection: "column",
-          maxHeight: 340,
-          overflow: "auto",
-          border: "1px solid " + s.token.colorBorder,
-          borderRadius: s.token.borderRadius,
-        },
-      },
-      events.map(function (event, index) {
-        var text = KIND[event.kind] || event.kind;
-        var accent =
-          event.kind === "tool_call" || event.kind === "tool_call_update"
-            ? s.token.colorInfo
-            : s.token.colorTextTertiary;
-        return h(
-          "div",
-          {
-            key: index,
-            style: {
-              display: "flex",
-              alignItems: "baseline",
-              gap: 10,
-              padding: "5px 10px",
-              borderTop: index ? "1px solid " + s.token.colorBorderSecondary : "none",
-              fontSize: 12,
-            },
-          },
-          h("span", { style: Object.assign({ width: 62, flex: "0 0 62px" }, s.tiny, s.num) },
-            event.at ? fmtFull(event.at).slice(11) : ""),
-          h("span", { style: { width: 34, flex: "0 0 34px", color: accent } }, text),
-          h(
-            "span",
-            { style: { flex: 1, minWidth: 0, wordBreak: "break-word" } },
-            event.tool ? h("strong", { style: { fontWeight: 600 } }, event.tool) : null,
-            event.status ? h("span", { style: s.tiny }, " · " + event.status) : null,
-            event.args && Object.keys(event.args).length
-              ? h("span", { style: s.tiny }, " · " + Object.keys(event.args).join(", "))
-              : null,
-            event.steps ? h("span", { style: s.tiny }, " · " + event.steps + " 步计划") : null,
-            event.chars ? h("span", { style: s.tiny }, " · " + event.chars + " 字符") : null,
-            event.result_chars ? h("span", { style: s.tiny }, " · 结果 " + event.result_chars + " 字符") : null,
-          ),
-        );
-      }),
-    );
-  }
-
-  function TaskPanel(props) {
-    var s = useStyles();
-    var jobId = props.jobId;
-    var task = props.task;
-    var [expanded, setExpanded] = useState(false);
-    var [transcript, setTranscript] = useState(null);
-    var [loadingMore, setLoadingMore] = useState(false);
-    var attempt = task.attempt || 1;
-
-    useEffect(
-      function () {
-        if (!task) return undefined;
-        var alive = true;
-        setTranscript(null);
-        api
-          .transcript(jobId, task.task_id, attempt, 0)
-          .then(function (page) {
-            if (alive) setTranscript(page);
-          })
-          .catch(function (err) {
-            if (alive) message.error("轨迹读取失败：" + errOf(err).message);
-          });
-        return function () {
-          alive = false;
-        };
-      },
-      [jobId, task && task.task_id, attempt],
-    );
-
-    if (!task) return null;
-
-    function more() {
-      if (!transcript || transcript.next_cursor === null) return;
-      setLoadingMore(true);
-      api
-        .transcript(jobId, task.task_id, attempt, transcript.next_cursor)
-        .then(function (page) {
-          setTranscript(function (previous) {
-            return Object.assign({}, page, {
-              events: ((previous && previous.events) || []).concat(page.events || []),
-            });
-          });
-        })
-        .catch(function (err) {
-          message.error("轨迹翻页失败：" + errOf(err).message);
-        })
-        .then(function () {
-          setLoadingMore(false);
-        });
-    }
-
-    var prompt = String(task.prompt || "");
-    var downloads = task.downloads || [];
-    var full = props.sensitivity === "full";
-
-    return h(
-      "div",
-      { style: { display: "flex", flexDirection: "column", gap: 14 } },
-      h(
-        "div",
-        { style: s.row },
-        h(Button, { size: "small", onClick: props.onBack }, "← 返回题目列表"),
-        h("span", { style: { fontSize: 15, fontWeight: 600 } }, task.name || task.task_id),
-        h(StatusPill, { taskStatus: task.status, text: statusMeta(task.status).text }),
-        h("span", { style: s.tiny }, "第 " + attempt + " 次 · " + fmtDuration(task.duration_s)),
-        h("span", { style: s.row }, h("span", { style: s.tiny }, "分数"), h(ScoreText, { value: task.score, bold: true })),
-      ),
-      task.failure_reason
-        ? h(Alert, { type: "error", showIcon: true, message: "失败原因：" + task.failure_reason })
-        : null,
-      h(
-        Panel,
-        { title: "题干", hint: "评测时发给 agent 的原文" },
-        prompt
-          ? h(
-              "div",
-              {
-                style: Object.assign({}, s.mono, {
-                  whiteSpace: "pre-wrap",
-                  lineHeight: 1.7,
-                  maxHeight: expanded ? "none" : 280,
-                  overflow: "auto",
-                  background: s.token.colorFillQuaternary,
-                  border: "1px solid " + s.token.colorBorder,
-                  padding: 12,
-                  borderRadius: s.token.borderRadius,
-                }),
-              },
-              prompt,
-            )
-          : h("span", { style: s.tiny }, "这道题没有留下题干（数据集里没有 task 正文）"),
-        prompt.length > 600
-          ? h(
-              Button,
-              {
-                size: "small",
-                type: "link",
-                style: { paddingLeft: 0, marginTop: 6 },
-                onClick: function () {
-                  setExpanded(!expanded);
-                },
-              },
-              expanded ? "收起" : "展开全部（" + prompt.length + " 字符）",
-            )
-          : null,
-      ),
-      h(
-        Panel,
-        { title: "这次执行", hint: "trace 与 session 是回到日志的入口" },
-        h(
-          "div",
-          { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 } },
-          h(Fact, { label: "判分方式" }, task.grading_type || "—"),
-          h(Fact, { label: "耗时" }, fmtDuration(task.duration_s)),
-          h(Fact, { label: "写回" },
-            "协议 " + (task.protocol_written || 0) + " · 带外 " + (task.out_of_band_count || 0)),
-          h(Fact, { label: "自报模型" }, (task.subject_model_reported || []).join("、") || "—"),
-          h(Fact, { label: "trace_id" }, h(CopyId, { value: task.trace_id, label: "trace_id 已复制" })),
-          h(Fact, { label: "session_id" }, h(CopyId, { value: task.session_id, label: "session_id 已复制" })),
-          h(Fact, { label: "解析自" }, (task.resolved_from || []).join("、") || "—"),
-          h(Fact, { label: "尝试" }, "第 " + attempt + " 次"),
-        ),
-      ),
-      h(
-        Panel,
-        { title: "判据逐项", hint: task.grading_type === "llm_judge" ? "LLM 判分不产出逐项" : "" },
-        h(BrokenDown, { data: task.automated_breakdown }),
-      ),
-      h(
-        Panel,
-        { title: "产物", hint: full ? "可下载" : "shared 档只列清单，下载需切到完整版" },
-        (task.artifacts || []).length
-          ? h(
-              "div",
-              { style: { display: "flex", flexDirection: "column", gap: 6 } },
-              (task.artifacts || []).map(function (item) {
-                var link = downloads.filter(function (entry) {
-                  return entry.path === item.path;
-                })[0];
-                return h(
-                  "div",
-                  {
-                    key: item.path,
-                    style: Object.assign({}, s.block, s.row, {
-                      justifyContent: "space-between",
-                      padding: "6px 10px",
-                    }),
-                  },
-                  h(
-                    "div",
-                    { style: Object.assign({}, s.row, { gap: 8, minWidth: 0 }) },
-                    h("code", { style: s.mono }, item.path),
-                    h("span", { style: s.tiny }, item.size + " B · " + String(item.sha256).slice(0, 12)),
-                  ),
-                  link
-                    ? h(
-                        Button,
-                        {
-                          size: "small",
-                          type: "link",
-                          onClick: function () {
-                            downloadPath(
-                              link.href + "?path=" + encodeURIComponent(link.query.path),
-                              item.path.split("/").pop(),
-                            );
-                          },
-                        },
-                        "下载",
-                      )
-                    : null,
-                );
-              }),
-            )
-          : h("span", { style: s.tiny }, "没有产物"),
-      ),
-      full
-        ? h(
-            Panel,
-            { title: "评分依据（完整版）", pad: true },
-            h(
-              "div",
-              { style: { display: "flex", flexDirection: "column", gap: 12 } },
-              task.rubric_excerpt
-                ? h(
-                    "div",
-                    null,
-                    h("div", { style: s.tiny }, "判据"),
-                    h(
-                      "pre",
-                      { style: Object.assign({}, s.mono, { whiteSpace: "pre-wrap", margin: "4px 0 0" }) },
-                      task.rubric_excerpt,
-                    ),
-                  )
-                : null,
-              task.expected_behavior
-                ? h(
-                    "div",
-                    null,
-                    h("div", { style: s.tiny }, "期望行为"),
-                    h(
-                      "pre",
-                      { style: Object.assign({}, s.mono, { whiteSpace: "pre-wrap", margin: "4px 0 0" }) },
-                      task.expected_behavior,
-                    ),
-                  )
-                : null,
-              (task.judge_notes || []).length
-                ? h(
-                    "div",
-                    null,
-                    h("div", { style: s.tiny }, "判分备注"),
-                    (task.judge_notes || []).map(function (note, index) {
-                      return h(
-                        "pre",
-                        {
-                          key: index,
-                          style: Object.assign({}, s.mono, { whiteSpace: "pre-wrap", margin: "4px 0 0" }),
-                        },
-                        JSON.stringify(note, null, 1),
-                      );
-                    }),
-                  )
-                : null,
-            ),
-          )
-        : null,
-      h(
-        Panel,
-        {
-          title: "轨迹时间线",
-          hint: transcript
-            ? "共 " + transcript.total_events + " 条 · 已读 " + (transcript.events || []).length +
-              (transcript.damaged_events ? " · 损坏 " + transcript.damaged_events : "") +
-              " · " + transcript.transcript_state
-            : "读取中…",
-          extra:
-            transcript && transcript.next_cursor !== null
-              ? h(Button, { size: "small", loading: loadingMore, onClick: more }, "再读 " + transcript.limit + " 条")
-              : null,
-        },
-        transcript ? h(Timeline, { events: transcript.events }) : h(Spin, { size: "small" }),
-      ),
-    );
-  }
-
-  function ReportModule(props) {
-    var s = useStyles();
-    var jobId = props.jobId;
-    var [detail, setDetail] = useState(null);
-    var [error, setError] = useState(null);
-    var [sensitivity, setSensitivity] = useState(props.defaultSensitivity || "shared");
-    var [tab, setTab] = useState("overview");
-    var [task, setTask] = useState(null);
-    var [taskLoading, setTaskLoading] = useState("");
-    var [taskQuery, setTaskQuery] = useState("");
-    var [taskFilter, setTaskFilter] = useState("all");
-    var [report, setReport] = useState(null);
-    var [reportFormat, setReportFormat] = useState(props.defaultFormat || "md");
-    var [reporting, setReporting] = useState(false);
-
-    useEffect(
-      function () {
-        if (!jobId) return undefined;
-        var alive = true;
-        setDetail(null);
-        setError(null);
-        setTask(null);
-        setReport(null);
-        api
-          .detail(jobId, sensitivity)
-          .then(function (result) {
-            if (alive) setDetail(result);
-          })
-          .catch(function (err) {
-            if (alive) setError(errOf(err));
-          });
-        return function () {
-          alive = false;
-        };
-      },
-      [jobId, sensitivity],
-    );
-
-    function openTask(row) {
-      setTaskLoading(row.task_id);
-      api
-        .taskDetail(jobId, row.task_id, sensitivity, row.attempt)
-        .then(function (result) {
-          setTask(result);
-        })
-        .catch(function (err) {
-          message.error("单题详情读取失败：" + errOf(err).message);
-        })
-        .then(function () {
-          setTaskLoading("");
-        });
-    }
-
-    function makeReport() {
-      setReporting(true);
-      setReport(null);
-      api
-        .report(jobId, reportFormat, sensitivity)
-        .then(setReport)
-        .catch(function (err) {
-          var info = errOf(err);
-          message.error("报告生成失败：" + info.code + " " + info.message);
-        })
-        .then(function () {
-          setReporting(false);
-        });
-    }
-
-    function downloadReport() {
-      var proxied = API + "/fetch?url=" + encodeURIComponent(report.url);
-      var token = typeof host.getApiToken === "function" ? host.getApiToken() : "";
-      fetch(host.getApiUrl(proxied), { headers: token ? { Authorization: "Bearer " + token } : {} })
-        .then(function (response) {
-          if (!response.ok) throw new Error("HTTP " + response.status);
-          return response.blob();
-        })
-        .then(function (blob) {
-          saveBlob(blob, report.filename);
-        })
-        .catch(function (err) {
-          message.error("下载失败：" + err.message);
-        });
-    }
-
-    var taskRows = useMemo(
-      function () {
-        if (!detail) return [];
-        var needle = taskQuery.trim().toLowerCase();
-        return (detail.tasks || []).filter(function (row) {
-          if (taskFilter === "failed" && row.status !== "failed" && row.failure_reason !== "no_artifacts") {
-            return false;
-          }
-          if (taskFilter === "low" && !(typeof row.score === "number" && row.score < 0.8)) return false;
-          if (taskFilter === "unscored" && typeof row.score === "number") return false;
-          if (!needle) return true;
-          return [row.task_id, row.name, JSON.stringify(row.labels || {})]
-            .join(" ")
-            .toLowerCase()
-            .indexOf(needle) >= 0;
-        });
-      },
-      [detail, taskFilter, taskQuery],
-    );
-
-    if (error) {
-      return h(
-        "div",
-        { style: s.stack },
-        h(Button, { size: "small", onClick: props.onBack }, "← 返回评测列表"),
-        h(Alert, { type: "error", showIcon: true, message: error.code, description: error.message }),
-      );
-    }
-    if (!detail) {
-      return h(
-        "div",
-        { style: Object.assign({}, s.card, { padding: 48, textAlign: "center" }) },
-        h(Spin, null),
-        h("div", { style: Object.assign({}, s.tiny, { marginTop: 8 }) }, "读取 " + jobId),
-      );
-    }
-
-    var progress = detail.progress || { total: 0, by_status: {}, scored: 0 };
-    var byStatus = progress.by_status || {};
-    var score = detail.score || {};
-    // A job that is still queued has no task rows yet, so ``progress.total`` is
-    // zero while the submission already knows how many tasks it will run.  The
-    // report should say "0 / 24, waiting" rather than "0 / 0", which reads as an
-    // empty run.
-    var planned = (detail.sources || []).reduce(function (sum, source) {
-      return sum + (Number(source.task_count) || 0);
-    }, 0);
-    if (!progress.total && planned) {
-      progress = Object.assign({}, progress, { total: planned });
-    }
-
-    var header = h(
-      Panel,
-      { pad: false },
-      h(
-        "div",
-        { style: { padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 } },
-        h(
-          "div",
-          { style: Object.assign({}, s.row, { justifyContent: "space-between", alignItems: "flex-start", paddingRight: 72 }) },
-          h(
-            "div",
-            { style: Object.assign({}, s.row, { gap: 10, minWidth: 0 }) },
-            h(Button, { size: "small", onClick: props.onBack }, "← 评测列表"),
-            h(
-              "div",
-              { style: { display: "flex", flexDirection: "column", minWidth: 0 } },
-              h(
-                "div",
-                { style: Object.assign({}, s.row, { gap: 8 }) },
-                h("span", { style: { fontSize: 17, fontWeight: 600 } }, detail.purpose || "（未写目的）"),
-                h(StatusPill, { text: statusMeta(detail.status).text, color: statusMeta(detail.status).color }),
-              ),
-              h(
-                "div",
-                { style: Object.assign({}, s.row, { gap: 8, marginTop: 2 }) },
-                h(CopyId, { value: detail.job_id, full: true, label: "job id 已复制" }),
-                h("span", { style: s.tiny }, detail.product || "—"),
-                h("span", { style: s.tiny }, detail.submitter || "—"),
-              ),
-            ),
-          ),
-        ),
-        h(
-          "div",
-          {
-            style: {
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-              gap: 0,
-              marginLeft: -14,
-            },
-          },
-          h(ReportMetric, {
-            label: "总分",
-            value: h(ScoreText, { value: score.mean, bold: true }),
-            hint: "计分 " + (progress.scored || 0) + " / " + progress.total + " 题",
-          }),
-          h(ReportMetric, {
-            label: "完成",
-            value: (byStatus.finished || 0) + " / " + progress.total,
-            bar: h(MiniBar, {
-              percent: progress.total ? (byStatus.finished || 0) / progress.total : 0,
-              color: byStatus.failed ? s.token.colorError : s.token.colorPrimary,
-            }),
-          }),
-          h(ReportMetric, {
-            label: "分数区间",
-            value:
-              score.best === null || score.best === undefined
-                ? "—"
-                : fmtNum(score.best, 2) + " – " + fmtNum(score.worst, 2),
-            hint: "最高 / 最低",
-          }),
-          h(ReportMetric, {
-            label: "耗时",
-            value: fmtDuration(
-              detail.started_at && detail.finished_at
-                ? (asDate(detail.finished_at) - asDate(detail.started_at)) / 1000
-                : 0,
-            ),
-            hint: detail.finished_at ? fmtShort(detail.finished_at) + " 结束" : "未结束",
-          }),
-        ),
-      ),
-    );
-
-    var statusLine = Object.keys(byStatus).sort().map(function (key) {
-      var meta = statusMeta(key);
-      return h(StatusPill, { key: key, text: meta.text + " " + byStatus[key], color: meta.color });
-    });
-
-    var overview = h(
-      "div",
-      { style: { display: "flex", flexDirection: "column", gap: 14 } },
-      h(
-        "div",
-        { style: { display: "grid", gridTemplateColumns: "minmax(220px, 260px) 1fr", gap: 14 } },
-        h(
-          Panel,
-          { title: "总分" },
-          h(ScoreDial, {
-            score: score.mean,
-            caption: "计分 " + (score.count || 0) + " 题 · 共 " + progress.total + " 题",
-          }),
-          h("div", { style: Object.assign({}, s.row, { justifyContent: "center", marginTop: 8 }) }, statusLine),
-        ),
-        h(
-          Panel,
-          { title: "切片", hint: "按题目标签聚合平均分" },
-          h(
-            "div",
-            { style: { display: "flex", flexDirection: "column", gap: 16, maxWidth: 520 } },
-            h("div", null, h("div", { style: s.tiny }, "场景"),
-              h(SliceBars, { data: detail.slices && detail.slices.scenario })),
-            h("div", null, h("div", { style: s.tiny }, "能力"),
-              h(SliceBars, { data: detail.slices && detail.slices.capability })),
-          ),
-        ),
-      ),
-      h(
-        "div",
-        { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14, alignItems: "start" } },
-        h(
-          Panel,
-          { title: "配置" },
-          h(
-            "div",
-            { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 12 } },
-            h("div", { style: { gridColumn: "1 / -1" } },
-              h(Fact, { label: "ACP 地址" }, h("code", { style: s.mono }, detail.acp_url || "—"))),
-            h(Fact, { label: "窗口" },
-              detail.window
-                ? windowLabel(detail.window.kind) + " · " + fmtShort(detail.window.not_before)
-                : "—"),
-            h(Fact, { label: "提交" }, fmtFull(detail.created_at)),
-            h(Fact, { label: "开始" }, fmtFull(detail.started_at)),
-          ),
-          detail.error
-            ? h(Alert, { type: "error", showIcon: true, style: { marginTop: 12 }, message: detail.error })
-            : null,
-        ),
-        h(
-          Panel,
-          { title: "数据来源" },
-          (detail.sources || []).length
-            ? (detail.sources || []).map(function (source) {
-                return h(
-                  "div",
-                  { key: source.dataset_id, style: Object.assign({}, s.row, { justifyContent: "space-between" }) },
-                  h(
-                    "div",
-                    { style: s.row },
-                    h(Tag, { bordered: false }, source.dataset_kind),
-                    h("code", { style: s.mono }, source.dataset_id),
-                  ),
-                  h("span", { style: s.tiny }, source.task_count + " 题"),
-                );
-              })
-            : h("span", { style: s.tiny }, "没有来源记录"),
-        ),
-      ),
-      detail.env_fingerprint
-        ? h(
-            Panel,
-            { title: "环境指纹", hint: "提交时自报，原样保留" },
-            h(
-              "pre",
-              {
-                style: Object.assign({}, s.mono, {
-                  margin: 0,
-                  whiteSpace: "pre-wrap",
-                  background: s.token.colorFillQuaternary,
-                  border: "1px solid " + s.token.colorBorder,
-                  padding: 10,
-                  borderRadius: s.token.borderRadius,
-                }),
-              },
-              JSON.stringify(detail.env_fingerprint, null, 2),
-            ),
-          )
-        : null,
-    );
-
-    var taskColumns = [
-      {
-        title: "题目",
-        dataIndex: "name",
-        render: function (_, row) {
-          return h(
-            "div",
-            { style: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 } },
-            h("span", { style: { fontWeight: 600 } }, row.name || row.task_id),
-            h("code", { style: Object.assign({}, s.mono, s.tiny) }, row.task_id),
-          );
-        },
-      },
-      {
-        title: "标签",
-        dataIndex: "labels",
-        width: 190,
-        render: function (value) {
-          var parts = labelParts(value);
-          return parts.length
-            ? h(Space, { size: 2, wrap: true }, parts.map(function (part) {
-                return h(Tag, { key: part, bordered: false }, part);
-              }))
-            : h("span", { style: s.tiny }, "—");
-        },
-      },
-      {
-        title: "状态",
-        dataIndex: "status",
-        width: 96,
-        render: function (value, row) {
-          return h(StatusPill, {
-            taskStatus: value,
-            text: statusMeta(value).text,
-            title: row.failure_reason || "",
-          });
-        },
-      },
-      {
-        title: "分数",
-        dataIndex: "score",
-        width: 78,
-        render: function (value) {
-          return h(ScoreText, { value: value, bold: true });
-        },
-      },
-      {
-        title: "耗时",
-        dataIndex: "duration_s",
-        width: 76,
-        render: function (value) {
-          return h("span", { style: Object.assign({}, s.mono, s.num) }, fmtDuration(value));
-        },
-      },
-      {
-        title: "trace_id",
-        dataIndex: "trace_id",
-        width: 140,
-        render: function (value) {
-          return value
-            ? h("code", { style: s.mono }, String(value).slice(0, 12))
-            : h("span", { style: s.tiny }, "—");
-        },
-      },
-      {
-        title: "",
-        width: 66,
-        render: function (_, row) {
-          return h(
-            Button,
-            {
-              size: "small",
-              type: "link",
-              loading: taskLoading === row.task_id,
-              onClick: function (event) {
-                event.stopPropagation();
-                openTask(row);
-              },
-            },
-            "查看",
-          );
-        },
-      },
-    ];
-
-    var tasksTab = task
-      ? h(TaskPanel, {
-          jobId: jobId,
-          task: task,
-          sensitivity: sensitivity,
-          onBack: function () {
-            setTask(null);
-          },
-        })
-      : h(
-          "div",
-          { style: { display: "flex", flexDirection: "column", gap: 12 } },
-          h(
-            "div",
-            { style: s.row },
-            h(Segmented, {
-              size: "small",
-              value: taskFilter,
-              onChange: setTaskFilter,
-              options: [
-                { value: "all", label: "全部 " + (detail.tasks || []).length },
-                { value: "failed", label: "异常" },
-                { value: "low", label: "低分" },
-                { value: "unscored", label: "未计分" },
-              ],
-            }),
-            h(Input, {
-              allowClear: true,
-              size: "small",
-              placeholder: "搜题名、task id、标签",
-              style: { width: 240 },
-              value: taskQuery,
-              onChange: function (event) {
-                setTaskQuery(event.target.value);
-              },
-            }),
-            h("span", { style: s.tiny }, "点一行看题干、判分与轨迹"),
-          ),
-          h(Table, {
-            size: "middle",
-            rowKey: "task_id",
-            dataSource: taskRows,
-            columns: taskColumns,
-            pagination: taskRows.length > 20 ? { pageSize: 20, size: "small" } : false,
-            scroll: { x: 860 },
-            onHeaderRow: function () {
-              return { style: { background: s.token.colorFillQuaternary } };
-            },
-            onRow: function (row) {
-              return {
-                onClick: function () {
-                  openTask(row);
-                },
-                style: { cursor: "pointer" },
-              };
-            },
-            locale: {
-              emptyText: h(EmptyState, {
-                glyph: "◇",
-                title: "没有符合条件的题目",
-                hint: "换个筛选条件，或者清空搜索词。",
-              }),
-            },
-          }),
-        );
-
-    var exportTab = h(
-      "div",
-      { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 } },
-      h(
-        Panel,
-        { title: "生成报告文件", hint: "题干、trace_id 与 session_id 都在报告里" },
-        h(
-          "div",
-          { style: s.row },
-          h(Select, {
-            size: "small",
-            style: { width: 190 },
-            value: reportFormat,
-            onChange: setReportFormat,
-            options: REPORT_FORMATS.map(function (format) {
-              var disabled = format === "zip" && sensitivity !== "full";
-              return {
-                value: format,
-                label: disabled ? format + "（仅完整版）" : format,
-                disabled: disabled,
-              };
-            }),
-          }),
-          h(Button, { size: "small", type: "primary", loading: reporting, onClick: makeReport }, "生成"),
-          report
-            ? h(Button, { size: "small", onClick: downloadReport }, "下载 " + report.filename)
-            : null,
-        ),
-        report
-          ? h(
-              "div",
-              { style: Object.assign({}, s.stack, { marginTop: 12, gap: 4 }) },
-              h("span", { style: s.tiny }, (report.size / 1024).toFixed(1) + " KB · sha256 " + report.sha256),
-              h("span", { style: s.tiny }, "链接 " + untilText(report.expires_at) + "过期"),
-            )
-          : h("div", { style: Object.assign({}, s.tiny, { marginTop: 12 }) },
-              "报告是一次性产物：每次生成都会写一份新文件，旧的按服务配置过期。"),
-      ),
-      h(
-        Panel,
-        { title: "报告里有什么" },
-        h(
-          "ul",
-          { style: Object.assign({}, s.muted, { paddingLeft: 18, margin: 0, lineHeight: 1.9 }) },
-          h("li", null, "总分、切片、逐题状态与分数"),
-          h("li", null, "每题题干原文（截断到 1200 字符）"),
-          h("li", null, "每题的 trace_id 与 session_id，可直接拿去搜日志"),
-          h("li", null, "产物清单与大小" + (sensitivity === "full" ? "，可下载" : "（完整版可下载）")),
-        ),
-      ),
-    );
-
-    return h(
-      "div",
-      { style: { display: "flex", flexDirection: "column", gap: 14 } },
-      header,
-      sensitivity === "full"
-        ? h(Alert, {
-            type: "warning",
-            showIcon: true,
-            message: "正在看完整版：含评分依据与他人产物，对外分享请切回 shared",
-          })
-        : null,
-      h(Tabs, {
-        activeKey: tab,
-        onChange: setTab,
-        tabBarExtraContent: h(
-          Space,
-          null,
-          h(Space, { size: 6 },
-            h("span", { style: s.tiny }, "档位"),
-            h(Tooltip, { title: "完整版含评分依据与产物下载；对外分享用 shared" },
-              h(Segmented, {
-                size: "small",
-                value: sensitivity,
-                onChange: function (value) {
-                  setSensitivity(value);
-                  setTask(null);
-                  // zip is only issued for the full tier, so carrying the choice
-                  // back into shared would make the next 生成 a guaranteed 400.
-                  if (value === "shared" && reportFormat === "zip") setReportFormat("md");
-                },
-                options: [
-                  { value: "shared", label: "shared" },
-                  { value: "full", label: "完整版" },
-                ],
-              }))),
-          h(Button, {
-            size: "small",
-            onClick: function () {
-              copyText(
-                window.location.origin + window.location.pathname + "?app=pawbench-eval&job=" + jobId,
-                "报告链接已复制",
-              );
-            },
-          }, "复制链接"),
-        ),
-        items: [
-          { key: "overview", label: "总览", children: overview },
-          { key: "tasks", label: "题目（" + (detail.tasks || []).length + "）", children: tasksTab },
-          { key: "export", label: "导出", children: exportTab },
-        ],
-      }),
-    );
-  }
-
-  function labelParts(labels) {
-    if (!labels) return [];
-    var parts = [];
-    ["scenario", "complexity", "environment"].forEach(function (key) {
-      if (labels[key]) parts.push(labels[key]);
-    });
-    if (labels.modality) {
-      parts.push(typeof labels.modality === "string" ? labels.modality : labels.modality.type);
-    }
-    if ((labels.capabilities || []).length) parts.push(labels.capabilities.join("/"));
-    return parts.filter(Boolean);
-  }
-
-  // ── module: datasets ────────────────────────────────────────────────────
-
-  function DatasetsModule(props) {
-    var s = useStyles();
-    var [editing, setEditing] = useState(null); // "view" | "upload" | "category" | null
-    var [form, setForm] = useState({});
-    var [busy, setBusy] = useState(false);
-    var catalog = props.catalog || { datasets: [], categories: [] };
-
-    function startView() {
-      setForm({ id: "", name: "", description: "", categories: [], filter: {} });
-      setEditing("view");
-    }
-
-    function startUpload() {
-      setForm({ id: "", name: "", description: "", categories: [], file: null });
-      setEditing("upload");
-    }
-
-    function submitView() {
-      var filter = {};
-      Object.keys(form.filter || {}).forEach(function (key) {
-        var value = form.filter[key];
-        if (value && value.length) filter[key] = value;
-      });
-      if (!Object.keys(filter).length) {
-        message.warning("至少要给过滤器一个条件，空过滤器等于整份语料");
-        return;
-      }
-      setBusy(true);
-      api
-        .createDataset({
-          id: form.id,
-          name: form.name,
-          description: form.description,
-          categories: form.categories,
-          filter: filter,
-        })
-        .then(function () {
-          message.success("数据集已创建");
-          setEditing(null);
-          return props.onRefresh();
-        })
-        .catch(function (err) {
-          message.error("创建失败：" + errOf(err).message);
-        })
-        .then(function () {
-          setBusy(false);
-        });
-    }
-
-    function submitUpload() {
-      if (!form.file) {
-        message.warning("先选一个 zip 包");
-        return;
-      }
-      var query =
-        "id=" + encodeURIComponent(form.id) +
-        "&name=" + encodeURIComponent(form.name) +
-        "&description=" + encodeURIComponent(form.description || "");
-      (form.categories || []).forEach(function (name) {
-        query += "&categories=" + encodeURIComponent(name);
-      });
-      setBusy(true);
-      uploadPackage(form.file, query)
-        .then(function () {
-          message.success("已上传");
-          setEditing(null);
-          return props.onRefresh();
-        })
-        .catch(function (err) {
-          message.error("上传失败：" + errOf(err).message);
-        })
-        .then(function () {
-          setBusy(false);
-        });
-    }
-
-    function removeDataset(row) {
-      api
-        .deleteDataset(row.id)
-        .then(function () {
-          message.success("已删除");
-          return props.onRefresh();
-        })
-        .catch(function (err) {
-          message.error("删除失败：" + errOf(err).message);
-        });
-    }
-
-    function removeCategory(row) {
-      api
-        .deleteCategory(row.name)
-        .then(function () {
-          message.success("分类已删除");
-          return props.onRefresh();
-        })
-        .catch(function (err) {
-          message.error("删除失败：" + errOf(err).message);
-        });
-    }
-
-    var taskTotal = (catalog.datasets || []).reduce(function (sum, row) {
-      return sum + (Number(row.task_count) || 0);
-    }, 0);
-
-    var columns = [
-      {
-        title: "数据集",
-        dataIndex: "id",
-        render: function (_, row) {
-          return h(
-            "div",
-            { style: { display: "flex", flexDirection: "column", gap: 2 } },
-            h("span", { style: { fontWeight: 600 } }, row.name || row.id),
-            h(
-              "div",
-              { style: Object.assign({}, s.row, { gap: 6 }) },
-              h("code", { style: s.mono }, row.id),
-              h(Tag, { bordered: false }, row.kind),
-            ),
-            row.description ? h("span", { style: s.tiny }, row.description) : null,
-          );
-        },
-      },
-      {
-        title: "题数",
-        dataIndex: "task_count",
-        width: 72,
-        render: function (value) {
-          return h("span", { style: Object.assign({}, s.num, { fontWeight: 600 }) }, value);
-        },
-      },
-      {
-        title: "分类",
-        dataIndex: "categories",
-        width: 210,
-        render: function (value) {
-          if (!value || !value.length) return h("span", { style: s.tiny }, "未分类");
-          return h(
-            Space,
-            { size: 2, wrap: true },
-            value.map(function (name) {
-              return h(Tag, { key: name, bordered: false }, name);
-            }),
-          );
-        },
-      },
-      { title: "维护人", dataIndex: "owner", width: 100 },
-      {
-        title: "更新",
-        dataIndex: "updated_at",
-        width: 118,
-        render: function (value) {
-          return h("span", { style: s.tiny }, fmtShort(value));
-        },
-      },
-      {
-        title: "",
-        width: 66,
-        render: function (_, row) {
-          var mine = !props.subject || row.owner === props.subject;
-          var node = h(Button, { size: "small", type: "link", danger: true, disabled: !mine }, "删除");
-          if (mine) {
-            return h(
-              Popconfirm,
-              {
-                title: "删除 " + row.id + "？",
-                description: "跑过任务的删不掉，服务会拒绝。",
-                okText: "删除",
-                cancelText: "算了",
-                onConfirm: function () {
-                  removeDataset(row);
-                },
-              },
-              node,
-            );
-          }
-          return h(Tooltip, { title: "由 " + row.owner + " 维护" }, node);
-        },
-      },
-    ];
-
-    var categoryColumns = [
-      { title: "分类", dataIndex: "name" },
-      { title: "数据集数", dataIndex: "dataset_count", width: 96 },
-      { title: "创建者", dataIndex: "created_by", width: 110 },
-      {
-        title: "",
-        width: 66,
-        render: function (_, row) {
-          var mine = !props.subject || row.created_by === props.subject;
-          var node = h(Button, { size: "small", type: "link", danger: true, disabled: !mine }, "删除");
-          if (mine) {
-            return h(
-              Popconfirm,
-              {
-                title: "删除分类 " + row.name + "？",
-                description: "只删空分类，还有数据集挂着会被拒。",
-                okText: "删除",
-                cancelText: "算了",
-                onConfirm: function () {
-                  removeCategory(row);
-                },
-              },
-              node,
-            );
-          }
-          return h(Tooltip, { title: "由 " + row.created_by + " 维护" }, node);
-        },
-      },
-    ];
-
-    function filterEditor() {
-      var distribution = catalog.label_distribution || {};
-      return h(
-        "div",
-        { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 } },
-        FILTER_KEYS.map(function (key) {
-          var values = Object.keys(distribution[key] || {});
-          if (!values.length) {
-            return h(
-              Field,
-              { key: key, label: key, hint: "手填值" },
-              h(Select, {
-                mode: "tags",
-                style: { width: "100%" },
-                value: (form.filter && form.filter[key]) || [],
-                onChange: function (next) {
-                  setForm(function (previous) {
-                    var filter = Object.assign({}, previous.filter);
-                    filter[key] = next;
-                    return Object.assign({}, previous, { filter: filter });
-                  });
-                },
-              }),
-            );
-          }
-          return h(
-            Field,
-            { key: key, label: key },
-            h(Select, {
-              mode: "multiple",
-              style: { width: "100%" },
-              value: (form.filter && form.filter[key]) || [],
-              options: values.map(function (value) {
-                return { value: value, label: value + " · " + distribution[key][value] };
-              }),
-              onChange: function (next) {
-                setForm(function (previous) {
-                  var filter = Object.assign({}, previous.filter);
-                  filter[key] = next;
-                  return Object.assign({}, previous, { filter: filter });
-                });
-              },
-            }),
-          );
-        }),
-      );
-    }
-
-    var categoryOptions = (catalog.categories || []).map(function (entry) {
-      return { value: entry.name, label: entry.name };
-    });
-
-    return h(
-      "div",
-      { style: { display: "flex", flexDirection: "column", gap: 16 } },
-      h(
-        "div",
-        { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 } },
-        h(StatCard, { label: "数据集", value: (catalog.datasets || []).length, hint: "视图 + 自定义包" }),
-        h(StatCard, { label: "题目", value: taskTotal, hint: "各集合计" }),
-        h(StatCard, { label: "分类", value: (catalog.categories || []).length, hint: "用于整组选题" }),
-      ),
-      h(
-        Panel,
-        {
-          pad: false,
-          children: h(
-            "div",
-            null,
-            h(
-              "div",
-              { style: Object.assign({}, s.sectionHead, { padding: "14px 16px", marginBottom: 0 }) },
-              h("div", { style: s.h2 }, "全部数据集"),
-              h(
-                Space,
-                null,
-                h(Button, { size: "small", onClick: startView }, "新建视图"),
-                h(Button, { size: "small", onClick: startUpload }, "上传自定义集"),
-                h(
-                  Button,
-                  {
-                    size: "small",
-                    onClick: function () {
-                      setForm({ name: "", description: "" });
-                      setEditing("category");
-                    },
-                  },
-                  "分类管理",
-                ),
-              ),
-            ),
-            h(Table, {
-              size: "middle",
-              rowKey: "id",
-              dataSource: catalog.datasets || [],
-              columns: columns,
-              pagination: (catalog.datasets || []).length > 15 ? { pageSize: 15, size: "small" } : false,
-              scroll: { x: 820 },
-              locale: {
-                emptyText: h(EmptyState, {
-                  glyph: "▤",
-                  title: "还没有数据集",
-                  hint: "「新建视图」从内置语料里切一片，「上传自定义集」提交一个 zip 任务包。",
-                }),
-              },
-            }),
-          ),
-        },
-      ),
-      h(
-        Modal,
-        {
-          open: editing === "view",
-          title: "新建视图（从内置语料切一片）",
-          onCancel: function () {
-            setEditing(null);
-          },
-          onOk: submitView,
-          confirmLoading: busy,
-          okText: "创建",
-          width: 660,
-        },
-        h(
-          "div",
-          { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-          h(
-            Field,
-            { label: "id", hint: "字母或数字开头" },
-            h(Input, {
-              value: form.id || "",
-              onChange: function (event) {
-                setForm(Object.assign({}, form, { id: event.target.value }));
-              },
-            }),
-          ),
-          h(
-            Field,
-            { label: "显示名" },
-            h(Input, {
-              value: form.name || "",
-              onChange: function (event) {
-                setForm(Object.assign({}, form, { name: event.target.value }));
-              },
-            }),
-          ),
-        ),
-        h(
-          Field,
-          { label: "说明" },
-          h(Input.TextArea, {
-            rows: 2,
-            value: form.description || "",
-            onChange: function (event) {
-              setForm(Object.assign({}, form, { description: event.target.value }));
-            },
-          }),
-        ),
-        h(
-          Field,
-          { label: "归档分类" },
-          h(Select, {
-            mode: "multiple",
-            style: { width: "100%" },
-            value: form.categories || [],
-            options: categoryOptions,
-            onChange: function (next) {
-              setForm(Object.assign({}, form, { categories: next }));
-            },
-          }),
-        ),
-        h("div", { style: Object.assign({}, s.muted, { marginBottom: 6 }) }, "过滤条件（至少一条）"),
-        filterEditor(),
-      ),
-      h(
-        Modal,
-        {
-          open: editing === "upload",
-          title: "上传自定义任务包",
-          onCancel: function () {
-            setEditing(null);
-          },
-          onOk: submitUpload,
-          confirmLoading: busy,
-          okText: "上传",
-          width: 660,
-        },
-        h(
-          "div",
-          { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-          h(
-            Field,
-            { label: "id", hint: "字母或数字开头" },
-            h(Input, {
-              value: form.id || "",
-              onChange: function (event) {
-                setForm(Object.assign({}, form, { id: event.target.value }));
-              },
-            }),
-          ),
-          h(
-            Field,
-            { label: "显示名" },
-            h(Input, {
-              value: form.name || "",
-              onChange: function (event) {
-                setForm(Object.assign({}, form, { name: event.target.value }));
-              },
-            }),
-          ),
-        ),
-        h(
-          Field,
-          { label: "说明" },
-          h(Input.TextArea, {
-            rows: 2,
-            value: form.description || "",
-            onChange: function (event) {
-              setForm(Object.assign({}, form, { description: event.target.value }));
-            },
-          }),
-        ),
-        h(
-          Field,
-          { label: "归档分类" },
-          h(Select, {
-            mode: "multiple",
-            style: { width: "100%" },
-            value: form.categories || [],
-            options: categoryOptions,
-            onChange: function (next) {
-              setForm(Object.assign({}, form, { categories: next }));
-            },
-          }),
-        ),
-        h(Upload, {
-          beforeUpload: function (file) {
-            setForm(Object.assign({}, form, { file: file }));
-            return false;
-          },
-          maxCount: 1,
-          accept: ".zip",
-        }, h(Button, null, "选择 zip 包")),
-      ),
-      h(
-        Modal,
-        {
-          open: editing === "category",
-          title: "分类管理",
-          onCancel: function () {
-            setEditing(null);
-          },
-          footer: null,
-          width: 640,
-        },
-        h(
-          "div",
-          { style: Object.assign({}, s.row, { marginBottom: 12 }) },
-          h(Input, {
-            placeholder: "新分类名",
-            value: form.name || "",
-            onChange: function (event) {
-              setForm(Object.assign({}, form, { name: event.target.value }));
-            },
-            style: { width: 240 },
-          }),
-          h(
-            Button,
-            {
-              type: "primary",
-              onClick: function () {
-                if (!form.name) return;
-                api
-                  .createCategory({ name: form.name, description: form.description || "" })
-                  .then(function () {
-                    message.success("分类已创建");
-                    setForm(Object.assign({}, form, { name: "" }));
-                    return props.onRefresh();
-                  })
-                  .catch(function (err) {
-                    message.error("创建失败：" + errOf(err).message);
-                  });
-              },
-            },
-            "创建（同名幂等）",
-          ),
-        ),
-        h(Table, {
-          size: "small",
-          rowKey: "name",
-          dataSource: catalog.categories || [],
-          columns: categoryColumns,
-          pagination: false,
-          locale: {
-            emptyText: h(EmptyState, { glyph: "▤", title: "还没有分类", hint: "分类用于整组选题。" }),
-          },
-        }),
-      ),
-    );
-  }
-
-  // ── module: settings ────────────────────────────────────────────────────
-
-  function SettingsModule(props) {
-    var s = useStyles();
-    var config = props.config || {};
-    var [baseUrl, setBaseUrl] = useState(config.base_url || "");
-    var [token, setToken] = useState("");
-    var [subject, setSubject] = useState(config.subject || "");
-    var [saving, setSaving] = useState(false);
-    var [probe, setProbe] = useState(props.probe || null);
-    var [error, setError] = useState(null);
-    var [prefs, setPrefs] = useState({
-      sensitivity: readLS("defaultSensitivity", "shared"),
-      format: readLS("defaultFormat", "md"),
-    });
-
-    useEffect(
-      function () {
-        setBaseUrl(config.base_url || "");
-        setSubject(config.subject || "");
-      },
-      [config.base_url, config.subject],
-    );
-
-    function save() {
-      setSaving(true);
-      setError(null);
-      var body = { base_url: baseUrl, subject: subject };
-      // An empty box means "keep the stored token" — the page never received it,
-      // so sending "" would delete a working credential on every edit.
-      if (token) body.token = token;
-      api
-        .saveConfig(body)
-        .then(function () {
-          setToken("");
-          return api.probe();
-        })
-        .then(function (result) {
-          setProbe(result);
-          message.success("连接已保存");
-          return props.onSaved();
-        })
-        .catch(function (err) {
-          setError(errOf(err));
-        })
-        .then(function () {
-          setSaving(false);
-        });
-    }
-
-    function doProbe() {
-      setSaving(true);
-      api
-        .probe()
-        .then(setProbe)
-        .catch(function (err) {
-          setError(errOf(err));
-        })
-        .then(function () {
-          setSaving(false);
-        });
-    }
-
-    var reachable = probe && probe.reachable;
-    return h(
-      "div",
-      { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 16 } },
-      h(
-        Panel,
-        { title: "服务连接", hint: "token 只留在本机插件目录，页面拿不到它" },
-        error
-          ? h(Alert, {
-              type: "error",
-              showIcon: true,
-              style: { marginBottom: 12 },
-              message: error.code,
-              description: error.message,
-            })
-          : null,
-        h(
-          Field,
-          { label: "评测服务地址", hint: "http:// 或 https:// 开头" },
-          h(Input, {
-            value: baseUrl,
-            placeholder: "http://127.0.0.1:8471",
-            onChange: function (event) {
-              setBaseUrl(event.target.value);
-            },
-          }),
-        ),
-        h(
-          Field,
-          {
-            label: "访问 token",
-            hint: config.has_token ? "已保存 " + config.token_hint + "，留空则不变" : "白名单签发",
-          },
-          h(Input.Password, {
-            value: token,
-            placeholder: config.has_token ? "留空保持不变" : "粘贴 token",
-            onChange: function (event) {
-              setToken(event.target.value);
-            },
-          }),
-        ),
-        h(
-          Field,
-          { label: "我的身份", hint: "提交人名字，用于判断队列里哪一行是你的", last: true },
-          h(Input, {
-            value: subject,
-            placeholder: "首次提交后自动识别",
-            onChange: function (event) {
-              setSubject(event.target.value);
-            },
-          }),
-        ),
-        h(
-          "div",
-          { style: Object.assign({}, s.row, { marginTop: 14 }) },
-          h(Button, { type: "primary", loading: saving, onClick: save }, "保存并探测"),
-          h(Button, { onClick: doProbe }, "只探测"),
-        ),
-      ),
-      h(
-        Panel,
-        { title: "服务状态" },
-        h(
-          "div",
-          { style: { display: "flex", flexDirection: "column", gap: 10 } },
-          h(
-            "div",
-            { style: s.row },
-            h(StatusPill, {
-              text: reachable ? (probe.authorised === false ? "token 被拒" : "服务正常") : "连不上",
-              color: reachable ? (probe.authorised === false ? "warning" : "success") : "error",
-            }),
-            h("span", { style: s.tiny },
-              probe && probe.checked_at
-                ? "检查于 " + String(probe.checked_at).replace("T", " ").slice(0, 16) + " UTC"
-                : ""),
-          ),
-          h(Fact, { label: "地址" }, h("code", { style: s.mono }, config.base_url || "—")),
-          h(Fact, { label: "服务标识" },
-            (probe && probe.service && probe.service.public_base_url) || "—"),
-          h(Fact, { label: "正在跑" },
-            probe && probe.service ? (probe.service.active_attempts || 0) + " 个尝试" : "—"),
-          h(Fact, { label: "当前身份" }, config.subject || "未知（提交一次后自动识别）"),
-          h(Fact, { label: "配置来源" }, config.source === "file" ? "本机插件目录" : config.source === "env" ? "环境变量" : "未配置"),
-        ),
-      ),
-      h(
-        Panel,
-        { title: "报告默认值", hint: "打开报告时的初始档位与导出格式" },
-        h(
-          "div",
-          { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-          h(
-            Field,
-            { label: "档位", last: true },
-            h(Segmented, {
-              value: prefs.sensitivity,
-              onChange: function (value) {
-                setPrefs(Object.assign({}, prefs, { sensitivity: value }));
-                writeLS("defaultSensitivity", value);
-              },
-              options: [
-                { value: "shared", label: "shared" },
-                { value: "full", label: "完整版" },
-              ],
-            }),
-          ),
-          h(
-            Field,
-            { label: "导出格式", last: true },
-            h(Select, {
-              style: { width: "100%" },
-              value: prefs.format,
-              onChange: function (value) {
-                setPrefs(Object.assign({}, prefs, { format: value }));
-                writeLS("defaultFormat", value);
-              },
-              options: REPORT_FORMATS.map(function (format) {
-                return { value: format, label: format };
-              }),
-            }),
-          ),
-        ),
-      ),
-      h(
-        Panel,
-        { title: "关于 token", style: { gridColumn: "1 / -1" } },
-        h(
-          Paragraph,
-          { style: Object.assign({}, s.muted, { margin: 0, lineHeight: 1.8 }) },
-          "页面调的是本插件的 /v1 代理，转发时才注入凭据：浏览器里没有 token，" +
-            "插件目录里的配置文件是 0600。签发、吊销与 admin scope 都在服务的 auth 命令行里，" +
-            "不在这个页面上——能改凭据的面板，等于把凭据交给了任何能打开它的人。",
-        ),
-      ),
-    );
-  }
-
-  // ── page ────────────────────────────────────────────────────────────────
-
-  function Dashboard() {
-    var s = useStyles();
-    var [view, setView] = useState("jobs");
-    var [config, setConfig] = useState(null);
-    var [probe, setProbe] = useState(null);
-    var [probing, setProbing] = useState(false);
-    var [catalog, setCatalog] = useState({ datasets: [], categories: [], label_distribution: {} });
-    var [jobs, setJobs] = useState([]);
-    var [loadError, setLoadError] = useState(null);
-    var [newOpen, setNewOpen] = useState(false);
-    var [reportJob, setReportJob] = useState(null);
-
-    var refreshConfig = useCallback(function () {
-      return api
-        .config()
-        .then(function (result) {
-          setConfig(result);
-          return result;
-        })
-        .catch(function (err) {
-          setLoadError(errOf(err));
-          return null;
-        });
-    }, []);
-
-    var refreshCatalog = useCallback(function () {
-      return Promise.all([api.datasets(), api.categories()])
-        .then(function (results) {
-          var datasets = results[0] || {};
-          var categories = results[1] || {};
-          setCatalog({
-            datasets: datasets.datasets || [],
-            label_distribution: datasets.label_distribution || {},
-            categories: categories.categories || [],
-          });
-        })
-        .catch(function (err) {
-          var info = errOf(err);
-          // An unconfigured service is not an error to shout about: the rail
-          // already says so, and a red toast on every poll is noise.
-          if (info.code !== "service_not_configured" && info.code !== "token_missing") {
-            setLoadError(info);
-          }
-        });
-    }, []);
-
-    var refreshJobs = useCallback(function () {
-      return api
-        .jobs()
-        .then(function (result) {
-          setJobs((result && result.jobs) || []);
-          setLoadError(null);
-        })
-        .catch(function (err) {
-          var info = errOf(err);
-          if (info.code !== "service_not_configured" && info.code !== "token_missing") {
-            setLoadError(info);
-          }
-        });
-    }, []);
-
-    var runProbe = useCallback(function () {
-      setProbing(true);
-      return api
-        .probe()
-        .then(setProbe)
-        .catch(function (err) {
-          setProbe({ configured: true, reachable: false, reason: errOf(err).code });
-        })
-        .then(function () {
-          setProbing(false);
-        });
-    }, []);
-
-    useEffect(
-      function () {
-        refreshConfig();
-        runProbe();
-      },
-      [refreshConfig, runProbe],
-    );
-
-    var ready = config && config.base_url && config.has_token;
-    useEffect(
-      function () {
-        if (!ready) return undefined;
-        refreshCatalog();
-        refreshJobs();
-        var timer = setInterval(function () {
-          if (document.visibilityState === "visible") refreshJobs();
-        }, POLL_MS);
-        return function () {
-          clearInterval(timer);
-        };
-      },
-      [ready, refreshCatalog, refreshJobs],
-    );
-
-    // A `?job=` in the URL opens that report: the "复制链接" button on a report
-    // is only useful if the link lands somewhere.
-    useEffect(
-      function () {
-        if (!ready) return;
-        try {
-          var params = new URLSearchParams(window.location.search);
-          var job = params.get("job");
-          if (job) {
-            setReportJob(job);
-            setView("jobs");
-          }
-        } catch (err) {
-          /* older webviews have no URLSearchParams; the page still works */
-        }
-      },
-      [ready],
-    );
-
-    function onIdentity(subject) {
-      setConfig(function (previous) {
-        return previous ? Object.assign({}, previous, { subject: subject }) : previous;
-      });
-    }
-
-    function openReport(jobId) {
-      setReportJob(jobId);
-      setView("jobs");
-      try {
-        var url = new URL(window.location.href);
-        url.searchParams.set("job", jobId);
-        window.history.replaceState({}, "", url.toString());
-      } catch (err) {
-        /* the address bar is a convenience, not the source of truth */
-      }
-    }
-
-    function closeReport() {
-      setReportJob(null);
-      try {
-        var url = new URL(window.location.href);
-        url.searchParams.delete("job");
-        window.history.replaceState({}, "", url.toString());
-      } catch (err) {
-        /* same */
-      }
-    }
-
-    var running = jobs.filter(function (job) {
-      return job.status === "running";
-    }).length;
-    var waiting = jobs.filter(function (job) {
-      return ORDERABLE[job.status];
-    }).length;
-
-    var connectionState = "unconfigured";
-    if (probe && probe.configured) {
-      if (!probe.reachable) connectionState = "down";
-      else if (probe.authorised === false) connectionState = "denied";
-      else connectionState = "ok";
-    }
-    var connectionText = {
-      ok: "服务正常",
-      down: "连不上",
-      denied: "token 被拒",
-      unconfigured: "未配置服务",
-    }[connectionState];
-    var connectionColor = {
-      ok: s.token.colorSuccess,
-      down: s.token.colorError,
-      denied: s.token.colorWarning,
-      unconfigured: s.token.colorTextTertiary,
-    }[connectionState];
-
-    var title = view === "datasets" ? "数据集" : view === "settings" ? "配置" : "评测";
-    var subtitle = {
-      jobs: "提交评测、看队列、读报告",
-      datasets: "从内置语料切视图，或上传自定义任务包",
-      settings: "服务地址、token 与报告默认值",
-    }[view];
-
-    // Inside a report the page has its own title block; a module heading above
-    // it would repeat "评测" over a screen that is already one evaluation.
-    var header = reportJob
-      ? null
-      : h(
-      "div",
-      { style: Object.assign({}, s.row, { justifyContent: "space-between", alignItems: "flex-end" }) },
-      h(
-        "div",
-        null,
-        h("h1", { style: s.h1 }, title),
-        h("div", { style: Object.assign({}, s.muted, { marginTop: 2 }) }, subtitle),
-      ),
-      h(
-        "div",
-        { style: Object.assign({}, s.row, { paddingRight: 76 }) },
-        view === "jobs" && !reportJob
-          ? h(
-              Button,
-              {
-                type: "primary",
-                disabled: !ready,
-                onClick: function () {
-                  setNewOpen(true);
-                },
-              },
-              "＋ 新建评测",
-            )
-          : null,
-        view !== "jobs"
-          ? h(
-              Button,
-              {
-                onClick: function () {
-                  refreshCatalog();
-                  refreshJobs();
-                },
-              },
-              "刷新",
-            )
-          : null,
-      ),
-    );
-
-    var body;
-    if (view === "settings") {
-      body = h(SettingsModule, {
-        config: config || {},
-        probe: probe,
-        onSaved: function () {
-          refreshConfig();
-          refreshCatalog();
-          refreshJobs();
-          runProbe();
-        },
-      });
-    } else if (view === "datasets") {
-      body = h(DatasetsModule, {
-        catalog: catalog,
-        subject: config && config.subject,
-        onRefresh: refreshCatalog,
-      });
-    } else if (reportJob) {
-      body = h(ReportModule, {
-        jobId: reportJob,
-        onBack: closeReport,
-        defaultSensitivity: readLS("defaultSensitivity", "shared"),
-        defaultFormat: readLS("defaultFormat", "md"),
-      });
-    } else if (!ready) {
-      body = h(
-        Panel,
-        { pad: false },
-        h(EmptyState, {
-          glyph: "🔌",
-          title: "还没有连上评测服务",
-          hint: "填一次服务地址和 token 就能用；token 只留在本机插件目录，页面拿不到它。",
-          action: h(
-            Button,
-            {
-              type: "primary",
-              onClick: function () {
-                setView("settings");
-              },
-            },
-            "去配置",
-          ),
-        }),
-      );
-    } else {
-      body = h(JobsModule, {
-        jobs: jobs,
-        subject: config && config.subject,
-        onRefresh: refreshJobs,
-        onOpen: openReport,
-        onNew: function () {
-          setNewOpen(true);
-        },
-      });
-    }
-
-    return h(
-      "div",
-      { style: s.page },
-      h(
-        "aside",
-        { style: s.rail },
-        h(
-          "div",
-          { style: Object.assign({}, s.row, { gap: 10, padding: "0 8px 18px" }) },
-          h(
-            "div",
-            {
-              style: {
-                width: 30,
-                height: 30,
-                borderRadius: 8,
-                background: s.token.colorPrimary,
-                color: s.token.colorTextLightSolid,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 15,
-              },
-            },
-            "🧪",
-          ),
-          h(
-            "div",
-            null,
-            h("div", { style: { fontSize: 13, fontWeight: 600, lineHeight: "18px" } }, "PawBench"),
-            h("div", { style: s.tiny }, "远程评测"),
-          ),
-        ),
-        h("div", { style: Object.assign({}, s.tiny, { padding: "0 8px 6px" }) }, "工作台"),
-        h(
-          "div",
-          { style: { display: "flex", flexDirection: "column", gap: 2 } },
-          h(NavItem, {
-            glyph: "▦",
-            label: "评测",
-            badge: running ? String(running) : waiting ? String(waiting) : "",
-            active: view === "jobs",
-            onClick: function () {
-              setView("jobs");
-            },
-          }),
-          h(NavItem, {
-            glyph: "▤",
-            label: "数据集",
-            badge: String((catalog.datasets || []).length),
-            active: view === "datasets",
-            onClick: function () {
-              setView("datasets");
-            },
-          }),
-          h(NavItem, {
-            glyph: "⚙",
-            label: "配置",
-            active: view === "settings",
-            onClick: function () {
-              setView("settings");
-            },
-          }),
-        ),
-        h("div", { style: { flex: 1 } }),
-        h(
-          "div",
-          {
-            style: Object.assign({}, s.card, {
-              padding: 10,
-              background: s.token.colorFillQuaternary,
-              cursor: "pointer",
-            }),
-            onClick: function () {
-              runProbe();
-            },
-            title: "点一下重新探测",
-          },
-          h(
-            "div",
-            { style: Object.assign({}, s.row, { gap: 6 }) },
-            h(Dot, { color: connectionColor }),
-            h("span", { style: { fontSize: 12, fontWeight: 500 } }, connectionText),
-            probing ? h(Spin, { size: "small" }) : null,
-          ),
-          h(
-            "div",
-            { style: Object.assign({}, s.tiny, { marginTop: 2, wordBreak: "break-all" }) },
-            (config && config.base_url) || "还没有填写地址",
-          ),
-        ),
-      ),
-      h(
-        "main",
-        { style: s.main },
-        header,
-        loadError
-          ? h(Alert, {
-              type: "error",
-              showIcon: true,
-              closable: true,
-              onClose: function () {
-                setLoadError(null);
-              },
-              message: loadError.code,
-              description: loadError.message,
-            })
-          : null,
-        body,
-      ),
-      h(NewJobModal, {
-        open: newOpen,
-        catalog: catalog,
-        onClose: function () {
-          setNewOpen(false);
-        },
-        onIdentity: onIdentity,
-        onSubmitted: function (result) {
-          setNewOpen(false);
-          refreshJobs();
-          if (result && result.job_id) openReport(result.job_id);
-        },
-      }),
-    );
-  }
-
-  // ── route registration ──────────────────────────────────────────────────
-
-  Q.registerRoutes("pawbench-eval", [
+  host();
+  injectStyles();
+  sdk.registerRoutes("pawbench-eval", [
     {
       path: "/apps/pawbench-eval",
-      component: Dashboard,
+      component: Shell,
       label: "PawBench 评测",
       icon: "🧪",
-      priority: 60,
-    },
+      priority: 60
+    }
   ]);
-})();
+}
+main();
