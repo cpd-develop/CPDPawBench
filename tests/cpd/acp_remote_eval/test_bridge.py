@@ -99,6 +99,30 @@ def test_a_stdio_agent_answers_the_clients_own_transport(bridge: str) -> None:
     assert recorder.counts_by_kind.get("agent_message_chunk", 0) >= 1
 
 
+def test_a_session_adopted_from_the_caller_still_reaches_the_client(bridge: str) -> None:
+    """``session/load`` answers without the id; the route has to come from the ask.
+
+    An agent that honours a caller-chosen session id (QwenPaw does) is how the
+    report ends up quoting an id that agent's own console recognises.  The
+    bridge used to route only on ``session/new``'s response, so the updates for
+    a loaded session had no connection to go to: the run scored normally and
+    its transcript was empty, which reads as "the agent said nothing".
+    """
+
+    async def body(session: Any, recorder: TranscriptRecorder) -> Any:
+        session_id = await asyncio.wait_for(
+            session.new_session(cwd="/tmp", preferred_id="1795156778446-y2r8j2a"),
+            timeout=30,
+        )
+        result = await asyncio.wait_for(session.prompt(PROMPT), timeout=60)
+        return session_id, result, recorder
+
+    session_id, result, recorder = _run(bridge, body)
+    assert session_id == "1795156778446-y2r8j2a"
+    assert result["stop_reason"] == "end_turn"
+    assert recorder.update_count >= 2, "the adopted session's updates went nowhere"
+
+
 def test_each_connection_receives_only_its_own_session_updates(bridge: str) -> None:
     """Two attempts in flight at once must not read each other's transcript.
 

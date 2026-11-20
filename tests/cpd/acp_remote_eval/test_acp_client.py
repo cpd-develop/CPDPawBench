@@ -12,6 +12,7 @@ the fake agent as a real process.
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 from typing import Any
 
@@ -34,6 +35,7 @@ from pawbench.cpd.acp_remote_eval.acp.client import (
     _STDERR_TAIL_LINES,
     _allow_option,
     connect,
+    mint_session_id,
     spawn_command,
     spawn_url,
 )
@@ -49,20 +51,30 @@ class StubAgent:
         session_id: str = "sess-1",
         new_session_response: Any = None,
         stop_reason: str = "end_turn",
+        can_load: bool = True,
+        load_error: Exception | None = None,
     ) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.session_id = session_id
         self.new_session_response = new_session_response
         self.stop_reason = stop_reason
+        self.can_load = can_load
+        self.load_error = load_error
         self.canceled = ""
 
     async def initialize(self, **kwargs: Any) -> InitializeResponse:
         self.calls.append(("initialize", kwargs))
         return InitializeResponse(
             protocol_version=kwargs.get("protocol_version", 1),
-            agent_capabilities={"loadSession": True},
+            agent_capabilities={"loadSession": self.can_load},
             agent_info={"name": "stub", "version": "9"},
         )
+
+    async def load_session(self, **kwargs: Any) -> Any:
+        self.calls.append(("load_session", kwargs))
+        if self.load_error is not None:
+            raise self.load_error
+        return {}
 
     async def new_session(self, **kwargs: Any) -> Any:
         self.calls.append(("new_session", kwargs))
@@ -243,6 +255,65 @@ def test_new_session_declares_the_directories_it_was_given() -> None:
     assert session_id == "sess-1"
     _, kwargs = agent.calls[-1]
     assert kwargs == {"cwd": "/tmp/staging", "additional_directories": ["/tmp/out"], "mcp_servers": []}
+
+
+# ── the session id a report quotes ───────────────────────────────────────────
+#
+# ``session_id`` is the agent's own handle for the conversation, and the person
+# reading a report searches *that* agent's console with it.  So we ask for an
+# id shaped the way those consoles print them, and treat the ask as a courtesy:
+# an agent that cannot or will not take it still has to run.
+
+
+def test_a_minted_session_id_looks_like_the_ones_agents_show() -> None:
+    session_id = mint_session_id(now=1795156778.446)
+
+    assert re.fullmatch(r"\d{13}-[a-z0-9]{7}", session_id), session_id
+    assert session_id.startswith("1795156778446-")
+
+
+def test_the_minted_ids_do_not_repeat() -> None:
+    assert len({mint_session_id() for _ in range(50)}) == 50
+
+
+def test_an_agent_that_can_load_files_the_run_under_the_id_we_asked_for() -> None:
+    agent = StubAgent()
+    session = _session(agent)
+    asyncio.run(session.initialize(client_name="pawbench-eval"))
+
+    session_id = asyncio.run(session.new_session("/tmp/staging", ["/tmp/out"], preferred_id="42-a"))
+
+    assert session_id == "42-a"
+    assert session.session_id == "42-a"
+    # The id arrives through session/load: session/new has no field for it.
+    assert [name for name, _ in agent.calls].count("load_session") == 1
+    assert [name for name, _ in agent.calls].count("new_session") == 0
+    _, kwargs = agent.calls[-1]
+    assert kwargs["session_id"] == "42-a"
+    assert kwargs["cwd"] == "/tmp/staging"
+
+
+def test_an_agent_that_cannot_load_keeps_the_id_it_mints() -> None:
+    agent = StubAgent(can_load=False)
+    session = _session(agent)
+    asyncio.run(session.initialize(client_name="pawbench-eval"))
+
+    session_id = asyncio.run(session.new_session("/tmp/staging", preferred_id="42-a"))
+
+    assert session_id == "sess-1"
+    assert "load_session" not in [name for name, _ in agent.calls]
+
+
+def test_an_agent_that_refuses_the_id_still_runs() -> None:
+    """A refused courtesy is not a failed attempt: fall back to its own id."""
+    agent = StubAgent(load_error=RequestError(-32602, "no such session"))
+    session = _session(agent)
+    asyncio.run(session.initialize(client_name="pawbench-eval"))
+
+    session_id = asyncio.run(session.new_session("/tmp/staging", preferred_id="42-a"))
+
+    assert session_id == "sess-1"
+    assert [name for name, _ in agent.calls][-1] == "new_session"
 
 
 def test_an_agent_that_opens_no_session_fails_the_step() -> None:

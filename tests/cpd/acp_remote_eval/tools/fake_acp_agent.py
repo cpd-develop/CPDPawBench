@@ -106,6 +106,14 @@ class FakeAcpAgent:
         log(f"session {session_id[:8]} cwd={cwd}")
         return NewSessionResponse(session_id=session_id)
 
+    async def load_session(self, cwd: str, session_id: str, **kwargs: Any) -> Any:
+        """Adopt the caller's id, the way an agent with ``loadSession`` does."""
+        self.cwd = Path(cwd)
+        self.sessions[session_id] = cwd
+        self.cwd.mkdir(parents=True, exist_ok=True)
+        log(f"load_session {session_id[:8]} cwd={cwd}")
+        return {}
+
     async def cancel(self, session_id: str, **kwargs: Any) -> None:
         self.cancelled = True
         log("cancel received")

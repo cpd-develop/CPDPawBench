@@ -17,6 +17,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import secrets
+import string
+import time
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
@@ -47,6 +50,26 @@ _STDERR_TAIL_LINES = 200
 TRANSPORT_STDIO = "stdio"
 TRANSPORT_HTTP = "http"
 _SUPPORTED_URL_SCHEMES = ("http://", "https://")
+
+#: Alphabet for the random half of a minted session id: lowercase alnum, which
+#: is what the consoles we mirror use.
+_SESSION_ID_ALPHABET = string.ascii_lowercase + string.digits
+_SESSION_ID_SUFFIX = 7
+
+
+def mint_session_id(now: float | None = None) -> str:
+    """A session handle shaped like the ones agents show their own users.
+
+    ``1795156778446-y2r8j2a``: epoch milliseconds, a dash, seven random
+    characters.  We mint it rather than accept the agent's opaque handle for
+    one reason -- the report is read by whoever owns the agent, and they search
+    *their* console, not our protocol trace.  An id the console recognises is
+    the difference between "this run" and "a run somewhere, sometime".
+    """
+    millis = int((time.time() if now is None else now) * 1000)
+    suffix = "".join(secrets.choice(_SESSION_ID_ALPHABET) for _ in range(_SESSION_ID_SUFFIX))
+    return f"{millis}-{suffix}"
+
 
 #: argv tokens matching one of these words have their value replaced.  A name
 #: list rather than a pattern, because the submissions we launch are ordinary
@@ -393,7 +416,13 @@ class AcpSession:
             "auth_methods": payload.get("authMethods") or [],
         }
 
-    async def new_session(self, cwd: str, additional_directories: Sequence[str] = ()) -> str:
+    async def new_session(
+        self,
+        cwd: str,
+        additional_directories: Sequence[str] = (),
+        *,
+        preferred_id: str = "",
+    ) -> str:
         """Open a session rooted at *cwd* (the agent's own choice what that means).
 
         The extra directories exist for the stdio lane, where the agent shares
@@ -402,8 +431,19 @@ class AcpSession:
         answer somewhere" a question with an answer.  For an agent on another
         machine they are our paths, not theirs, and the submission declares them
         only if it means to.
+
+        *preferred_id* asks the agent to file this conversation under a handle
+        we chose (see :func:`mint_session_id`).  ``session/new`` has no field
+        for it, so the ask goes through ``session/load``: an agent that
+        supports loading adopts the id and writes its own history under it,
+        which is what makes the report's ``session_id`` searchable in that
+        agent's console.  Everything else is unchanged -- if the agent does not
+        declare ``loadSession``, or refuses the id, we fall back to whatever
+        ``session/new`` hands back rather than failing the attempt.
         """
         directories = [str(path) for path in additional_directories]
+        if preferred_id and await self._adopt_session(preferred_id, cwd, directories):
+            return self.session_id
         response = await _bounded(
             self.agent.new_session(
                 cwd=cwd, additional_directories=directories, mcp_servers=[]
@@ -422,6 +462,54 @@ class AcpSession:
             },
         )
         return self.session_id
+
+    async def _adopt_session(self, session_id: str, cwd: str, directories: list[str]) -> bool:
+        """Try to make *session_id* the agent's own handle for this conversation.
+
+        Returns whether it took.  A refusal is routine, not an error: the id is
+        a convenience for whoever reads the report, and losing it must not cost
+        a task attempt.
+        """
+        if not self.supports_load_session:
+            logger.info(
+                "agent cannot adopt a session id; using the one it mints",
+                extra={"endpoint": self.describe, "preferred_id": session_id},
+            )
+            return False
+        try:
+            await _bounded(
+                self.agent.load_session(
+                    cwd=cwd,
+                    session_id=session_id,
+                    mcp_servers=[],
+                    additional_directories=directories,
+                ),
+                "session/load",
+            )
+        except Exception as exc:  # noqa: BLE001 - a refusal must never fail the attempt
+            # Any failure here is the agent declining a courtesy.  Swallowing
+            # broadly is the point: a transport hiccup would otherwise surface
+            # as "could not open a session", which sends the next reader to the
+            # wrong layer.
+            logger.warning(
+                "agent refused the requested session id; opening a fresh one",
+                extra={
+                    "endpoint": self.describe,
+                    "preferred_id": session_id,
+                    "reason": repr(exc),
+                },
+            )
+            return False
+        self.session_id = session_id
+        logger.info(
+            "acp session adopted the caller's id",
+            extra={
+                "endpoint": self.describe,
+                "session_id": session_id,
+                "additional_directories": len(directories),
+            },
+        )
+        return True
 
     async def prompt(self, text: str, blocks: Sequence[Any] = ()) -> dict[str, Any]:
         """Send one prompt and wait for the agent to say it is done.

@@ -223,7 +223,13 @@ class _Proxy:
 
     async def _call_and_route(self, name: str, **kwargs: Any) -> Any:
         response = await self._call(name, **kwargs)
-        session_id = getattr(response, "session_id", None)
+        # ``session/new`` names the session in its response; ``session/load``
+        # (and resume) are given the id and answer without it.  Reading only the
+        # response leaves those sessions unrouted, and every update the agent
+        # then sends is dropped as "no connection holds it" -- a run that scores
+        # fine and produces an empty transcript, which reads like the agent said
+        # nothing.
+        session_id = getattr(response, "session_id", None) or kwargs.get("session_id")
         if session_id:
             self._backend.route(str(session_id), self._connection)
         else:

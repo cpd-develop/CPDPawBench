@@ -41,7 +41,9 @@ PLUGIN_DIR = ROOT / "plugins" / "pawbench-eval"
 SKILLS_DIR = PLUGIN_DIR / "skills"
 SERVER = ROOT / "pawbench" / "cpd" / "acp_remote_eval" / "mcp" / "server.py"
 SERVICE_API = ROOT / "pawbench" / "cpd" / "acp_remote_eval" / "service" / "api.py"
-UI = PLUGIN_DIR / "ui" / "index.js"
+UI_DIR = PLUGIN_DIR / "ui"
+UI_SRC = UI_DIR / "src"
+UI_BUNDLE = UI_DIR / "index.js"
 BACKEND = PLUGIN_DIR / "backend" / "main.py"
 
 # PluginType in QwenPaw src/qwenpaw/plugins/architecture.py:22, spelled out
@@ -57,28 +59,39 @@ PLUGIN_TYPES = frozenset(
 #: still be in ``ui/index.js``, so a route rename on either side is red here
 #: instead of being a 404 somebody reads off a screenshot.
 DASHBOARD_ENDPOINTS = [
-    ("GET", "/v1/jobs", '"/v1/jobs"'),
-    ("POST", "/v1/jobs", '"/v1/jobs"'),
-    ("GET", "/v1/jobs/job-x", '"/v1/jobs/"'),
-    ("PATCH", "/v1/jobs/job-x", '"/v1/jobs/"'),
-    ("POST", "/v1/jobs/job-x/cancel", '"/cancel"'),
-    ("GET", "/v1/jobs/job-x/detail", '"/detail?sensitivity="'),
-    ("GET", "/v1/jobs/job-x/tasks/t1/detail", '"/tasks/"'),
-    ("GET", "/v1/jobs/job-x/results", '"/results"'),
-    ("GET", "/v1/jobs/job-x/transcript", '"/transcript?task_id="'),
-    ("GET", "/v1/jobs/job-x/report", '"/report?format="'),
-    ("GET", "/v1/datasets", '"/v1/datasets"'),
-    ("POST", "/v1/datasets", '"/v1/datasets"'),
-    ("DELETE", "/v1/datasets/ds-1", '"/v1/datasets/"'),
-    ("POST", "/v1/datasets/resolve", '"/v1/datasets/resolve"'),
-    ("POST", "/v1/datasets/packages", '"/v1/datasets/packages?"'),
-    ("GET", "/v1/dataset-categories", '"/v1/dataset-categories"'),
-    ("POST", "/v1/dataset-categories", '"/v1/dataset-categories"'),
-    ("DELETE", "/v1/dataset-categories/cat-1", '"/v1/dataset-categories/"'),
+    ("GET", "/v1/jobs", "/v1/jobs"),
+    ("POST", "/v1/jobs", "/v1/jobs"),
+    ("GET", "/v1/jobs/job-x", "/v1/jobs/"),
+    ("PATCH", "/v1/jobs/job-x", "/v1/jobs/"),
+    ("POST", "/v1/jobs/job-x/cancel", "/cancel"),
+    ("GET", "/v1/jobs/job-x/detail", "/detail?sensitivity="),
+    ("GET", "/v1/jobs/job-x/tasks/t1/detail", "/tasks/"),
+    ("GET", "/v1/jobs/job-x/results", "/results"),
+    ("GET", "/v1/jobs/job-x/transcript", "/transcript?task_id="),
+    ("GET", "/v1/jobs/job-x/report", "/report?format="),
+    ("GET", "/v1/datasets", "/v1/datasets"),
+    ("POST", "/v1/datasets", "/v1/datasets"),
+    ("DELETE", "/v1/datasets/ds-1", "/v1/datasets/"),
+    ("POST", "/v1/datasets/resolve", "/v1/datasets/resolve"),
+    ("POST", "/v1/datasets/packages", "/v1/datasets/packages?"),
+    ("GET", "/v1/dataset-categories", "/v1/dataset-categories"),
+    ("POST", "/v1/dataset-categories", "/v1/dataset-categories"),
+    ("DELETE", "/v1/dataset-categories/cat-1", "/v1/dataset-categories/"),
 ]
 
 
 # ── reading what the host reads ───────────────────────────────────────────
+
+
+def _dashboard_source() -> str:
+    """Every frontend source file, joined, for the endpoint-fragment checks."""
+    files = [
+        path
+        for path in sorted(UI_SRC.rglob("*"))
+        if path.is_file() and path.suffix in {".ts", ".tsx"}
+    ]
+    assert files, f"no frontend source under {UI_SRC}"
+    return "\n".join(path.read_text(encoding="utf-8") for path in files)
 
 
 def _manifest() -> dict:
@@ -194,7 +207,7 @@ def test_the_dependency_list_sits_where_the_installer_reads_it() -> None:
 def test_the_frontend_registers_the_page_the_manifest_advertises() -> None:
     """A ``pawapp.entry_page`` nobody registers is a menu item that 404s."""
     manifest = _manifest()
-    source = UI.read_text(encoding="utf-8")
+    source = (UI_SRC / "index.tsx").read_text(encoding="utf-8")
     registered = re.search(r'registerRoutes\(\s*"([^"]+)"', source)
     assert registered is not None, "the module registers no routes at all"
     assert registered.group(1) == manifest["id"]
@@ -280,36 +293,69 @@ def test_every_endpoint_the_dashboard_calls_exists_on_the_service() -> None:
 
 
 def test_the_dashboard_still_calls_every_endpoint_it_promises() -> None:
-    source = UI.read_text(encoding="utf-8")
+    source = _dashboard_source()
     missing = [fragment for _, _, fragment in DASHBOARD_ENDPOINTS if fragment not in source]
     assert not missing, missing
 
 
-def test_the_module_is_one_file_because_the_host_imports_a_blob() -> None:
+def test_the_shipped_bundle_is_self_contained() -> None:
     """``usePluginLoader`` wraps the file in a Blob and ``import()``s it.
 
-    A relative import resolves against the blob URL, not the plugin directory,
-    so a second file would load in a checkout with a bundler and fail on the
-    host that matters.
+    A module specifier — bare or relative — resolves against the blob URL and
+    fails on the host that matters, and there is no import map to save it.  The
+    bundle therefore has to carry React and antd access, CSS injection and every
+    module of its own; only ``window.QwenPaw.host`` may come from outside.
     """
-    siblings = sorted(path.name for path in UI.parent.iterdir() if path.is_file())
-    assert siblings == ["index.js"], siblings
-    source = UI.read_text(encoding="utf-8")
-    assert not re.search(r"^\s*import\s", source, re.MULTILINE)
+    assert UI_BUNDLE.is_file(), "ui/index.js is missing: run `npm run build` in ui/"
+    source = UI_BUNDLE.read_text(encoding="utf-8")
+    assert not re.search(r"^\s*import\s", source, re.MULTILINE), "the bundle imports a module"
+    assert not re.search(r'\bfrom\s*["\']', source), "the bundle resolves a specifier at run time"
     assert "window.QwenPaw" in source
+    assert "registerRoutes" in source
+    # One marker per module, so a stale bundle (built before a module existed)
+    # fails here rather than as a blank panel on somebody's screen.
+    for marker in ("pbe-root", "新建评测", "数据集", "配置", "session_id"):
+        assert marker in source, marker
+
+
+def test_the_frontend_is_built_from_readable_sources() -> None:
+    """The bundle is an artifact; the thing to review is ``ui/src``.
+
+    Pinning the arrangement keeps a future edit from hand-patching the 170 KB
+    build output, which would be invisible in review and lost on the next build.
+    """
+    package = json.loads((UI_DIR / "package.json").read_text(encoding="utf-8"))
+    assert "build" in package["scripts"]
+    assert (UI_DIR / "build.mjs").is_file()
+    modules = sorted(path.name for path in UI_SRC.glob("*.tsx"))
+    assert {"index.tsx", "shell.tsx", "theme.tsx"} <= set(modules), modules
+    assert (UI_SRC / "modules").is_dir()
+    assert (UI_SRC / "designsys" / "colors_and_type.css").is_file()
 
 
 def test_the_dashboard_takes_no_colour_literals() -> None:
     """DesignSys v1: colour comes from the token set, never from a hex value.
 
-    ``theme.useToken()`` returns the host's live tokens, which is what makes the
-    light and dark passes the same code path.
+    Two exemptions, both deliberate: ``src/designsys/`` *is* the token source,
+    so its hex values are the origin rather than a violation, and the produced
+    bundle is not read at all.  Light and dark are one code path because the
+    same semantic token names are used under both themes.
     """
-    source = UI.read_text(encoding="utf-8")
-    literals = re.findall(r"#[0-9a-fA-F]{3,8}\b", source)
-    assert not literals, literals
-    assert not re.search(r"\brgba?\(", source), "rgba()/rgb() colour literal"
-    assert "useToken" in source
+    sources = [
+        path
+        for path in sorted(UI_SRC.rglob("*"))
+        if path.is_file()
+        and path.suffix in {".ts", ".tsx", ".css"}
+        and "designsys" not in path.parts
+    ]
+    assert sources
+    offenders: list[str] = []
+    for path in sources:
+        text = path.read_text(encoding="utf-8")
+        if re.search(r"#[0-9a-fA-F]{3,8}\b", text) or re.search(r"\brgba?\(", text):
+            offenders.append(str(path.relative_to(UI_SRC)))
+    assert not offenders, offenders
+    assert "useToken" in (UI_SRC / "theme.tsx").read_text(encoding="utf-8")
 
 
 # ── skill ─────────────────────────────────────────────────────────────────

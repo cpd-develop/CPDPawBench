@@ -51,3 +51,9 @@ attribution/
 uv.lock
 run_batch.sh
 docs/
+
+# pytest basetemp (the sandbox temp dir collides, so tests pass --basetemp=./.tmp-py-*)
+.tmp-py-*/
+
+# pytest basetemp (the sandbox temp dir collides, so tests pass --basetemp=./.tmp-py-*)
+.tmp-py-*/

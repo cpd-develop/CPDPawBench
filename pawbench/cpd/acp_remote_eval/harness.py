@@ -30,7 +30,7 @@ from acp.schema import ResourceContentBlock
 from pawbench.agents.base import BaseAgent
 from pydantic import ValidationError
 
-from .acp.client import AcpEndpoint, AcpError, connect
+from .acp.client import AcpEndpoint, AcpError, connect, mint_session_id
 from .acp.transcript import TranscriptRecorder
 from .service.exchange import Exchange
 
@@ -110,10 +110,13 @@ class RemoteAcpAgent(BaseAgent):
         self.staging_dir = self.attempt_dir / "session"
         self.workspace_dir = self.attempt_dir / "workspace"
         self.recorder = TranscriptRecorder(self.attempt_dir / "transcript.jsonl")
-        # Our handle on this attempt.  The agent has its own session id, but a
-        # session id is only useful to whoever can grep the agent's logs; this
-        # one appears in *our* log lines for the attempt, so a report row and
-        # the stderr that explains it can be joined without guessing timestamps.
+        # Two handles, two readers.  ``trace_id`` appears in *our* log lines, so
+        # a report row and the stderr that explains it join without guessing
+        # timestamps.  ``session_id`` is the agent's own handle for this
+        # conversation -- we ask for a recognisable one in ``setup`` -- and is
+        # for whoever reads that agent's console.  Neither substitutes for the
+        # other: our log has no idea what the agent called the conversation,
+        # and the agent's log has never heard of our attempt.
         self.trace_id = uuid.uuid4().hex[:16]
         self.session_id = ""
         self.manifest: dict[str, Any] = {}
@@ -152,8 +155,15 @@ class RemoteAcpAgent(BaseAgent):
         )
         self.session = await connect(self._endpoint_for_attempt(), self.recorder)
         self.handshake = await self.session.initialize(client_name=self.client_name)
+        # Ask the agent to file this conversation under an id its own console
+        # recognises (``1795156778446-y2r8j2a``), not the opaque handle
+        # ``session/new`` would mint.  The report is read by whoever owns the
+        # agent; an id they can paste into their session list is what turns
+        # "a run happened" into "this run, on this machine".
         self.session_id = await self.session.new_session(
-            str(self.staging_dir), self._declared_directories()
+            str(self.staging_dir),
+            self._declared_directories(),
+            preferred_id=mint_session_id(),
         )
         logger.info(
             "remote agent ready",
