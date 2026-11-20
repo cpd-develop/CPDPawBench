@@ -1,0 +1,20 @@
+# Extra dependencies for the ACP remote-eval service, over the repo's
+# requirements.txt (which already provides pyyaml, pydantic and pytest).
+#
+# They live here instead of in the shared file so that this module stays the
+# only thing a community merge has to look at: the benchmark CLI does not
+# import any of them, and a deployment that only runs `run_bench.py` installs
+# nothing new.
+fastapi>=0.110
+uvicorn>=0.27
+mcp>=1.30,<2
+
+# The ACP protocol itself -- JSON-RPC framing, message types, stdio transport.
+agent-client-protocol>=0.9
+
+# Streamable HTTP transport, for a submission that gives an address rather than
+# a command.  Deliberately not a line above: it is an extra of the package, so a
+# service that only evaluates agents we launch ourselves does not pay for it --
+# and `spawn_url` names this command in its failure message.
+#
+#   pip install 'agent-client-protocol[http]'

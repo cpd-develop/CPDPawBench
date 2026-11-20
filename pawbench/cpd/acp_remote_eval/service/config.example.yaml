@@ -1,0 +1,87 @@
+# The ACP remote-eval service, as one starts it locally.
+#
+# Copy it next to this file as ``config.yaml`` (the path ``python -m
+# pawbench.cpd.acp_remote_eval`` reads by default, also honoured through
+# ``PAWBENCH_EVAL_CONFIG``) and edit the three lines that cannot be true for
+# everybody: ``public_base_url``, ``bind`` and ``builtin_dir``.
+#
+# Every key shown here has a default in ``config.py``; the ones left out keep
+# the numbers the design settled (D-group: four jobs at a time globally, one
+# per person, night window 00:00-07:00, Asia/Shanghai).
+
+service:
+  # The address the *evaluated agent* reaches this service on.  Fixture links
+  # handed over ACP are built from it, so it is never taken from the request
+  # Host header -- and on a laptop that is genuinely this machine, the loopback
+  # only works while the agent runs on it too.
+  public_base_url: "http://127.0.0.1:8471"
+  bind: "127.0.0.1:8471"
+
+  # Runtime state lives under ``runtime/`` beside this file, and is ignored by
+  # git: the database is a scheduling record, not a deliverable.
+  state_db: "runtime/state.db"
+
+  # Global concurrency, not per person (requirement 4): four jobs at a time
+  # across the whole team, of which any one person may hold one.
+  max_concurrent_jobs: 4
+  max_running_per_user: 1
+
+  # The wall clock of one job.  Tasks the run has not reached when it expires
+  # are written ``skipped(deadline)`` instead of starting and being cut off
+  # mid-prompt.
+  max_job_seconds: 7200
+
+  # How long a ``running`` row is believed to have a live process behind it.
+  # Must be at least twice ``schedule.tick_seconds``: shorter, and a service
+  # whose database was briefly busy would settle jobs it is still running --
+  # and a settle writes terminal rows, so it is not reversible.
+  lease_ttl_seconds: 90
+
+  # Who may submit.  A missing file means an empty allowlist, which means
+  # nobody is authenticated.  Mint the first token from the repository root --
+  # ``--allowlist`` is the path the CLI writes, so it has to be the same file
+  # this config reads:
+  #   python -m pawbench.cpd.acp_remote_eval.service.auth \
+  #       --allowlist pawbench/cpd/acp_remote_eval/service/runtime/allowlist.yaml \
+  #       add-subject --subject <you>
+  # Keep the printed token to yourself; only its hash is stored.
+  allowlist_file: "runtime/allowlist.yaml"
+
+schedule:
+  timezone: "Asia/Shanghai"
+  tick_seconds: 5
+  night_window: ["00:00", "07:00"]
+  # Off: a job that started inside its window is allowed to finish.  Turning it
+  # on means 07:00 cuts runs off and their unreached tasks read
+  # ``skipped(window_closed)``.
+  hard_stop: false
+
+datasets:
+  # The builtin corpus.  Relative paths anchor to this file's directory, so
+  # four levels up is the repository root.
+  builtin_dir: "../../../../data/pawbench-v1.0"
+  custom_dir: "runtime/datasets"
+
+exchange:
+  exchange_dir: "runtime/exchange"
+  asset_url_ttl_seconds: 3600
+  max_uploads_per_run: 64
+
+models:
+  # The judge is the only model this service calls.  The subject's model is not
+  # configured here at all: it is whatever the remote agent is set to, and what
+  # it reports about itself lands in ``subject_model_reported``.
+  judge_base_url: "https://openrouter.ai/api/v1"
+  judge_model: "openrouter/free"
+  # A free route answers from a different backend each call, so every grade
+  # records the serving model.  Pin one here when a number has to be quoted
+  # outside the team -- a pinned judge is what makes two rounds comparable.
+  judge_pinned_model: null
+  judge_timeout_seconds: 120
+  # The key is read from this variable when a request is made and is never
+  # copied into the config object, a row, a report or a log line.
+  api_key_env: "OPENROUTER_API_KEY"
+  # Free routes answer 429 under load; the backoff is exponential from
+  # ``base_delay_seconds`` and every wait is capped at 30s.  Exhausted retries
+  # record ``judge_unavailable`` on the task -- not a zero.
+  retry_429: {max_attempts: 5, base_delay_seconds: 2}

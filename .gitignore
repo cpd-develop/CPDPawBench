@@ -17,6 +17,19 @@ site/pawbench-site.zip
 .githooks/*
 !.githooks/pre-commit
 
+# runtime state of the ACP remote-eval service: sqlite + uploaded artifacts,
+# a scheduling record rather than a deliverable
+pawbench/cpd/acp_remote_eval/service/runtime/
+# ... and the two shapes a hand-written relative path can still produce. The
+# omitted-key defaults now land under `runtime/` (L35 closed), but a config
+# spelling `service/state.db` would put an sqlite full of run tokens inside
+# the tree that gets committed.
+pawbench/cpd/acp_remote_eval/service/service/
+pawbench/cpd/acp_remote_eval/service/data/
+# the operator's own config: it is where public_base_url, the allowlist path
+# and any judge key get written. `config.example.yaml` is the tracked template.
+pawbench/cpd/acp_remote_eval/service/config.yaml
+
 .env
 
 # raw evaluation runs (large, not source-of-truth — aggregated outputs land
