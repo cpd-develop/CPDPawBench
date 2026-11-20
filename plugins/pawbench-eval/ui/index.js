@@ -1352,6 +1352,22 @@ function scoreTone(score) {
   if (score < 0.5) return " pbe-score--low";
   return "";
 }
+var RANK_LIVE = 0;
+var RANK_WAITING = 1;
+var RANK_ENDED = 2;
+function rankOf(job) {
+  if (job.status === "running") return RANK_LIVE;
+  if (ORDERABLE.has(job.status)) return RANK_WAITING;
+  return RANK_ENDED;
+}
+function byReadingOrder(a, b) {
+  const rank = rankOf(a) - rankOf(b);
+  if (rank !== 0) return rank;
+  if (rankOf(a) !== RANK_ENDED) {
+    return (Number(a.queue_pos) || 0) - (Number(b.queue_pos) || 0);
+  }
+  return String(b.created_at).localeCompare(String(a.created_at));
+}
 function JobsModule(props) {
   const feedback = useFeedback();
   const [filter, setFilter] = useState("all");
@@ -1374,7 +1390,7 @@ function JobsModule(props) {
       if (filter === "done" && !FINISHED.has(job.status)) return false;
       if (!needle) return true;
       return [job.purpose, job.product, job.job_id, job.submitter, job.acp_url].join(" ").toLowerCase().includes(needle);
-    });
+    }).sort(byReadingOrder);
   }, [props.jobs, filter, search]);
   const paged = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE;

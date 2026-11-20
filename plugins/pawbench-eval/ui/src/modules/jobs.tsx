@@ -54,6 +54,38 @@ function scoreTone(score: number | null): string {
   return "";
 }
 
+/**
+ * What the list is ordered by, and why it is two rules rather than one.
+ *
+ * The service hands rows out by ``queue_pos``, which is submission order — the
+ * order the queue runs in, and the order ``↑ ↓`` moves things inside.  Correct
+ * for a queue, wrong for a page: the run somebody just submitted lands at the
+ * bottom, ten rows below a week of history.
+ *
+ * So: live work first (running, then waiting in queue order, because that is
+ * the order it will actually run in), and the ended rows newest first, because
+ * those are read and not executed.  The waiting bucket keeps the service's
+ * order verbatim, so the arrows never lie about which row is next.
+ */
+const RANK_LIVE = 0;
+const RANK_WAITING = 1;
+const RANK_ENDED = 2;
+
+function rankOf(job: JobItem): number {
+  if (job.status === "running") return RANK_LIVE;
+  if (ORDERABLE.has(job.status)) return RANK_WAITING;
+  return RANK_ENDED;
+}
+
+function byReadingOrder(a: JobItem, b: JobItem): number {
+  const rank = rankOf(a) - rankOf(b);
+  if (rank !== 0) return rank;
+  if (rankOf(a) !== RANK_ENDED) {
+    return (Number(a.queue_pos) || 0) - (Number(b.queue_pos) || 0);
+  }
+  return String(b.created_at).localeCompare(String(a.created_at));
+}
+
 export function JobsModule(props: {
   jobs: JobItem[];
   loading: boolean;
@@ -81,16 +113,18 @@ export function JobsModule(props: {
 
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return props.jobs.filter((job) => {
-      if (filter === "running" && job.status !== "running") return false;
-      if (filter === "waiting" && !ORDERABLE.has(job.status)) return false;
-      if (filter === "done" && !FINISHED.has(job.status)) return false;
-      if (!needle) return true;
-      return [job.purpose, job.product, job.job_id, job.submitter, job.acp_url]
-        .join(" ")
-        .toLowerCase()
-        .includes(needle);
-    });
+    return props.jobs
+      .filter((job) => {
+        if (filter === "running" && job.status !== "running") return false;
+        if (filter === "waiting" && !ORDERABLE.has(job.status)) return false;
+        if (filter === "done" && !FINISHED.has(job.status)) return false;
+        if (!needle) return true;
+        return [job.purpose, job.product, job.job_id, job.submitter, job.acp_url]
+          .join(" ")
+          .toLowerCase()
+          .includes(needle);
+      })
+      .sort(byReadingOrder);
   }, [props.jobs, filter, search]);
 
   const paged = useMemo(() => {
