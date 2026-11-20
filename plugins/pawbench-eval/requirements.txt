@@ -1,0 +1,9 @@
+# No third-party dependencies: the backend forwards HTTP with the standard
+# library (urllib) and registers a skills directory; the page runs on the React
+# and antd the console already ships.  Nothing here is installed, and that is
+# the point -- an extra requirement would make `plugin install` need the network.
+#
+# The file exists because the installer reads the dependency list from the
+# plugin root only (`~/.qwenpaw/plugins/pawbench-eval/requirements.txt`).  A list
+# placed in `backend/` installs nothing and shows up later as an ImportError in
+# the host's startup log, which reads like "the plugin is broken".

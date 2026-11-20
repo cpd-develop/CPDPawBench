@@ -1,0 +1,9 @@
+# Runtime state, written beside the installed copy.
+#
+# `data/config.json` holds the service address, the bearer token and the
+# learned submitter. It is created on first save and must never travel with the
+# plugin: `install` is a copytree, so a committed config would hand one
+# person's credential to everybody who installs from this checkout.
+data/
+__pycache__/
+*.pyc

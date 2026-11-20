@@ -1,0 +1,34 @@
+{
+  "id": "pawbench-eval",
+  "name": "PawBench Evaluation",
+  "version": "0.2.0",
+  "type": "app",
+  "description": "PawBench evaluation dashboard and dataset skill: submit evaluation jobs against the remote ACP service, watch the queue, drill into per-task results, and prepare custom datasets.",
+  "description_i18n": {
+    "zh-CN": "PawBench 评测看板与数据集技能：向远端 ACP 评测服务提交任务、查看队列与逐题结果、准备自定义数据集。",
+    "en-US": "PawBench evaluation dashboard and dataset skill: submit jobs to the remote ACP evaluation service, watch the queue, drill into per-task results, and prepare custom datasets."
+  },
+  "author": "PawBench Team",
+  "entry": {
+    "backend": "backend/main.py",
+    "frontend": "ui/index.js"
+  },
+  "dependencies": [],
+  "qwenpaw_version": {
+    "min": "2.0.0",
+    "max": "3.0.0"
+  },
+  "meta": {
+    "pawapp": {
+      "icon": "🧪",
+      "category": "productivity",
+      "entry_page": "/apps/pawbench-eval",
+      "launch_scope": "page"
+    },
+    "permissions": {
+      "chat": false,
+      "storage": false
+    },
+    "settings": []
+  }
+}
