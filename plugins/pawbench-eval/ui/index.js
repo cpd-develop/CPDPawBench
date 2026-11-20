@@ -3,22 +3,22 @@
  *
  * The host fetches this file, wraps it in a Blob and `import()`s it, so it is a
  * module with no relative imports and no bundler: React, antd and the icon set
- * come from `window.QwenPaw.host`. Everything the page draws is one page — the
- * design put submission, queue, results and datasets in sections on purpose
- * (design `§12`), not behind tabs, because the whole point is seeing what is
- * queued while writing the next submission.
+ * come from `window.QwenPaw.host`.
+ *
+ * Layout: three modules behind a fixed rail rather than one long page.
+ * Submitting a run, curating datasets and pointing the board at a service are
+ * three different jobs done by the same person at different times, and stacking
+ * them meant scrolling past a form to read a score. The rail keeps one of them
+ * on screen; the other two cost a click.
  *
  * Colour never appears literally: every surface/text/border value comes from
  * `theme.useToken()`, which is the host's own theme, so light and dark are the
  * same code path and the design system's "no hardcoded colour" rule holds
  * without a second stylesheet.
- *
- * Three interaction decisions were made with the reviewer and are implemented
- * here as chosen: buttons for reordering (not drag), one inline submission form
- * (not a two-step wizard), and a modal for the three-level drill-down (not a
- * right-hand drawer).
  */
 (function () {
+  "use strict";
+
   var Q = window.QwenPaw;
   if (!Q || !Q.host || !Q.registerRoutes) {
     console.error("[pawbench-eval] window.QwenPaw host SDK is not ready");
@@ -34,20 +34,15 @@
   var useEffect = React.useEffect;
   var useMemo = React.useMemo;
   var useCallback = React.useCallback;
-  var useRef = React.useRef;
 
   var Button = antd.Button;
-  var Card = antd.Card;
   var Table = antd.Table;
   var Tag = antd.Tag;
   var Space = antd.Space;
   var Select = antd.Select;
   var Input = antd.Input;
-  var InputNumber = antd.InputNumber;
   var Modal = antd.Modal;
-  var Descriptions = antd.Descriptions;
   var Tabs = antd.Tabs;
-  var Collapse = antd.Collapse;
   var Segmented = antd.Segmented;
   var Alert = antd.Alert;
   var Tooltip = antd.Tooltip;
@@ -57,29 +52,18 @@
   var DatePicker = antd.DatePicker;
   var Upload = antd.Upload;
   var Typography = antd.Typography;
-  var Divider = antd.Divider;
   var Progress = antd.Progress;
-  var Badge = antd.Badge;
-  var List = antd.List;
   var message = antd.message;
   var useToken = antd.theme.useToken;
 
   var Text = Typography.Text;
   var Paragraph = Typography.Paragraph;
-  var Title = Typography.Title;
 
   // ── constants ───────────────────────────────────────────────────────────
 
   var API = "/pawbench-eval";
   var POLL_MS = 5000;
   var LS = "pawbench-eval.";
-  var ALL_STATUSES = ["new", "queued", "scheduled", "running", "finished", "failed", "canceled"];
-  //: Label cell of a definition list: 96px and never wrapped, so "判分方式" stays
-  //: on one line instead of stacking two characters per row in a narrow column.
-  var FACT_LABEL_STYLE = { width: 96, whiteSpace: "nowrap" };
-  //: A flex column stretches its children; a button that should stay button-sized
-  //: says so, otherwise "← 返回概览" spans the whole modal.
-  var ALIGN_START = { alignSelf: "flex-start" };
   var ORDERABLE = { queued: 1, scheduled: 1 };
   var TERMINAL = { finished: 1, failed: 1, canceled: 1 };
   var REPORT_FORMATS = ["json", "md", "html", "zip"];
@@ -93,7 +77,12 @@
     "grading_type",
   ];
 
-  // ── small helpers ───────────────────────────────────────────────────────
+  //: Task statuses that are not job statuses: the runner records these per task
+  //: and they have no Chinese spelling, so they are shown as the token an
+  //: operator would grep for.
+  var TASK_STATUS_TEXT = { skipped: "跳过", no_artifacts: "无产物", missing: "缺失" };
+
+  // ── helpers ─────────────────────────────────────────────────────────────
 
   function pad(value) {
     return value < 10 ? "0" + value : String(value);
@@ -162,6 +151,17 @@
     if (hours > 0) return "还有 " + hours + " 小时 " + rest + " 分";
     if (minutes > 0) return "还有 " + rest + " 分";
     return "不到 1 分钟";
+  }
+
+  /** How long the run itself took, in the units a reader thinks in. */
+  function fmtDuration(seconds) {
+    var value = Number(seconds);
+    if (!isFinite(value) || value <= 0) return "—";
+    if (value < 60) return value.toFixed(1) + "s";
+    var minutes = Math.floor(value / 60);
+    var rest = Math.round(value % 60);
+    if (minutes < 60) return minutes + "m " + rest + "s";
+    return Math.floor(minutes / 60) + "h " + (minutes % 60) + "m";
   }
 
   function fmtPct(value) {
@@ -235,6 +235,20 @@
     } catch (err) {
       /* private mode: the form still works, it just forgets */
     }
+  }
+
+  function copyText(value, label) {
+    if (!value) return;
+    try {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(String(value));
+        message.success((label || "已复制") + "：" + String(value).slice(0, 40));
+        return;
+      }
+    } catch (err) {
+      /* fall through to the hint below */
+    }
+    message.info(String(value));
   }
 
   // ── api ─────────────────────────────────────────────────────────────────
@@ -356,11 +370,12 @@
         "/v1/jobs/" + encodeURIComponent(jobId) + "/detail?sensitivity=" + sensitivity,
       );
     },
-    taskDetail: function (jobId, taskId, sensitivity) {
+    taskDetail: function (jobId, taskId, sensitivity, attempt) {
       return call(
         "GET",
         "/v1/jobs/" + encodeURIComponent(jobId) + "/tasks/" + encodeURIComponent(taskId) +
-          "/detail?sensitivity=" + sensitivity,
+          "/detail?sensitivity=" + sensitivity +
+          (attempt ? "&attempt=" + attempt : ""),
       );
     },
     results: function (jobId) {
@@ -397,253 +412,335 @@
     },
   };
 
-  // ── shared bits ─────────────────────────────────────────────────────────
+  // ── design system ───────────────────────────────────────────────────────
 
   function useStyles() {
     var token = useToken();
     return {
       token: token,
+      // Surfaces
+      page: { display: "flex", minHeight: "calc(100vh - 96px)", background: token.colorBgLayout },
+      rail: {
+        width: 216,
+        flex: "0 0 216px",
+        borderRight: "1px solid " + token.colorBorderSecondary,
+        background: token.colorBgContainer,
+        display: "flex",
+        flexDirection: "column",
+        padding: "18px 12px",
+        position: "sticky",
+        top: 0,
+        alignSelf: "flex-start",
+        maxHeight: "100vh",
+      },
+      main: {
+        flex: 1,
+        minWidth: 0,
+        padding: "22px 26px 56px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 16,
+      },
+      card: {
+        background: token.colorBgContainer,
+        // ``colorBorderSecondary`` is nearly the layout background on a bright
+        // screen, so a card drawn with it reads as one continuous sheet.  The
+        // stronger border plus the host's own tertiary shadow is what makes two
+        // stacked surfaces separable -- and both come from the token set, so
+        // dark mode is the same code path.
+        border: "1px solid " + token.colorBorder,
+        borderRadius: token.borderRadiusLG,
+        boxShadow: token.boxShadowTertiary,
+      },
+      // Type
+      h1: { fontSize: 20, fontWeight: 600, color: token.colorText, lineHeight: "28px", margin: 0 },
+      h2: { fontSize: 15, fontWeight: 600, color: token.colorText, margin: 0 },
       muted: { color: token.colorTextSecondary, fontSize: 12 },
       tiny: { color: token.colorTextTertiary, fontSize: 12 },
-      panel: {
-        background: token.colorFillQuaternary,
-        border: "1px solid " + token.colorBorderSecondary,
-        borderRadius: token.borderRadiusLG,
-        padding: 12,
+      mono: {
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        fontSize: 12,
       },
-      card: { borderRadius: token.borderRadiusLG },
-      mono: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12 },
+      //: An inner surface (a row of a list, an artifact, a trace).  The fill
+      //: alone is nearly white on a white card, so the border does the work.
+      block: {
+        background: token.colorFillQuaternary,
+        border: "1px solid " + token.colorBorder,
+        borderRadius: token.borderRadius,
+      },
+      num: { fontVariantNumeric: "tabular-nums" },
+      // Layout
       row: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
       stack: { display: "flex", flexDirection: "column", gap: 12 },
+      grid: {
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+        gap: 12,
+      },
+      sectionHead: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        flexWrap: "wrap",
+        marginBottom: 12,
+      },
     };
+  }
+
+  /** A card whose header is drawn by hand, so sections share one rhythm. */
+  function Panel(props) {
+    var s = useStyles();
+    return h(
+      "section",
+      { style: Object.assign({}, s.card, props.style, { padding: props.pad === false ? 0 : 16 }) },
+      props.title || props.extra
+        ? h(
+            "div",
+            { style: Object.assign({}, s.sectionHead, { marginBottom: props.title ? 12 : 0 }) },
+            h(
+              "div",
+              { style: { minWidth: 0 } },
+              props.title ? h("div", { style: s.h2 }, props.title) : null,
+              props.hint ? h("div", { style: s.tiny, marginTop: 2 }, props.hint) : null,
+            ),
+            props.extra || null,
+          )
+        : null,
+      props.children,
+    );
   }
 
   function Field(props) {
     var s = useStyles();
     return h(
       "div",
-      { style: { marginBottom: 12 } },
-      h("div", { style: Object.assign({}, s.muted, { marginBottom: 4 }) }, props.label, props.hint
-        ? h("span", { style: { marginLeft: 6, color: s.token.colorTextTertiary } }, props.hint)
-        : null),
+      { style: { marginBottom: props.last ? 0 : 12 } },
+      h(
+        "div",
+        { style: Object.assign({}, s.muted, { marginBottom: 4 }) },
+        props.label,
+        props.hint
+          ? h("span", { style: { marginLeft: 6, color: s.token.colorTextTertiary } }, props.hint)
+          : null,
+      ),
       props.children,
     );
   }
 
   function Dot(props) {
-    var s = useStyles();
     return h("span", {
       style: {
         display: "inline-block",
-        width: 8,
-        height: 8,
+        width: 7,
+        height: 7,
         borderRadius: "50%",
         background: props.color,
         marginRight: 6,
+        flex: "0 0 auto",
       },
     });
   }
 
-  // ── connection ──────────────────────────────────────────────────────────
-
-  function ConnectionBar(props) {
+  /** The one place a status becomes a colour, so two views cannot disagree. */
+  function StatusPill(props) {
     var s = useStyles();
-    var probe = props.probe;
-    var state = "unconfigured";
-    if (probe && probe.configured) {
-      if (!probe.reachable) state = "down";
-      else if (probe.authorised === false) state = "denied";
-      else state = "ok";
+    var map = {
+      processing: s.token.colorProcessing,
+      success: s.token.colorSuccess,
+      error: s.token.colorError,
+      warning: s.token.colorWarning,
+      blue: s.token.colorInfo,
+      gold: s.token.colorWarning,
+      default: s.token.colorTextTertiary,
+    };
+    var color = map[props.color] || s.token.colorTextTertiary;
+    var text = props.text;
+    if (props.taskStatus) {
+      text = TASK_STATUS_TEXT[props.taskStatus] || statusMeta(props.taskStatus).text;
+      if (TASK_STATUS_TEXT[props.taskStatus]) color = s.token.colorError;
     }
-    var colors = {
-      ok: s.token.colorSuccess,
-      down: s.token.colorError,
-      denied: s.token.colorWarning,
-      unconfigured: s.token.colorTextTertiary,
-    };
-    var labels = {
-      ok: "服务正常",
-      down: "连不上",
-      denied: "token 被拒",
-      unconfigured: "未配置",
-    };
+    return h(
+      "span",
+      {
+        title: props.title || "",
+        style: {
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 5,
+          padding: "1px 8px",
+          borderRadius: 999,
+          fontSize: 12,
+          lineHeight: "18px",
+          color: color,
+          background: s.token.colorFillQuaternary,
+          border: "1px solid " + s.token.colorBorderSecondary,
+          whiteSpace: "nowrap",
+        },
+      },
+      h(Dot, { color: color }),
+      text,
+    );
+  }
+
+  function StatCard(props) {
+    var s = useStyles();
     return h(
       "div",
-      { style: Object.assign({}, s.row, { justifyContent: "space-between" }) },
+      { style: Object.assign({}, s.card, { padding: "14px 16px", minWidth: 0 }) },
+      h("div", { style: s.muted }, props.label),
       h(
         "div",
-        { style: s.row },
-        h("span", null, h(Dot, { color: colors[state] }), labels[state]),
-        props.config && props.config.base_url
-          ? h(Text, { style: s.mono, copyable: false }, props.config.base_url)
-          : null,
-        props.config && props.config.has_token
-          ? h(Tag, { bordered: false }, "token " + props.config.token_hint)
-          : h(Tag, { color: "warning", bordered: false }, "无 token"),
-        props.config && props.config.subject
-          ? h(Tag, { bordered: false }, "身份 " + props.config.subject)
-          : h(Tooltip, { title: "首次提交后自动识别；也可以服务连接里手填，用于判断哪一行是你的" },
-              h(Tag, { bordered: false, style: s.tiny }, "身份未知")),
+        {
+          style: Object.assign({}, s.num, {
+            fontSize: 24,
+            fontWeight: 600,
+            lineHeight: "32px",
+            color: props.color || s.token.colorText,
+            marginTop: 2,
+          }),
+        },
+        props.value,
       ),
+      props.hint ? h("div", { style: Object.assign({}, s.tiny, { marginTop: 2 }) }, props.hint) : null,
+    );
+  }
+
+  /** One of the four numbers across the top of a report, with an optional bar. */
+  function ReportMetric(props) {
+    var s = useStyles();
+    return h(
+      "div",
+      {
+        style: {
+          padding: "0 14px",
+          borderLeft: "1px solid " + s.token.colorBorderSecondary,
+          minWidth: 0,
+        },
+      },
+      h("div", { style: s.tiny }, props.label),
       h(
         "div",
-        { style: s.row },
-        h(
-          Button,
-          { size: "small", onClick: props.onProbe, loading: props.probing },
-          "重新探测",
-        ),
-        h(Button, { size: "small", type: "primary", ghost: true, onClick: props.onEdit }, "服务连接"),
+        { style: Object.assign({}, s.num, { fontSize: 23, fontWeight: 600, lineHeight: "30px" }) },
+        props.value,
+      ),
+      props.bar ? props.bar : h("div", { style: s.tiny }, props.hint || ""),
+    );
+  }
+
+  function ScoreText(props) {
+    var s = useStyles();
+    var value = props.value;
+    if (value === null || value === undefined) {
+      return h("span", { style: Object.assign({}, s.tiny, s.num) }, "—");
+    }
+    var color =
+      value >= 0.8 ? s.token.colorSuccess : value >= 0.5 ? s.token.colorWarning : s.token.colorError;
+    return h(
+      "span",
+      { style: Object.assign({}, s.num, { color: color, fontWeight: props.bold ? 600 : 400 }) },
+      fmtNum(value, 3),
+    );
+  }
+
+  /** A tiny bar under a number: reads as "how full" without a tooltip. */
+  function MiniBar(props) {
+    var s = useStyles();
+    var percent = Math.max(0, Math.min(100, Math.round((Number(props.percent) || 0) * 100)));
+    var color = props.color || s.token.colorPrimary;
+    return h(
+      "div",
+      {
+        style: {
+          height: 6,
+          borderRadius: 3,
+          background: s.token.colorFill,
+          overflow: "hidden",
+          minWidth: 48,
+        },
+      },
+      h("div", { style: { width: percent + "%", height: "100%", background: color } }),
+    );
+  }
+
+  /** An id a reader will want to paste into a log search. */
+  function CopyId(props) {
+    var s = useStyles();
+    var value = props.value || "";
+    if (!value) return h("span", { style: s.tiny }, "—");
+    return h(
+      "span",
+      { style: Object.assign({}, s.row, { gap: 4, flexWrap: "nowrap" }) },
+      h("code", { style: Object.assign({}, s.mono, { color: s.token.colorText }) }, props.full ? value : value.slice(0, 12)),
+      h(
+        Button,
+        {
+          size: "small",
+          type: "text",
+          style: { padding: "0 4px", height: 18 },
+          onClick: function (event) {
+            if (event && event.stopPropagation) event.stopPropagation();
+            copyText(value, props.label || "已复制");
+          },
+        },
+        "复制",
       ),
     );
   }
 
-  function ConnectionModal(props) {
-    var [baseUrl, setBaseUrl] = React.useState("");
-    var [token, setToken] = React.useState("");
-    var [subject, setSubject] = React.useState("");
-    var [saving, setSaving] = React.useState(false);
-    var [probe, setProbe] = React.useState(null);
-    var [error, setError] = React.useState(null);
-
-    useEffect(
-      function () {
-        if (!props.open) return;
-        var config = props.config || {};
-        setBaseUrl(config.base_url || "");
-        setSubject(config.subject || "");
-        setToken("");
-        setError(null);
-        setProbe(props.probe || null);
-      },
-      [props.open, props.config],
-    );
-
-    function save() {
-      setSaving(true);
-      setError(null);
-      var body = { base_url: baseUrl, subject: subject };
-      // An empty box means "keep the stored token" — the page never received it,
-      // so sending "" would delete a working credential on every edit.
-      if (token) body.token = token;
-      api
-        .saveConfig(body)
-        .then(function () {
-          setToken("");
-          return api.probe();
-        })
-        .then(function (result) {
-          setProbe(result);
-          message.success("连接已保存");
-          return props.onSaved();
-        })
-        .catch(function (err) {
-          setError(errOf(err));
-        })
-        .then(function () {
-          setSaving(false);
-        });
-    }
-
+  function EmptyState(props) {
     var s = useStyles();
     return h(
-      Modal,
+      "div",
+      { style: { padding: "48px 16px", textAlign: "center" } },
+      h("div", { style: { fontSize: 30, lineHeight: "40px", marginBottom: 8 } }, props.glyph || "◇"),
+      h("div", { style: { fontSize: 14, color: s.token.colorText, marginBottom: 4 } }, props.title),
+      h("div", { style: Object.assign({}, s.muted, { margin: "0 auto 14px", maxWidth: 420 }) }, props.hint),
+      props.action || null,
+    );
+  }
+
+  function NavItem(props) {
+    var s = useStyles();
+    var active = props.active;
+    return h(
+      "button",
       {
-        open: props.open,
-        title: "服务连接",
-        onCancel: props.onClose,
-        footer: [
-          h(
-            Button,
+        type: "button",
+        onClick: props.onClick,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          width: "100%",
+          padding: "9px 10px",
+          border: "none",
+          borderRadius: s.token.borderRadius,
+          background: active ? s.token.colorPrimaryBg : "transparent",
+          color: active ? s.token.colorPrimary : s.token.colorText,
+          fontWeight: active ? 600 : 400,
+          fontSize: 13,
+          cursor: "pointer",
+          textAlign: "left",
+        },
+      },
+      h("span", { style: { width: 18, textAlign: "center", opacity: active ? 1 : 0.75 } }, props.glyph),
+      h("span", { style: { flex: 1 } }, props.label),
+      props.badge
+        ? h(
+            "span",
             {
-              key: "probe",
-              onClick: function () {
-                setSaving(true);
-                api
-                  .probe()
-                  .then(setProbe)
-                  .catch(function (err) {
-                    setError(errOf(err));
-                  })
-                  .then(function () {
-                    setSaving(false);
-                  });
+              style: {
+                fontSize: 11,
+                padding: "0 6px",
+                borderRadius: 999,
+                background: s.token.colorFillSecondary,
+                color: s.token.colorTextSecondary,
               },
             },
-            "探测",
-          ),
-          h(Button, { key: "save", type: "primary", loading: saving, onClick: save }, "保存"),
-        ],
-        width: 560,
-      },
-      error
-        ? h(Alert, {
-            type: "error",
-            showIcon: true,
-            style: { marginBottom: 12 },
-            message: error.code,
-            description: error.message,
-          })
-        : null,
-      h(
-        Field,
-        { label: "评测服务地址", hint: "http:// 或 https:// 开头" },
-        h(Input, {
-          value: baseUrl,
-          placeholder: "http://127.0.0.1:8471",
-          onChange: function (event) {
-            setBaseUrl(event.target.value);
-          },
-        }),
-      ),
-      h(
-        Field,
-        {
-          label: "访问 token",
-          hint: props.config && props.config.has_token
-            ? "已保存 " + props.config.token_hint + "，留空则不变"
-            : "白名单签发的一次性 token",
-        },
-        h(Input.Password, {
-          value: token,
-          placeholder: props.config && props.config.has_token ? "留空保持不变" : "粘贴 token",
-          onChange: function (event) {
-            setToken(event.target.value);
-          },
-        }),
-      ),
-      h(
-        Field,
-        { label: "我的身份", hint: "提交人名字，用于判断队列里哪一行是你的" },
-        h(Input, {
-          value: subject,
-          placeholder: "首次提交后自动识别",
-          onChange: function (event) {
-            setSubject(event.target.value);
-          },
-        }),
-      ),
-      probe
-        ? h(
-            "div",
-            { style: s.panel },
-            probe.reachable
-              ? h(Text, null,
-                  "服务可达" +
-                    (probe.service && probe.service.public_base_url
-                      ? "：" + probe.service.public_base_url
-                      : "") +
-                    "；正在跑 " + ((probe.service && probe.service.active_attempts) || 0) + " 个任务" +
-                    (probe.authorised === false ? "；但 token 被拒（401/403）" : ""))
-              : h(Text, { type: "danger" }, "连不上：" + (probe.reason || "未知原因")),
+            props.badge,
           )
         : null,
-      h(
-        Paragraph,
-        { style: Object.assign({}, s.tiny, { marginTop: 12, marginBottom: 0 }) },
-        "token 只保存在本机插件目录里，前端永远拿不到它：页面调的是本插件的 /v1 代理，" +
-          "转发时才注入凭据。",
-      ),
     );
   }
 
@@ -651,88 +748,481 @@
 
   function SelectorPanel(props) {
     var s = useStyles();
-    var resolved = props.resolved;
     if (props.loading) {
-      return h("div", { style: s.panel }, h(Spin, { size: "small" }), " 正在解析选择…");
+      return h("div", { style: Object.assign({}, s.card, { padding: 12 }) },
+        h(Spin, { size: "small" }), " 正在解析选择…");
     }
     if (props.error) {
       return h(Alert, {
         type: "error",
         showIcon: true,
-        message: "选择无法解析",
-        description: props.error.code + "：" + props.error.message,
+        message: "解析失败：" + props.error.code,
+        description: props.error.message,
       });
     }
-    if (!resolved) {
-      return h("div", { style: Object.assign({}, s.panel, s.tiny) }, "选定分类或数据集后，这里显示将跑到哪些题。");
+    var res = props.resolved;
+    if (!res) {
+      return h(
+        "div",
+        { style: Object.assign({}, s.card, { padding: 14, background: s.token.colorFillQuaternary }) },
+        h("div", { style: s.muted }, "选定分类或数据集后，这里显示这次会跑到哪些题。"),
+      );
     }
-    var datasets = Object.keys(resolved.by_dataset || {});
-    var categories = Object.keys(resolved.categories_expanded || {});
-    var unknown = resolved.unknown_ids || [];
+    var bySource = res.by_dataset || {};
     return h(
       "div",
-      { style: s.panel },
+      { style: Object.assign({}, s.card, { padding: 14 }) },
       h(
         "div",
         { style: s.row },
-        h(Text, { strong: true, style: { fontSize: 20 } }, resolved.task_count),
+        h("span", { style: { fontSize: 22, fontWeight: 600 } }, res.task_count),
         h("span", { style: s.muted }, "道题"),
-        resolved.duplicates_removed > 0
-          ? h(Tag, { color: "gold" }, "去重 " + resolved.duplicates_removed + " 道")
-          : null,
-        h("span", { style: s.tiny }, "摘要 " + (resolved.task_ids_digest || "")),
+        h("span", { style: s.tiny }, "摘要 " + (res.task_ids_digest || "")),
       ),
-      datasets.length
+      Object.keys(bySource).length
         ? h(
             "div",
-            { style: Object.assign({}, s.row, { marginTop: 8 }) },
+            { style: Object.assign({}, s.row, { marginTop: 6 }) },
             h("span", { style: s.tiny }, "按来源："),
-            datasets.map(function (name) {
-              return h(Tag, { key: name, bordered: false }, name + " · " + resolved.by_dataset[name]);
+            Object.keys(bySource).map(function (key) {
+              return h(Tag, { key: key, bordered: false }, key + " " + bySource[key]);
             }),
           )
         : null,
-      categories.length
+      Object.keys(res.by_category || {}).length
         ? h(
             "div",
-            { style: Object.assign({}, s.row, { marginTop: 8 }) },
+            { style: Object.assign({}, s.row, { marginTop: 4 }) },
             h("span", { style: s.tiny }, "分类展开："),
-            categories.map(function (name) {
-              var entry = resolved.categories_expanded[name] || {};
-              var count = Array.isArray(entry) ? entry.length : entry.task_count;
-              return h(Tag, { key: name, bordered: false }, name + " · " + (count || 0));
+            Object.keys(res.by_category).map(function (key) {
+              return h(Tag, { key: key, bordered: false }, key + " " + res.by_category[key]);
             }),
           )
         : null,
-      unknown.length
-        ? h(Alert, {
-            style: { marginTop: 8 },
-            type: "warning",
-            showIcon: true,
-            message: unknown.length + " 个 id 解析不出来",
-            description: unknown.slice(0, 6).join("、") + (unknown.length > 6 ? " 等" : ""),
-          })
-        : null,
-      (resolved.task_ids || []).length
+      (res.task_ids || []).length
         ? h(
             "details",
             { style: { marginTop: 8 } },
-            h("summary", { style: Object.assign({}, s.tiny, { cursor: "pointer" }) }, "题目清单"),
+            h("summary", { style: Object.assign({}, s.tiny, { cursor: "pointer" }) },
+              "题目清单（前 40 条）"),
             h(
               "div",
               { style: Object.assign({}, s.mono, { marginTop: 6, maxHeight: 160, overflow: "auto" }) },
-              resolved.task_ids.join("\n"),
+              (res.task_ids || []).slice(0, 40).map(function (id) {
+                return h("div", { key: id }, id);
+              }),
             ),
           )
         : null,
     );
   }
 
-  // ── submission ──────────────────────────────────────────────────────────
+  // ── module: jobs list ───────────────────────────────────────────────────
 
-  function SubmitSection(props) {
+  function JobsModule(props) {
     var s = useStyles();
-    var catalog = props.catalog;
+    var jobs = props.jobs || [];
+    var [status, setStatus] = useState("all");
+    var [query, setQuery] = useState("");
+    var [busy, setBusy] = useState("");
+
+    var waiting = useMemo(function () {
+      return jobs
+        .filter(function (job) {
+          return ORDERABLE[job.status];
+        })
+        .sort(function (a, b) {
+          return a.queue_pos - b.queue_pos;
+        });
+    }, [jobs]);
+
+    var stats = useMemo(
+      function () {
+        var running = 0;
+        var done = 0;
+        var scores = [];
+        jobs.forEach(function (job) {
+          if (job.status === "running") running += 1;
+          if (job.status === "finished") done += 1;
+          if (typeof job.score === "number") scores.push(job.score);
+        });
+        var mean = scores.length
+          ? scores.reduce(function (a, b) {
+              return a + b;
+            }, 0) / scores.length
+          : null;
+        return { running: running, waiting: waiting.length, done: done, mean: mean, total: jobs.length };
+      },
+      [jobs, waiting],
+    );
+
+    var rows = useMemo(
+      function () {
+        var needle = query.trim().toLowerCase();
+        return jobs
+          .filter(function (job) {
+            if (status === "running" && job.status !== "running") return false;
+            if (status === "waiting" && !ORDERABLE[job.status]) return false;
+            if (status === "done" && !TERMINAL[job.status]) return false;
+            if (!needle) return true;
+            return [job.job_id, job.purpose, job.product, job.submitter, job.acp_url]
+              .join(" ")
+              .toLowerCase()
+              .indexOf(needle) >= 0;
+          })
+          .sort(function (a, b) {
+            // Waiting first in queue order, then everything else newest first:
+            // the two questions this list answers are "what runs next" and
+            // "what did I just do".
+            var aWaiting = ORDERABLE[a.status] ? 0 : 1;
+            var bWaiting = ORDERABLE[b.status] ? 0 : 1;
+            if (aWaiting !== bWaiting) return aWaiting - bWaiting;
+            if (aWaiting === 0) return a.queue_pos - b.queue_pos;
+            return String(b.created_at || "").localeCompare(String(a.created_at || ""));
+          });
+      },
+      [jobs, status, query],
+    );
+
+    function move(job, direction) {
+      var index = waiting.indexOf(job);
+      var target = null;
+      if (direction === "up") {
+        var previous = waiting[index - 1];
+        if (previous) target = { before_id: previous.job_id };
+      } else {
+        var next = waiting[index + 1];
+        if (next) target = { after_id: next.job_id };
+      }
+      if (!target) return;
+      setBusy(job.job_id);
+      api
+        .reorder(job.job_id, target)
+        .then(function () {
+          return props.onRefresh();
+        })
+        .catch(function (err) {
+          message.error("调序被拒：" + errOf(err).message);
+          return props.onRefresh();
+        })
+        .then(function () {
+          setBusy("");
+        });
+    }
+
+    function cancel(job) {
+      setBusy(job.job_id);
+      api
+        .cancel(job.job_id, "")
+        .then(function () {
+          message.success("已取消");
+          return props.onRefresh();
+        })
+        .catch(function (err) {
+          message.error("取消失败：" + errOf(err).message);
+          return props.onRefresh();
+        })
+        .then(function () {
+          setBusy("");
+        });
+    }
+
+    var columns = [
+      {
+        title: "状态",
+        dataIndex: "status",
+        width: 100,
+        render: function (value, row) {
+          var meta = statusMeta(value);
+          return h(
+            "div",
+            { style: { display: "flex", flexDirection: "column", gap: 4 } },
+            h(StatusPill, { text: meta.text, color: meta.color }),
+            value === "queued" || value === "scheduled"
+              ? h("span", { style: s.tiny }, "位置 " + fmtNum(row.queue_pos, 0))
+              : null,
+          );
+        },
+      },
+      {
+        title: "评测",
+        dataIndex: "purpose",
+        render: function (_, job) {
+          var mine = props.subject && job.submitter === props.subject;
+          return h(
+            "div",
+            { style: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 } },
+            h(
+              "div",
+              { style: s.row },
+              h(Text, { strong: true }, job.purpose || "（未写目的）"),
+              mine ? h(Tag, { color: "blue", bordered: false }, "我的") : null,
+            ),
+            h(
+              "div",
+              { style: Object.assign({}, s.row, { gap: 6 }) },
+              h("span", { style: s.mono }, shortId(job.job_id)),
+              job.product ? h("span", { style: s.tiny }, job.product) : null,
+              job.acp_url
+                ? h("span", {
+                    style: Object.assign({}, s.tiny, {
+                      maxWidth: 260,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }),
+                    title: job.acp_url,
+                  }, job.acp_url)
+                : null,
+            ),
+          );
+        },
+      },
+      {
+        title: "题目",
+        width: 150,
+        render: function (_, job) {
+          var total = Number(job.task_count) || 0;
+          var finished = Number(job.tasks_finished) || 0;
+          var failed = Number(job.tasks_failed) || 0;
+          if (!total) return h("span", { style: s.tiny }, "—");
+          return h(
+            "div",
+            { style: { display: "flex", flexDirection: "column", gap: 4 } },
+            h(
+              "div",
+              { style: Object.assign({}, s.row, { gap: 4 }) },
+              h("span", { style: Object.assign({}, s.num, { fontSize: 12 }) }, finished + " / " + total),
+              failed ? h("span", { style: { fontSize: 12, color: s.token.colorError } }, "败 " + failed) : null,
+            ),
+            h(Progress, {
+              percent: total ? Math.round((finished / total) * 100) : 0,
+              size: "small",
+              showInfo: false,
+              status: "normal",
+              strokeColor: failed ? s.token.colorError : s.token.colorPrimary,
+            }),
+          );
+        },
+      },
+      {
+        title: "分数",
+        dataIndex: "score",
+        width: 92,
+        render: function (value) {
+          return h(ScoreText, { value: value, bold: true });
+        },
+      },
+      { title: "提交人", dataIndex: "submitter", width: 100 },
+      {
+        title: "时间",
+        dataIndex: "created_at",
+        width: 132,
+        render: function (_, job) {
+          return h(
+            "div",
+            { style: { display: "flex", flexDirection: "column" } },
+            h("span", { style: { fontSize: 12 } }, fmtShort(job.created_at)),
+            h("span", { style: s.tiny },
+              TERMINAL[job.status] ? "结束 " + fmtShort(job.finished_at) : untilText(job.not_before)),
+          );
+        },
+      },
+      {
+        title: "",
+        width: 168,
+        render: function (_, job) {
+          var mine = !props.subject || job.submitter === props.subject;
+          var movable = ORDERABLE[job.status] && mine;
+          var index = waiting.indexOf(job);
+          return h(
+            Space,
+            { size: 2 },
+            movable
+              ? h(
+                  Tooltip,
+                  { title: "上移一位" },
+                  h(Button, {
+                    size: "small",
+                    type: "text",
+                    disabled: index <= 0 || busy === job.job_id,
+                    onClick: function (event) {
+                      event.stopPropagation();
+                      move(job, "up");
+                    },
+                  }, "↑"),
+                )
+              : null,
+            movable
+              ? h(
+                  Tooltip,
+                  { title: "下移一位" },
+                  h(Button, {
+                    size: "small",
+                    type: "text",
+                    disabled: index >= waiting.length - 1 || busy === job.job_id,
+                    onClick: function (event) {
+                      event.stopPropagation();
+                      move(job, "down");
+                    },
+                  }, "↓"),
+                )
+              : null,
+            TERMINAL[job.status]
+              ? h(
+                  Button,
+                  {
+                    size: "small",
+                    type: "link",
+                    onClick: function (event) {
+                      event.stopPropagation();
+                      props.onOpen(job.job_id);
+                    },
+                  },
+                  "报告",
+                )
+              : h(
+                  Popconfirm,
+                  {
+                    title: "取消这个评测？",
+                    description:
+                      job.status === "running"
+                        ? "运行中的会话会被停掉，已跑完的题保留。"
+                        : "取消后不能恢复。",
+                    okText: "取消评测",
+                    cancelText: "算了",
+                    onConfirm: function () {
+                      cancel(job);
+                    },
+                  },
+                  h(
+                    Button,
+                    { size: "small", type: "text", danger: true, loading: busy === job.job_id },
+                    "取消",
+                  ),
+                ),
+            h(
+              Button,
+              {
+                size: "small",
+                type: "text",
+                onClick: function (event) {
+                  event.stopPropagation();
+                  props.onOpen(job.job_id);
+                },
+              },
+              "详情",
+            ),
+          );
+        },
+      },
+    ];
+
+    return h(
+      "div",
+      { style: { display: "flex", flexDirection: "column", gap: 16 } },
+      h(
+        "div",
+        { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 } },
+        h(StatCard, { label: "运行中", value: stats.running, hint: stats.running ? "占着并发槽" : "当前空闲" }),
+        h(StatCard, { label: "等待中", value: stats.waiting, hint: stats.waiting ? "可调序" : "队列为空" }),
+        h(StatCard, { label: "已完成", value: stats.done, hint: "全部 " + stats.total + " 次提交" }),
+        h(StatCard, {
+          label: "平均分",
+          value: stats.mean === null ? "—" : fmtPct(stats.mean),
+          color: stats.mean === null ? undefined : stats.mean >= 0.8 ? s.token.colorSuccess : undefined,
+          hint: "有分数的评测",
+        }),
+      ),
+      h(
+        Panel,
+        {
+          pad: false,
+          title: null,
+          children: h(
+            "div",
+            null,
+            h(
+              "div",
+              { style: Object.assign({}, s.sectionHead, { padding: "14px 16px", marginBottom: 0 }) },
+              h(
+                "div",
+                { style: s.row },
+                h(Segmented, {
+                  size: "small",
+                  value: status,
+                  onChange: setStatus,
+                  options: [
+                    { value: "all", label: "全部" },
+                    { value: "running", label: "运行中" },
+                    { value: "waiting", label: "等待中" },
+                    { value: "done", label: "已结束" },
+                  ],
+                }),
+                h(Input, {
+                  allowClear: true,
+                  size: "small",
+                  placeholder: "搜目的、job id、产品、提交人",
+                  style: { width: 240 },
+                  value: query,
+                  onChange: function (event) {
+                    setQuery(event.target.value);
+                  },
+                }),
+              ),
+              h(
+                "div",
+                { style: s.row },
+                h(Button, { size: "small", onClick: props.onRefresh }, "刷新"),
+                h(
+                  Button,
+                  { size: "small", type: "primary", onClick: props.onNew },
+                  "＋ 新建评测",
+                ),
+              ),
+            ),
+            h(Table, {
+              size: "middle",
+              rowKey: "job_id",
+              dataSource: rows,
+              columns: columns,
+              pagination: rows.length > 12 ? { pageSize: 12, size: "small" } : false,
+              scroll: { x: 1040 },
+              onHeaderRow: function () {
+                return { style: { background: s.token.colorFillQuaternary } };
+              },
+              onRow: function (job) {
+                return {
+                  onClick: function () {
+                    props.onOpen(job.job_id);
+                  },
+                  style: { cursor: "pointer" },
+                };
+              },
+              locale: {
+                emptyText: h(EmptyState, {
+                  glyph: "🧪",
+                  title: jobs.length ? "这个筛选下没有评测" : "还没有评测",
+                  hint: jobs.length
+                    ? "换个筛选条件，或者清空搜索词。"
+                    : "点右上角「新建评测」，填一个 ACP 地址和要跑的题就能排队。",
+                  action: jobs.length
+                    ? null
+                    : h(Button, { type: "primary", onClick: props.onNew }, "新建评测"),
+                }),
+              },
+            }),
+          ),
+        },
+      ),
+    );
+  }
+
+  // ── modal: new job ──────────────────────────────────────────────────────
+
+  function NewJobModal(props) {
+    var s = useStyles();
+    var catalog = props.catalog || { datasets: [], categories: [] };
     var [acpUrl, setAcpUrl] = useState(readLS("acpUrl", ""));
     var [product, setProduct] = useState(readLS("product", "qwenpaw-desktop"));
     var [purpose, setPurpose] = useState("");
@@ -755,6 +1245,17 @@
       [datasetIds, categoryNames],
     );
     var selectorEmpty = datasetIds.length === 0 && categoryNames.length === 0;
+
+    // A fresh modal is a fresh submission: the previous receipt would otherwise
+    // read as this one's result.
+    useEffect(
+      function () {
+        if (props.open) return;
+        setReceipt(null);
+        setSubmitting(false);
+      },
+      [props.open],
+    );
 
     useEffect(
       function () {
@@ -805,7 +1306,7 @@
       else if (new Date(customStart) < new Date()) windowProblem = "开始时间已经在过去";
     }
     var canSubmit =
-      !submitting && acpUrl.trim() && (!selectorEmpty) && resolved && !resolving && !windowProblem;
+      !submitting && acpUrl.trim() && !selectorEmpty && resolved && !resolving && !windowProblem;
 
     function submit() {
       setSubmitting(true);
@@ -829,7 +1330,6 @@
             setServiceZone(result.window.tz);
             writeLS("serviceZone", result.window.tz);
           }
-          setReceipt(result);
           message.success("已排队，位置 " + fmtNum(result.queue_pos, 1));
           if (props.onSubmitted) props.onSubmitted(result);
           // The service has no "who am I" route; the row this job wrote does.
@@ -845,8 +1345,7 @@
             });
         })
         .catch(function (err) {
-          var info = errOf(err);
-          setReceipt({ error: info });
+          setReceipt({ error: errOf(err) });
         })
         .then(function () {
           setSubmitting(false);
@@ -865,622 +1364,416 @@
     });
 
     return h(
-      Card,
-      { title: "提交评测", style: s.card, extra: h(Text, { style: s.tiny }, "单页填写，选完立刻显示题量") },
-      h(
-        "div",
-        { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 } },
-        h(
-          Field,
-          { label: "ACP 地址", hint: "被评测端" },
-          h(Input, {
-            value: acpUrl,
-            placeholder: "http://127.0.0.1:8765",
-            onChange: function (event) {
-              setAcpUrl(event.target.value);
-            },
-          }),
-        ),
-        h(
-          Field,
-          { label: "评测产品" },
-          h(Input, {
-            value: product,
-            placeholder: "qwenpaw-desktop",
-            onChange: function (event) {
-              setProduct(event.target.value);
-            },
-          }),
-        ),
-        h(
-          Field,
-          { label: "评测目的" },
-          h(Input, {
-            value: purpose,
-            placeholder: "夜间冒烟 / 回归 / 发版前",
-            onChange: function (event) {
-              setPurpose(event.target.value);
-            },
-          }),
-        ),
-      ),
-      h(
-        "div",
-        { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 } },
-        h(
-          Field,
-          { label: "分类（整组）", hint: "与下面单选混合生效" },
-          h(Select, {
-            mode: "multiple",
-            allowClear: true,
-            style: { width: "100%" },
-            placeholder: "按分类整组加入",
-            value: categoryNames,
-            options: categoryOptions,
-            onChange: setCategoryNames,
-          }),
-        ),
-        h(
-          Field,
-          { label: "数据集" },
-          h(Select, {
-            mode: "multiple",
-            allowClear: true,
-            style: { width: "100%" },
-            placeholder: "挑具体的数据集，可与分类混选",
-            value: datasetIds,
-            options: datasetOptions,
-            onChange: setDatasetIds,
-          }),
-        ),
-      ),
-      h(SelectorPanel, { resolved: resolved, loading: resolving, error: resolveError }),
-      h(Divider, { style: { margin: "16px 0" } }),
-      h(
-        "div",
-        { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 } },
-        h(
-          Field,
-          { label: "可运行时间" },
-          h(Segmented, {
-            value: kind,
-            onChange: setKind,
-            options: [
-              { value: "immediate", label: "即时" },
-              { value: "night", label: "夜间" },
-              { value: "custom", label: "自定义区间" },
-            ],
-          }),
-        ),
-        kind === "custom"
-          ? h(
-              Field,
-              { label: "开始时间（本地）" },
-              h(DatePicker, {
-                showTime: { format: "HH:mm" },
-                format: "YYYY-MM-DD HH:mm",
-                placeholder: "选择日期时间",
-                style: { width: "100%" },
-                onChange: function (_, text) {
-                  setStart(text);
-                },
-              }),
-            )
-          : null,
-        kind === "custom"
-          ? h(
-              Field,
-              { label: "结束时间（本地）" },
-              h(DatePicker, {
-                showTime: { format: "HH:mm" },
-                format: "YYYY-MM-DD HH:mm",
-                placeholder: "选择日期时间",
-                style: { width: "100%" },
-                onChange: function (_, text) {
-                  setEnd(text);
-                },
-              }),
-            )
-          : null,
-      ),
-      kind === "night"
-        ? h(Alert, {
-            type: "info",
-            showIcon: true,
-            style: { marginBottom: 12 },
-            message: "夜间窗口由服务的 schedule.night_window 决定，前端不带时间；提交后窗口区间会回填。",
-          })
-        : null,
-      h(
-        "div",
-        { style: Object.assign({}, s.panel, { display: "flex", flexDirection: "column", gap: 4 }) },
-        h("div", { style: s.row },
-          h("span", { style: s.muted }, "本地时区"),
-          h(Text, { style: s.mono }, localZone() + " " + offsetLabel(new Date()))),
-        h("div", { style: s.row },
-          h("span", { style: s.muted }, "服务时区"),
-          h(Text, { style: s.mono }, serviceZone || "未知（提交后由服务回填）")),
-        kind === "custom" && customStart
-          ? h("div", { style: s.row },
-              h("span", { style: s.muted }, "起跑"),
-              h(Text, { style: s.mono }, fmtFull(customStart) + " 本地"),
-              h(Text, { style: s.tiny }, "/ " + fmtUtc(customStart) + " UTC"),
-              h(Text, { style: s.tiny }, untilText(customStart)))
-          : null,
-      ),
-      windowProblem
-        ? h(Alert, { type: "warning", showIcon: true, style: { marginTop: 12 }, message: windowProblem })
-        : null,
-      h(
-        "div",
-        { style: Object.assign({}, s.row, { marginTop: 16, justifyContent: "space-between" }) },
-        h(
-          "span",
-          { style: s.tiny },
-          "窗口容量（题数 × 平均耗时 ÷ 并发）由服务在提交时估算；超出会随提交结果返回，不阻止提交。",
-        ),
-        h(Button, { type: "primary", loading: submitting, disabled: !canSubmit, onClick: submit }, "提交排队"),
-      ),
-      receipt && receipt.error
-        ? h(Alert, {
-            style: { marginTop: 12 },
-            type: "error",
-            showIcon: true,
-            message: "提交被拒：" + receipt.error.code,
-            description: h(
-              "div",
-              null,
-              h("div", null, receipt.error.message),
-              receipt.error.details
-                ? h("pre", { style: Object.assign({}, s.mono, { margin: "6px 0 0" }) },
-                    JSON.stringify(receipt.error.details, null, 1))
-                : null,
-            ),
-          })
-        : null,
-      receipt && !receipt.error
-        ? h(
-            "div",
-            { style: { marginTop: 12 } },
-            h(Alert, {
-              type: receipt.warning ? "warning" : "success",
-              showIcon: true,
-              message: receipt.warning
-                ? "已排队，但窗口可能装不下"
-                : "已排队：" + receipt.job_id,
-              description: receipt.warning
-                ? "窗口 " + receipt.warning.window_seconds + " 秒，计划 " +
-                  receipt.warning.tasks_planned + " 题，平均 " + receipt.warning.avg_task_seconds +
-                  " 秒/题，预计只能完成约 " + receipt.warning.tasks_likely_completable + " 题"
-                : "队列位置 " + fmtNum(receipt.queue_pos, 1) + "，前面还有 " + receipt.queue_ahead + " 个；" +
-                  "窗口 " + windowLabel(receipt.window && receipt.window.kind) + " " +
-                  fmtShort(receipt.window && receipt.window.not_before) +
-                  (receipt.window && receipt.window.not_after
-                    ? " → " + fmtShort(receipt.window.not_after)
-                    : ""),
-            }),
-          )
-        : null,
-    );
-  }
-
-  // ── queue ───────────────────────────────────────────────────────────────
-
-  function QueueSection(props) {
-    var s = useStyles();
-    var [filter, setFilter] = useState("waiting");
-    var [busy, setBusy] = useState("");
-    var jobs = props.jobs || [];
-
-    var waiting = useMemo(
-      function () {
-        return jobs
-          .filter(function (job) {
-            return ORDERABLE[job.status];
-          })
-          .sort(function (a, b) {
-            return a.queue_pos - b.queue_pos;
-          });
-      },
-      [jobs],
-    );
-    var running = useMemo(
-      function () {
-        return jobs.filter(function (job) {
-          return job.status === "running";
-        });
-      },
-      [jobs],
-    );
-
-    var rows = useMemo(
-      function () {
-        if (filter === "waiting") return waiting;
-        if (filter === "running") return running;
-        return jobs.slice().sort(function (a, b) {
-          return (b.created_at || "").localeCompare(a.created_at || "");
-        });
-      },
-      [filter, waiting, running, jobs],
-    );
-
-    function move(job, direction) {
-      var index = waiting.indexOf(job);
-      var target = null;
-      if (direction === "top") {
-        var first = waiting[0];
-        if (first && first.job_id !== job.job_id) target = { before_id: first.job_id };
-      } else if (direction === "bottom") {
-        var last = waiting[waiting.length - 1];
-        if (last && last.job_id !== job.job_id) target = { after_id: last.job_id };
-      } else if (direction === "up") {
-        var previous = waiting[index - 1];
-        if (previous) target = { before_id: previous.job_id };
-      } else {
-        var next = waiting[index + 1];
-        if (next) target = { after_id: next.job_id };
-      }
-      if (!target) return;
-      setBusy(job.job_id);
-      api
-        .reorder(job.job_id, target)
-        .then(function () {
-          return props.onRefresh();
-        })
-        .catch(function (err) {
-          var info = errOf(err);
-          message.error("调序被拒：" + info.message);
-          // A refused move usually means the neighbour moved under us; the list
-          // has to converge on the service's order, not stay where it was drawn.
-          return props.onRefresh();
-        })
-        .then(function () {
-          setBusy("");
-        });
-    }
-
-    function cancel(job) {
-      setBusy(job.job_id);
-      api
-        .cancel(job.job_id, "")
-        .then(function () {
-          message.success("已取消");
-          return props.onRefresh();
-        })
-        .catch(function (err) {
-          message.error("取消失败：" + errOf(err).message);
-          return props.onRefresh();
-        })
-        .then(function () {
-          setBusy("");
-        });
-    }
-
-    function disabledReason(job) {
-      if (job.status === "running") return "运行中不能调序，只能取消";
-      if (!ORDERABLE[job.status]) return "只有排队中的任务能调序";
-      if (props.subject && job.submitter !== props.subject) {
-        return "这行是 " + job.submitter + " 的，只能调自己的";
-      }
-      if (!props.subject) return "身份未知，点下去由服务判定；可在「服务连接」里手填身份";
-      return "";
-    }
-
-    function orderButtons(job) {
-      var index = waiting.indexOf(job);
-      var reason = disabledReason(job);
-      var blocked = Boolean(reason) || busy === job.job_id;
-      var atTop = index === 0;
-      var atBottom = index === waiting.length - 1;
-      function button(key, label, glyph, direction, disabledExtra) {
-        var disabled = blocked || disabledExtra;
-        // The glyph is decoration: an arrow read aloud is "up arrow", not "上移
-        // 一位", so the accessible name comes from `aria-label`. This is the
-        // reason the reviewer picked buttons over dragging — a drag handle is
-        // unreachable without a pointer.
-        var node = h(
-          Button,
-          {
-            size: "small",
-            type: "text",
-            key: key,
-            "aria-label": label,
-            disabled: disabled,
-            onClick: function () {
-              move(job, direction);
-            },
-          },
-          glyph,
-        );
-        if (disabled) {
-          return h(Tooltip, { key: key, title: disabledExtra ? "已经在" + label + "了" : reason }, node);
-        }
-        return h(Tooltip, { key: key, title: label }, node);
-      }
-      return h(
-        Space,
-        { size: 0 },
-        button("top", "移到队首", "⇈", "top", atTop),
-        button("up", "上移一位", "↑", "up", atTop),
-        button("down", "下移一位", "↓", "down", atBottom),
-        button("bottom", "移到队尾", "⇊", "bottom", atBottom),
-      );
-    }
-
-    var columns = [
+      Modal,
       {
-        title: "状态",
-        dataIndex: "status",
-        width: 92,
-        render: function (value) {
-          var meta = statusMeta(value);
-          return h(Tag, { color: meta.color }, meta.text);
-        },
-      },
-      {
-        title: "任务",
-        dataIndex: "purpose",
-        render: function (_, job) {
-          var mine = props.subject && job.submitter === props.subject;
-          return h(
-            "div",
-            { style: { display: "flex", flexDirection: "column", gap: 2 } },
-            h("div", { style: s.row },
-              h(Text, { strong: true }, job.purpose || "（未写目的）"),
-              mine ? h(Tag, { color: "blue", bordered: false }, "我的") : null),
-            h("div", { style: s.row },
-              h(Text, { style: s.mono }, shortId(job.job_id)),
-              h(Text, { style: s.tiny }, job.product || ""),
-              h(Text, { style: s.tiny }, job.acp_url || "")),
-          );
-        },
-      },
-      { title: "提交人", dataIndex: "submitter", width: 110 },
-      {
-        title: "窗口",
-        dataIndex: "not_before",
-        width: 190,
-        render: function (_, job) {
-          var waiting = job.status === "scheduled" || job.status === "queued";
-          return h(
-            "div",
-            { style: { display: "flex", flexDirection: "column" } },
-            h(Text, { style: { fontSize: 12 } },
-              windowLabel(job.window_kind) + " · " + fmtShort(job.not_before)),
-            h(Text, { style: s.tiny },
-              job.not_after ? "至 " + fmtShort(job.not_after) : "无截止"),
-            waiting && job.window_kind !== "immediate"
-              ? h(Text, { style: s.tiny }, untilText(job.not_before))
-              : null,
-          );
-        },
-      },
-      {
-        title: "位置",
-        dataIndex: "queue_pos",
-        width: 80,
-        render: function (value) {
-          return h(Text, { style: s.mono }, fmtNum(value, 1));
-        },
-      },
-      {
-        title: "操作",
-        width: 250,
-        render: function (_, job) {
-          var canCancel = !TERMINAL[job.status];
-          return h(
+        open: props.open,
+        onCancel: props.onClose,
+        title: h(
+          "div",
+          { style: { display: "flex", flexDirection: "column", gap: 2 } },
+          h("span", { style: { fontSize: 16, fontWeight: 600 } }, "新建评测"),
+          h("span", { style: s.tiny }, "填一个被评测端的 ACP 地址，选题，然后排队"),
+        ),
+        width: 820,
+        style: { top: 32 },
+        footer: h(
+          "div",
+          { style: Object.assign({}, s.row, { justifyContent: "space-between" }) },
+          h(
+            "span",
+            { style: s.tiny },
+            resolved
+              ? "将跑 " + resolved.task_count + " 道题 · 摘要 " + (resolved.task_ids_digest || "")
+              : "选题后显示题量",
+          ),
+          h(
             Space,
-            { size: 4 },
-            orderButtons(job),
-            canCancel
-              ? h(
-                  Popconfirm,
-                  {
-                    title: "取消这个任务？",
-                    description: job.status === "running" ? "运行中的会话会被停掉，已跑完的题保留。" : "取消后不能恢复。",
-                    okText: "取消任务",
-                    cancelText: "算了",
-                    onConfirm: function () {
-                      cancel(job);
-                    },
-                  },
-                  h(Button, { size: "small", danger: true, type: "text", loading: busy === job.job_id }, "取消"),
-                )
-              : null,
+            null,
+            h(Button, { onClick: props.onClose }, "取消"),
             h(
               Button,
-              {
-                size: "small",
-                type: "link",
-                onClick: function () {
-                  props.onOpen(job.job_id);
-                },
-              },
-              "详情",
+              { type: "primary", loading: submitting, disabled: !canSubmit, onClick: submit },
+              "提交排队",
             ),
-          );
-        },
+          ),
+        ),
       },
-    ];
-
-    return h(
-      Card,
-      {
-        title: "队列",
-        style: s.card,
-        extra: h(Segmented, {
-          size: "small",
-          value: filter,
-          onChange: setFilter,
-          options: [
-            { value: "waiting", label: "等待中 " + waiting.length },
-            { value: "running", label: "运行中 " + running.length },
-            { value: "all", label: "全部 " + jobs.length },
-          ],
-        }),
-      },
-      h(Table, {
-        size: "small",
-        rowKey: "job_id",
-        dataSource: rows,
-        columns: columns,
-        pagination: rows.length > 20 ? { pageSize: 20, size: "small" } : false,
-        scroll: { x: 980 },
-        locale: {
-          emptyText: h(Empty, {
-            image: Empty.PRESENTED_IMAGE_SIMPLE,
-            description: filter === "waiting" ? "队列是空的" : "没有任务",
-          }),
-        },
-      }),
+      h(
+        "div",
+        { style: { display: "flex", flexDirection: "column", gap: 14 } },
+        h(
+          "div",
+          { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12 } },
+          h(
+            Field,
+            { label: "ACP 地址", hint: "被评测端", last: true },
+            h(Input, {
+              value: acpUrl,
+              placeholder: "http://127.0.0.1:8765",
+              onChange: function (event) {
+                setAcpUrl(event.target.value);
+              },
+            }),
+          ),
+          h(
+            Field,
+            { label: "评测产品", last: true },
+            h(Input, {
+              value: product,
+              placeholder: "qwenpaw-desktop",
+              onChange: function (event) {
+                setProduct(event.target.value);
+              },
+            }),
+          ),
+          h(
+            Field,
+            { label: "评测目的", hint: "给自己看的", last: true },
+            h(Input, {
+              value: purpose,
+              placeholder: "夜间冒烟 / 回归 / 发版前",
+              onChange: function (event) {
+                setPurpose(event.target.value);
+              },
+            }),
+          ),
+        ),
+        h("div", { style: { height: 1, background: s.token.colorBorderSecondary } }),
+        h(
+          "div",
+          { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 } },
+          h(
+            Field,
+            { label: "分类（整组）", hint: "与数据集混选", last: true },
+            h(Select, {
+              mode: "multiple",
+              allowClear: true,
+              style: { width: "100%" },
+              placeholder: "按分类整组加入",
+              value: categoryNames,
+              options: categoryOptions,
+              onChange: setCategoryNames,
+            }),
+          ),
+          h(
+            Field,
+            { label: "数据集", last: true },
+            h(Select, {
+              mode: "multiple",
+              allowClear: true,
+              style: { width: "100%" },
+              placeholder: "挑具体的数据集",
+              value: datasetIds,
+              options: datasetOptions,
+              onChange: setDatasetIds,
+            }),
+          ),
+        ),
+        selectorEmpty
+          ? h(
+              "div",
+              { style: Object.assign({}, s.card, { padding: 14, background: s.token.colorFillQuaternary }) },
+              h("div", { style: s.muted }, "还没有选题。先选一个数据集或分类，这里会显示题量与题目清单。"),
+            )
+          : h(SelectorPanel, { resolved: resolved, loading: resolving, error: resolveError }),
+        h("div", { style: { height: 1, background: s.token.colorBorderSecondary } }),
+        h(
+          "div",
+          { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12 } },
+          h(
+            Field,
+            { label: "可运行时间", last: true },
+            h(Segmented, {
+              value: kind,
+              onChange: setKind,
+              options: [
+                { value: "immediate", label: "即时" },
+                { value: "night", label: "夜间" },
+                { value: "custom", label: "自定义" },
+              ],
+            }),
+          ),
+          kind === "custom"
+            ? h(
+                Field,
+                { label: "开始（本地）", last: true },
+                h(DatePicker, {
+                  showTime: { format: "HH:mm" },
+                  format: "YYYY-MM-DD HH:mm",
+                  placeholder: "选择日期时间",
+                  style: { width: "100%" },
+                  onChange: function (_, text) {
+                    setStart(text);
+                  },
+                }),
+              )
+            : null,
+          kind === "custom"
+            ? h(
+                Field,
+                { label: "结束（本地）", last: true },
+                h(DatePicker, {
+                  showTime: { format: "HH:mm" },
+                  format: "YYYY-MM-DD HH:mm",
+                  placeholder: "选择日期时间",
+                  style: { width: "100%" },
+                  onChange: function (_, text) {
+                    setEnd(text);
+                  },
+                }),
+              )
+            : null,
+        ),
+        kind === "night"
+          ? h(Alert, {
+              type: "info",
+              showIcon: true,
+              message: "夜间窗口由服务的 schedule.night_window 决定，提交后回填区间。",
+            })
+          : null,
+        h(
+          "div",
+          { style: Object.assign({}, s.row, { gap: 16 }, s.tiny) },
+          h("span", null, "本地 " + localZone() + " " + offsetLabel(new Date())),
+          h("span", null, "服务 " + (serviceZone || "未知（提交后回填）")),
+          customStart ? h("span", null, "起跑 " + fmtFull(customStart) + " / " + fmtUtc(customStart) + " UTC") : null,
+        ),
+        windowProblem ? h(Alert, { type: "warning", showIcon: true, message: windowProblem }) : null,
+        receipt && receipt.error
+          ? h(Alert, {
+              type: "error",
+              showIcon: true,
+              message: "提交被拒：" + receipt.error.code,
+              description: h(
+                "div",
+                null,
+                h("div", null, receipt.error.message),
+                receipt.error.details
+                  ? h(
+                      "pre",
+                      { style: Object.assign({}, s.mono, { margin: "6px 0 0", whiteSpace: "pre-wrap" }) },
+                      JSON.stringify(receipt.error.details, null, 1),
+                    )
+                  : null,
+              ),
+            })
+          : null,
+      ),
     );
   }
 
-  // ── results ─────────────────────────────────────────────────────────────
+  // ── module: one report ──────────────────────────────────────────────────
+
+  /** A score in a ring, with the denominator spelled out underneath. */
+  function ScoreDial(props) {
+    var s = useStyles();
+    var score = props.score;
+    if (score === null || score === undefined) {
+      return h(
+        "div",
+        { style: { textAlign: "center" } },
+        h("div", { style: Object.assign({}, s.num, { fontSize: 34, fontWeight: 600, color: s.token.colorTextTertiary }) }, "—"),
+        h("div", { style: s.tiny }, "没有计分题"),
+      );
+    }
+    var color =
+      score >= 0.8 ? s.token.colorSuccess : score >= 0.5 ? s.token.colorWarning : s.token.colorError;
+    return h(
+      "div",
+      { style: { textAlign: "center" } },
+      h(Progress, {
+        type: "dashboard",
+        percent: Math.round(score * 1000) / 10,
+        size: 132,
+        strokeColor: color,
+        trailColor: s.token.colorFillSecondary,
+        format: function () {
+          return h(
+            "span",
+            { style: Object.assign({}, s.num, { fontSize: 26, fontWeight: 600, color: color }) },
+            fmtNum(score, 3),
+          );
+        },
+      }),
+      h("div", { style: s.tiny }, props.caption || ""),
+    );
+  }
 
   function SliceBars(props) {
     var s = useStyles();
     var entries = Object.keys(props.data || {});
-    if (!entries.length) return h(Text, { style: s.tiny }, "暂无可用切片");
+    if (!entries.length) return h("span", { style: s.tiny }, "暂无可用切片");
+    var rows = entries
+      .map(function (name) {
+        return { name: name, value: props.data[name] };
+      })
+      .sort(function (a, b) {
+        return Number(b.value) - Number(a.value);
+      });
     return h(
       "div",
-      { style: { display: "flex", flexDirection: "column", gap: 4 } },
-      entries.map(function (name) {
-        var value = props.data[name];
+      { style: { display: "flex", flexDirection: "column", gap: 6 } },
+      rows.map(function (row) {
         return h(
           "div",
-          { key: name, style: { display: "flex", alignItems: "center", gap: 8 } },
-          h("span", { style: Object.assign({ width: 180 }, s.tiny), title: name }, name),
-          h("div", { style: { flex: 1 } },
+          { key: row.name, style: { display: "flex", alignItems: "center", gap: 10 } },
+          h("span", { style: Object.assign({ width: 168, flex: "0 0 168px" }, s.tiny), title: row.name }, row.name),
+          h(
+            "div",
+            { style: { flex: 1, minWidth: 80 } },
             h(Progress, {
-              percent: Math.round((Number(value) || 0) * 100),
+              percent: Math.round((Number(row.value) || 0) * 100),
               size: "small",
               showInfo: false,
+              status: "normal",
               strokeColor: s.token.colorPrimary,
-            })),
-          h(Text, { style: Object.assign({ width: 56, textAlign: "right" }, s.mono) }, fmtPct(value)),
+            }),
+          ),
+          h(
+            "span",
+            { style: Object.assign({ width: 52, textAlign: "right", flex: "0 0 52px" }, s.num) },
+            h(ScoreText, { value: row.value }),
+          ),
         );
       }),
     );
   }
 
-  function ResultsSection(props) {
+  function Fact(props) {
     var s = useStyles();
-    var finished = (props.jobs || []).filter(function (job) {
-      return TERMINAL[job.status];
-    });
-    var [cache, setCache] = useState({});
-    var [loading, setLoading] = useState("");
-
-    function load(jobId) {
-      if (cache[jobId] || loading === jobId) return;
-      setLoading(jobId);
-      api
-        .results(jobId)
-        .then(function (result) {
-          setCache(function (previous) {
-            var next = Object.assign({}, previous);
-            next[jobId] = result;
-            return next;
-          });
-        })
-        .catch(function (err) {
-          message.error("结果读取失败：" + errOf(err).message);
-        })
-        .then(function () {
-          setLoading("");
-        });
-    }
-
-    if (!finished.length) {
-      return h(Card, { title: "结果", style: s.card },
-        h(Empty, { image: Empty.PRESENTED_IMAGE_SIMPLE, description: "还没有跑完的任务" }));
-    }
-
     return h(
-      Card,
-      { title: "结果", style: s.card },
-      h(Collapse, {
-        onChange: function (keys) {
-          keys.forEach(load);
-        },
-        items: finished.map(function (job) {
-          var result = cache[job.job_id];
-          var meta = statusMeta(job.status);
-          var flagged = [];
-          if (result) {
-            if (result.tasks_errored) flagged.push("出错 " + result.tasks_errored);
-            if (result.tasks_missing) flagged.push("缺失 " + result.tasks_missing);
-            if (result.missing_metadata) flagged.push("无元数据 " + result.missing_metadata);
-          }
-          return {
-            key: job.job_id,
-            label: h(
-              "div",
-              { style: Object.assign({}, s.row, { justifyContent: "space-between" }) },
-              h("div", { style: s.row },
-                h(Tag, { color: meta.color }, meta.text),
-                h(Text, { strong: true }, job.purpose || "（未写目的）"),
-                h(Text, { style: s.tiny }, shortId(job.job_id) + " · " + job.submitter),
-                h(Text, { style: s.tiny }, fmtShort(job.finished_at || job.created_at))),
-              h("div", { style: s.row },
-                flagged.map(function (text) {
-                  return h(Tag, { key: text, color: "error" }, text);
-                }),
-                result
-                  ? h(Text, { style: s.mono }, "总分 " + fmtPct(result.overall))
-                  : null),
-            ),
-            children: h(
-              "div",
-              { style: s.stack },
-              loading === job.job_id || !result
-                ? h(Spin, { size: "small" })
-                : h(
-                    "div",
-                    { style: s.stack },
-                    h("div", { style: s.row },
-                      h(Text, { style: s.muted }, "总分"),
-                      h(Text, { style: s.mono }, fmtPct(result.overall)),
-                      h(Text, { style: s.muted }, "规则判分"),
-                      h(Text, { style: s.mono }, fmtPct(result.automated)),
-                      h(Text, { style: s.muted }, "LLM 判分"),
-                      h(Text, { style: s.mono }, fmtPct(result.judge)),
-                      h(Text, { style: s.muted }, "计分/总数"),
-                      h(Text, { style: s.mono }, result.tasks + "/" + result.tasks_total)),
-                    h(
-                      "div",
-                      { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 } },
-                      h("div", null, h("div", { style: s.muted }, "能力切片"),
-                        h(SliceBars, { data: result.by_capability })),
-                      h("div", null, h("div", { style: s.muted }, "场景切片"),
-                        h(SliceBars, { data: result.by_scenario_top })),
-                    ),
-                    h(
-                      Button,
-                      {
-                        size: "small",
-                        style: ALIGN_START,
-                        onClick: function () {
-                          props.onOpen(job.job_id);
-                        },
-                      },
-                      "打开详情（逐题与产物）",
-                    ),
-                  ),
-            ),
-          };
-        }),
+      "div",
+      { style: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 } },
+      h("span", { style: s.tiny }, props.label),
+      h("span", { style: { fontSize: 13, color: s.token.colorText, wordBreak: "break-word" } }, props.children),
+    );
+  }
+
+  function BrokenDown(props) {
+    var s = useStyles();
+    var entries = Object.keys(props.data || {});
+    if (!entries.length) return h("span", { style: s.tiny }, "没有逐项判分（非规则判分或未产出）");
+    return h(
+      "div",
+      { style: { display: "flex", flexDirection: "column", gap: 6 } },
+      entries.map(function (name) {
+        var value = Number(props.data[name]);
+        var ok = value >= 1;
+        return h(
+          "div",
+          {
+            key: name,
+            style: Object.assign({}, s.block, {
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "6px 10px",
+            }),
+          },
+          h(
+            "span",
+            {
+              style: {
+                width: 18,
+                textAlign: "center",
+                color: ok ? s.token.colorSuccess : s.token.colorError,
+                fontWeight: 600,
+              },
+            },
+            ok ? "✓" : "✗",
+          ),
+          h("span", { style: Object.assign({ flex: 1 }, s.mono) }, name),
+          h(
+            "span",
+            {
+              style: Object.assign({}, s.mono, s.num, {
+                color: ok ? s.token.colorSuccess : s.token.colorError,
+              }),
+            },
+            fmtNum(value, 3),
+          ),
+        );
       }),
     );
   }
 
-  // ── job detail (three levels, inside one modal) ─────────────────────────
-
-  function TaskDetailView(props) {
+  /** The event stream, one row per line, with the kind translated. */
+  function Timeline(props) {
     var s = useStyles();
-    var job = props.detail;
+    var events = props.events || [];
+    if (!events.length) {
+      return h("span", { style: s.tiny }, props.hint || "这次运行没有可读的轨迹");
+    }
+    var KIND = {
+      agent_message_chunk: "输出",
+      agent_thought_chunk: "思考",
+      tool_call: "调用",
+      tool_call_update: "结果",
+      plan: "计划",
+      plan_update: "计划",
+      user_message_chunk: "输入",
+      available_commands_update: "命令",
+      usage_update: "用量",
+      current_mode_update: "模式",
+      session_info_update: "会话",
+      config_option_update: "配置",
+    };
+    return h(
+      "div",
+      {
+        style: {
+          display: "flex",
+          flexDirection: "column",
+          maxHeight: 340,
+          overflow: "auto",
+          border: "1px solid " + s.token.colorBorder,
+          borderRadius: s.token.borderRadius,
+        },
+      },
+      events.map(function (event, index) {
+        var text = KIND[event.kind] || event.kind;
+        var accent =
+          event.kind === "tool_call" || event.kind === "tool_call_update"
+            ? s.token.colorInfo
+            : s.token.colorTextTertiary;
+        return h(
+          "div",
+          {
+            key: index,
+            style: {
+              display: "flex",
+              alignItems: "baseline",
+              gap: 10,
+              padding: "5px 10px",
+              borderTop: index ? "1px solid " + s.token.colorBorderSecondary : "none",
+              fontSize: 12,
+            },
+          },
+          h("span", { style: Object.assign({ width: 62, flex: "0 0 62px" }, s.tiny, s.num) },
+            event.at ? fmtFull(event.at).slice(11) : ""),
+          h("span", { style: { width: 34, flex: "0 0 34px", color: accent } }, text),
+          h(
+            "span",
+            { style: { flex: 1, minWidth: 0, wordBreak: "break-word" } },
+            event.tool ? h("strong", { style: { fontWeight: 600 } }, event.tool) : null,
+            event.status ? h("span", { style: s.tiny }, " · " + event.status) : null,
+            event.args && Object.keys(event.args).length
+              ? h("span", { style: s.tiny }, " · " + Object.keys(event.args).join(", "))
+              : null,
+            event.steps ? h("span", { style: s.tiny }, " · " + event.steps + " 步计划") : null,
+            event.chars ? h("span", { style: s.tiny }, " · " + event.chars + " 字符") : null,
+            event.result_chars ? h("span", { style: s.tiny }, " · 结果 " + event.result_chars + " 字符") : null,
+          ),
+        );
+      }),
+    );
+  }
+
+  function TaskPanel(props) {
+    var s = useStyles();
+    var jobId = props.jobId;
     var task = props.task;
+    var [expanded, setExpanded] = useState(false);
     var [transcript, setTranscript] = useState(null);
     var [loadingMore, setLoadingMore] = useState(false);
     var attempt = task.attempt || 1;
@@ -1489,8 +1782,9 @@
       function () {
         if (!task) return undefined;
         var alive = true;
+        setTranscript(null);
         api
-          .transcript(job.job_id, task.task_id, attempt, 0)
+          .transcript(jobId, task.task_id, attempt, 0)
           .then(function (page) {
             if (alive) setTranscript(page);
           })
@@ -1501,18 +1795,20 @@
           alive = false;
         };
       },
-      [job.job_id, task.task_id, attempt],
+      [jobId, task && task.task_id, attempt],
     );
+
+    if (!task) return null;
 
     function more() {
       if (!transcript || transcript.next_cursor === null) return;
       setLoadingMore(true);
       api
-        .transcript(job.job_id, task.task_id, attempt, transcript.next_cursor)
+        .transcript(jobId, task.task_id, attempt, transcript.next_cursor)
         .then(function (page) {
           setTranscript(function (previous) {
             return Object.assign({}, page, {
-              events: (previous.events || []).concat(page.events || []),
+              events: ((previous && previous.events) || []).concat(page.events || []),
             });
           });
         })
@@ -1524,156 +1820,225 @@
         });
     }
 
-    var breakdown = task.automated_breakdown || [];
-    var artifacts = task.artifacts || [];
+    var prompt = String(task.prompt || "");
     var downloads = task.downloads || [];
+    var full = props.sensitivity === "full";
 
     return h(
       "div",
-      { style: s.stack },
+      { style: { display: "flex", flexDirection: "column", gap: 14 } },
       h(
         "div",
         { style: s.row },
-        h(Button, { size: "small", style: ALIGN_START, onClick: props.onBack }, "← 返回逐题列表"),
-        h(Text, { strong: true }, task.name || task.task_id),
-        h(Tag, { color: statusMeta(task.status).color }, statusMeta(task.status).text),
-        h(Text, { style: s.tiny }, "第 " + attempt + " 次 · " + fmtNum(task.duration_s, 1) + "s"),
+        h(Button, { size: "small", onClick: props.onBack }, "← 返回题目列表"),
+        h("span", { style: { fontSize: 15, fontWeight: 600 } }, task.name || task.task_id),
+        h(StatusPill, { taskStatus: task.status, text: statusMeta(task.status).text }),
+        h("span", { style: s.tiny }, "第 " + attempt + " 次 · " + fmtDuration(task.duration_s)),
+        h("span", { style: s.row }, h("span", { style: s.tiny }, "分数"), h(ScoreText, { value: task.score, bold: true })),
       ),
       task.failure_reason
         ? h(Alert, { type: "error", showIcon: true, message: "失败原因：" + task.failure_reason })
         : null,
       h(
-        Descriptions,
-        {
-          size: "small",
-          column: 2,
-          bordered: true,
-          styles: { label: FACT_LABEL_STYLE },
-          items: [
-            { key: "score", label: "得分", children: task.score === null ? "—" : fmtNum(task.score, 3) },
-            { key: "grading", label: "判分方式", children: task.grading_type || "—" },
-            { key: "labels", label: "标签", children: labelText(task.labels) },
-            { key: "writes", label: "写回", children: "protocol " + (task.protocol_written || 0) + " · 带外 " + (task.out_of_band_count || 0) },
-            { key: "model", label: "自报模型", children: (task.subject_model_reported || []).join("、") || "—" },
-            { key: "from", label: "解析自", children: (task.resolved_from || []).join("、") || "—" },
-          ],
-        },
-      ),
-      h("div", null,
-        h("div", { style: s.muted }, "判据逐项"),
-        breakdown.length
-          ? h(List, {
-              size: "small",
-              dataSource: breakdown,
-              renderItem: function (item) {
-                return h(List.Item, null,
-                  h(Text, { style: s.mono }, JSON.stringify(item)));
+        Panel,
+        { title: "题干", hint: "评测时发给 agent 的原文" },
+        prompt
+          ? h(
+              "div",
+              {
+                style: Object.assign({}, s.mono, {
+                  whiteSpace: "pre-wrap",
+                  lineHeight: 1.7,
+                  maxHeight: expanded ? "none" : 280,
+                  overflow: "auto",
+                  background: s.token.colorFillQuaternary,
+                  border: "1px solid " + s.token.colorBorder,
+                  padding: 12,
+                  borderRadius: s.token.borderRadius,
+                }),
               },
-            })
-          : h(Text, { style: s.tiny }, "没有逐项判分（非规则判分或未产出）")),
-      props.sensitivity === "full" && task.rubric_excerpt
-        ? h("div", null,
-            h("div", { style: s.muted }, "评分依据（完整版）"),
-            h("pre", { style: Object.assign({}, s.mono, { whiteSpace: "pre-wrap", margin: 0 }) }, task.rubric_excerpt))
-        : null,
-      props.sensitivity === "full" && (task.judge_notes || []).length
-        ? h("div", null,
-            h("div", { style: s.muted }, "判分备注（完整版）"),
-            h(List, { size: "small", dataSource: task.judge_notes,
-              renderItem: function (item) { return h(List.Item, null, h(Text, { style: s.mono }, JSON.stringify(item))); } }))
-        : null,
-      h("div", null,
-        h("div", { style: s.muted }, "产物"),
-        artifacts.length
-          ? h(List, {
-              size: "small",
-              dataSource: artifacts,
-              renderItem: function (item) {
+              prompt,
+            )
+          : h("span", { style: s.tiny }, "这道题没有留下题干（数据集里没有 task 正文）"),
+        prompt.length > 600
+          ? h(
+              Button,
+              {
+                size: "small",
+                type: "link",
+                style: { paddingLeft: 0, marginTop: 6 },
+                onClick: function () {
+                  setExpanded(!expanded);
+                },
+              },
+              expanded ? "收起" : "展开全部（" + prompt.length + " 字符）",
+            )
+          : null,
+      ),
+      h(
+        Panel,
+        { title: "这次执行", hint: "trace 与 session 是回到日志的入口" },
+        h(
+          "div",
+          { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 } },
+          h(Fact, { label: "判分方式" }, task.grading_type || "—"),
+          h(Fact, { label: "耗时" }, fmtDuration(task.duration_s)),
+          h(Fact, { label: "写回" },
+            "协议 " + (task.protocol_written || 0) + " · 带外 " + (task.out_of_band_count || 0)),
+          h(Fact, { label: "自报模型" }, (task.subject_model_reported || []).join("、") || "—"),
+          h(Fact, { label: "trace_id" }, h(CopyId, { value: task.trace_id, label: "trace_id 已复制" })),
+          h(Fact, { label: "session_id" }, h(CopyId, { value: task.session_id, label: "session_id 已复制" })),
+          h(Fact, { label: "解析自" }, (task.resolved_from || []).join("、") || "—"),
+          h(Fact, { label: "尝试" }, "第 " + attempt + " 次"),
+        ),
+      ),
+      h(
+        Panel,
+        { title: "判据逐项", hint: task.grading_type === "llm_judge" ? "LLM 判分不产出逐项" : "" },
+        h(BrokenDown, { data: task.automated_breakdown }),
+      ),
+      h(
+        Panel,
+        { title: "产物", hint: full ? "可下载" : "shared 档只列清单，下载需切到完整版" },
+        (task.artifacts || []).length
+          ? h(
+              "div",
+              { style: { display: "flex", flexDirection: "column", gap: 6 } },
+              (task.artifacts || []).map(function (item) {
                 var link = downloads.filter(function (entry) {
                   return entry.path === item.path;
                 })[0];
-                return h(List.Item, {
-                  actions: link
-                    ? [h(Button, {
-                        size: "small",
-                        type: "link",
-                        onClick: function () {
-                          var href = link.href + "?path=" + encodeURIComponent(link.query.path);
-                          downloadPath(href, item.path.split("/").pop());
+                return h(
+                  "div",
+                  {
+                    key: item.path,
+                    style: Object.assign({}, s.block, s.row, {
+                      justifyContent: "space-between",
+                      padding: "6px 10px",
+                    }),
+                  },
+                  h(
+                    "div",
+                    { style: Object.assign({}, s.row, { gap: 8, minWidth: 0 }) },
+                    h("code", { style: s.mono }, item.path),
+                    h("span", { style: s.tiny }, item.size + " B · " + String(item.sha256).slice(0, 12)),
+                  ),
+                  link
+                    ? h(
+                        Button,
+                        {
+                          size: "small",
+                          type: "link",
+                          onClick: function () {
+                            downloadPath(
+                              link.href + "?path=" + encodeURIComponent(link.query.path),
+                              item.path.split("/").pop(),
+                            );
+                          },
                         },
-                      }, "下载")]
+                        "下载",
+                      )
                     : null,
-                },
-                h(Text, { style: s.mono }, item.path + " · " + item.size + "B · " + String(item.sha256).slice(0, 12)));
-              },
-            })
-          : h(Text, { style: s.tiny },
-              props.sensitivity === "full" ? "没有产物" : "产物清单在完整版里（shared 档不列）")),
-      h("div", null,
-        h("div", { style: s.row },
-          h("span", { style: s.muted }, "轨迹时间线"),
-          transcript ? h(Text, { style: s.tiny },
-            "共 " + transcript.total_events + " 条 · 读入 " + (transcript.events || []).length +
-            (transcript.damaged_events ? " · 损坏 " + transcript.damaged_events : "") +
-            " · 状态 " + transcript.transcript_state) : null),
-        transcript && (transcript.events || []).length
-          ? h(
-              "div",
-              { style: Object.assign({}, s.mono, { maxHeight: 260, overflow: "auto", marginTop: 6 }) },
-              transcript.events.map(function (event, index) {
-                return h("div", { key: index, style: { padding: "2px 0" } },
-                  h(Text, { style: s.tiny }, fmtFull(event.at) + "  "),
-                  h(Text, null, event.kind),
-                  event.tool ? h(Text, null, " · " + event.tool + " · " + (event.status || "")) : null,
-                  event.steps ? h(Text, null, " · " + event.steps + " 步计划") : null,
-                  event.chars ? h(Text, { style: s.tiny }, " · " + event.chars + " 字符") : null,
-                  event.result_chars ? h(Text, { style: s.tiny }, " · 结果 " + event.result_chars + " 字符") : null);
+                );
               }),
             )
-          : h(Text, { style: s.tiny },
-              transcript ? "这次运行没有可读的轨迹（" + transcript.transcript_state + "）" : "读取中…"),
-        transcript && transcript.next_cursor !== null
-          ? h(Button, { size: "small", style: { marginTop: 6 }, loading: loadingMore, onClick: more },
-              "再读 " + transcript.limit + " 条")
-          : null),
+          : h("span", { style: s.tiny }, "没有产物"),
+      ),
+      full
+        ? h(
+            Panel,
+            { title: "评分依据（完整版）", pad: true },
+            h(
+              "div",
+              { style: { display: "flex", flexDirection: "column", gap: 12 } },
+              task.rubric_excerpt
+                ? h(
+                    "div",
+                    null,
+                    h("div", { style: s.tiny }, "判据"),
+                    h(
+                      "pre",
+                      { style: Object.assign({}, s.mono, { whiteSpace: "pre-wrap", margin: "4px 0 0" }) },
+                      task.rubric_excerpt,
+                    ),
+                  )
+                : null,
+              task.expected_behavior
+                ? h(
+                    "div",
+                    null,
+                    h("div", { style: s.tiny }, "期望行为"),
+                    h(
+                      "pre",
+                      { style: Object.assign({}, s.mono, { whiteSpace: "pre-wrap", margin: "4px 0 0" }) },
+                      task.expected_behavior,
+                    ),
+                  )
+                : null,
+              (task.judge_notes || []).length
+                ? h(
+                    "div",
+                    null,
+                    h("div", { style: s.tiny }, "判分备注"),
+                    (task.judge_notes || []).map(function (note, index) {
+                      return h(
+                        "pre",
+                        {
+                          key: index,
+                          style: Object.assign({}, s.mono, { whiteSpace: "pre-wrap", margin: "4px 0 0" }),
+                        },
+                        JSON.stringify(note, null, 1),
+                      );
+                    }),
+                  )
+                : null,
+            ),
+          )
+        : null,
+      h(
+        Panel,
+        {
+          title: "轨迹时间线",
+          hint: transcript
+            ? "共 " + transcript.total_events + " 条 · 已读 " + (transcript.events || []).length +
+              (transcript.damaged_events ? " · 损坏 " + transcript.damaged_events : "") +
+              " · " + transcript.transcript_state
+            : "读取中…",
+          extra:
+            transcript && transcript.next_cursor !== null
+              ? h(Button, { size: "small", loading: loadingMore, onClick: more }, "再读 " + transcript.limit + " 条")
+              : null,
+        },
+        transcript ? h(Timeline, { events: transcript.events }) : h(Spin, { size: "small" }),
+      ),
     );
   }
 
-  function labelText(labels) {
-    if (!labels) return "—";
-    var parts = [];
-    ["scenario", "complexity", "environment"].forEach(function (key) {
-      if (labels[key]) parts.push(labels[key]);
-    });
-    if (labels.modality) {
-      parts.push(typeof labels.modality === "string" ? labels.modality : labels.modality.type);
-    }
-    if ((labels.capabilities || []).length) parts.push(labels.capabilities.join("/"));
-    return parts.join(" · ") || "—";
-  }
-
-  function JobDetailModal(props) {
+  function ReportModule(props) {
     var s = useStyles();
+    var jobId = props.jobId;
     var [detail, setDetail] = useState(null);
     var [error, setError] = useState(null);
-    var [level, setLevel] = useState("job");
+    var [sensitivity, setSensitivity] = useState(props.defaultSensitivity || "shared");
+    var [tab, setTab] = useState("overview");
     var [task, setTask] = useState(null);
-    var [sensitivity, setSensitivity] = useState("shared");
+    var [taskLoading, setTaskLoading] = useState("");
+    var [taskQuery, setTaskQuery] = useState("");
+    var [taskFilter, setTaskFilter] = useState("all");
     var [report, setReport] = useState(null);
-    var [reportFormat, setReportFormat] = useState("md");
+    var [reportFormat, setReportFormat] = useState(props.defaultFormat || "md");
     var [reporting, setReporting] = useState(false);
 
     useEffect(
       function () {
-        if (!props.open || !props.jobId) return undefined;
+        if (!jobId) return undefined;
         var alive = true;
         setDetail(null);
         setError(null);
-        setLevel("job");
         setTask(null);
         setReport(null);
         api
-          .detail(props.jobId, sensitivity)
+          .detail(jobId, sensitivity)
           .then(function (result) {
             if (alive) setDetail(result);
           })
@@ -1684,18 +2049,21 @@
           alive = false;
         };
       },
-      [props.open, props.jobId, sensitivity],
+      [jobId, sensitivity],
     );
 
-    function openTask(taskId) {
+    function openTask(row) {
+      setTaskLoading(row.task_id);
       api
-        .taskDetail(props.jobId, taskId, sensitivity)
+        .taskDetail(jobId, row.task_id, sensitivity, row.attempt)
         .then(function (result) {
           setTask(result);
-          setLevel("task");
         })
         .catch(function (err) {
           message.error("单题详情读取失败：" + errOf(err).message);
+        })
+        .then(function () {
+          setTaskLoading("");
         });
     }
 
@@ -1703,10 +2071,8 @@
       setReporting(true);
       setReport(null);
       api
-        .report(props.jobId, reportFormat, sensitivity)
-        .then(function (result) {
-          setReport(result);
-        })
+        .report(jobId, reportFormat, sensitivity)
+        .then(setReport)
         .catch(function (err) {
           var info = errOf(err);
           message.error("报告生成失败：" + info.code + " " + info.message);
@@ -1716,319 +2082,524 @@
         });
     }
 
-    var formatOptions = REPORT_FORMATS.map(function (format) {
-      var disabled = format === "zip" && sensitivity !== "full";
-      return {
-        value: format,
-        label: disabled ? format + "（仅完整版）" : format,
-        disabled: disabled,
-      };
+    function downloadReport() {
+      var proxied = API + "/fetch?url=" + encodeURIComponent(report.url);
+      var token = typeof host.getApiToken === "function" ? host.getApiToken() : "";
+      fetch(host.getApiUrl(proxied), { headers: token ? { Authorization: "Bearer " + token } : {} })
+        .then(function (response) {
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          return response.blob();
+        })
+        .then(function (blob) {
+          saveBlob(blob, report.filename);
+        })
+        .catch(function (err) {
+          message.error("下载失败：" + err.message);
+        });
+    }
+
+    var taskRows = useMemo(
+      function () {
+        if (!detail) return [];
+        var needle = taskQuery.trim().toLowerCase();
+        return (detail.tasks || []).filter(function (row) {
+          if (taskFilter === "failed" && row.status !== "failed" && row.failure_reason !== "no_artifacts") {
+            return false;
+          }
+          if (taskFilter === "low" && !(typeof row.score === "number" && row.score < 0.8)) return false;
+          if (taskFilter === "unscored" && typeof row.score === "number") return false;
+          if (!needle) return true;
+          return [row.task_id, row.name, JSON.stringify(row.labels || {})]
+            .join(" ")
+            .toLowerCase()
+            .indexOf(needle) >= 0;
+        });
+      },
+      [detail, taskFilter, taskQuery],
+    );
+
+    if (error) {
+      return h(
+        "div",
+        { style: s.stack },
+        h(Button, { size: "small", onClick: props.onBack }, "← 返回评测列表"),
+        h(Alert, { type: "error", showIcon: true, message: error.code, description: error.message }),
+      );
+    }
+    if (!detail) {
+      return h(
+        "div",
+        { style: Object.assign({}, s.card, { padding: 48, textAlign: "center" }) },
+        h(Spin, null),
+        h("div", { style: Object.assign({}, s.tiny, { marginTop: 8 }) }, "读取 " + jobId),
+      );
+    }
+
+    var progress = detail.progress || { total: 0, by_status: {}, scored: 0 };
+    var byStatus = progress.by_status || {};
+    var score = detail.score || {};
+    // A job that is still queued has no task rows yet, so ``progress.total`` is
+    // zero while the submission already knows how many tasks it will run.  The
+    // report should say "0 / 24, waiting" rather than "0 / 0", which reads as an
+    // empty run.
+    var planned = (detail.sources || []).reduce(function (sum, source) {
+      return sum + (Number(source.task_count) || 0);
+    }, 0);
+    if (!progress.total && planned) {
+      progress = Object.assign({}, progress, { total: planned });
+    }
+
+    var header = h(
+      Panel,
+      { pad: false },
+      h(
+        "div",
+        { style: { padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 } },
+        h(
+          "div",
+          { style: Object.assign({}, s.row, { justifyContent: "space-between", alignItems: "flex-start", paddingRight: 72 }) },
+          h(
+            "div",
+            { style: Object.assign({}, s.row, { gap: 10, minWidth: 0 }) },
+            h(Button, { size: "small", onClick: props.onBack }, "← 评测列表"),
+            h(
+              "div",
+              { style: { display: "flex", flexDirection: "column", minWidth: 0 } },
+              h(
+                "div",
+                { style: Object.assign({}, s.row, { gap: 8 }) },
+                h("span", { style: { fontSize: 17, fontWeight: 600 } }, detail.purpose || "（未写目的）"),
+                h(StatusPill, { text: statusMeta(detail.status).text, color: statusMeta(detail.status).color }),
+              ),
+              h(
+                "div",
+                { style: Object.assign({}, s.row, { gap: 8, marginTop: 2 }) },
+                h(CopyId, { value: detail.job_id, full: true, label: "job id 已复制" }),
+                h("span", { style: s.tiny }, detail.product || "—"),
+                h("span", { style: s.tiny }, detail.submitter || "—"),
+              ),
+            ),
+          ),
+        ),
+        h(
+          "div",
+          {
+            style: {
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+              gap: 0,
+              marginLeft: -14,
+            },
+          },
+          h(ReportMetric, {
+            label: "总分",
+            value: h(ScoreText, { value: score.mean, bold: true }),
+            hint: "计分 " + (progress.scored || 0) + " / " + progress.total + " 题",
+          }),
+          h(ReportMetric, {
+            label: "完成",
+            value: (byStatus.finished || 0) + " / " + progress.total,
+            bar: h(MiniBar, {
+              percent: progress.total ? (byStatus.finished || 0) / progress.total : 0,
+              color: byStatus.failed ? s.token.colorError : s.token.colorPrimary,
+            }),
+          }),
+          h(ReportMetric, {
+            label: "分数区间",
+            value:
+              score.best === null || score.best === undefined
+                ? "—"
+                : fmtNum(score.best, 2) + " – " + fmtNum(score.worst, 2),
+            hint: "最高 / 最低",
+          }),
+          h(ReportMetric, {
+            label: "耗时",
+            value: fmtDuration(
+              detail.started_at && detail.finished_at
+                ? (asDate(detail.finished_at) - asDate(detail.started_at)) / 1000
+                : 0,
+            ),
+            hint: detail.finished_at ? fmtShort(detail.finished_at) + " 结束" : "未结束",
+          }),
+        ),
+      ),
+    );
+
+    var statusLine = Object.keys(byStatus).sort().map(function (key) {
+      var meta = statusMeta(key);
+      return h(StatusPill, { key: key, text: meta.text + " " + byStatus[key], color: meta.color });
     });
 
-    function levelJob() {
-      if (error) {
-        return h(Alert, { type: "error", showIcon: true, message: error.code, description: error.message });
-      }
-      if (!detail) return h(Spin, null);
-      var progress = detail.progress || { total: 0, by_status: {}, scored: 0 };
-      var status = detail.status;
-      var byStatus = progress.by_status || {};
-      return h(
+    var overview = h(
+      "div",
+      { style: { display: "flex", flexDirection: "column", gap: 14 } },
+      h(
         "div",
-        { style: s.stack },
+        { style: { display: "grid", gridTemplateColumns: "minmax(220px, 260px) 1fr", gap: 14 } },
         h(
-          Descriptions,
-          {
-            size: "small",
-            column: 2,
-            bordered: true,
-            styles: { label: FACT_LABEL_STYLE },
-            items: [
-              { key: "job", label: "任务", children: h(Text, { style: s.mono }, detail.job_id) },
-              { key: "status", label: "状态", children: h(Tag, { color: statusMeta(status).color }, statusMeta(status).text) },
-              { key: "submitter", label: "提交人", children: detail.submitter || "—" },
-              { key: "product", label: "产品 / 目的", children: (detail.product || "—") + " / " + (detail.purpose || "—") },
-              { key: "acp", label: "ACP 地址", children: h(Text, { style: s.mono }, detail.acp_url || "—") },
-              {
-                key: "window",
-                label: "窗口",
-                children: detail.window
-                  ? windowLabel(detail.window.kind) + " · " + fmtFull(detail.window.not_before) +
-                    (detail.window.not_after ? " → " + fmtFull(detail.window.not_after) : " → 无截止")
-                  : "—",
-              },
-              { key: "created", label: "创建 / 开始", children: fmtFull(detail.created_at) + " / " + fmtFull(detail.started_at) },
-              { key: "finished", label: "结束", children: fmtFull(detail.finished_at) },
-              detail.error
-                ? { key: "error", label: "错误", span: 2, children: h(Text, { type: "danger" }, detail.error) }
-                : null,
-            ].filter(Boolean),
-          },
-        ),
-        h(
-          "div",
-          null,
-          h("div", { style: s.muted }, "进度"),
-          h(Progress, {
-            // Finished out of total, not "reached a terminal state": a job whose
-            // 15 tasks all failed is 0% done, and a full bar in success green
-            // would say the opposite of what the row below it says.
-            percent: progress.total
-              ? Math.round(((byStatus.finished || 0) / progress.total) * 100)
-              : 0,
-            size: "small",
-            strokeColor: byStatus.failed ? s.token.colorError : s.token.colorPrimary,
+          Panel,
+          { title: "总分" },
+          h(ScoreDial, {
+            score: score.mean,
+            caption: "计分 " + (score.count || 0) + " 题 · 共 " + progress.total + " 题",
           }),
-          h("div", { style: s.row },
-            Object.keys(byStatus).sort().map(function (key) {
-              var meta = statusMeta(key);
-              return h(Tag, { key: key, color: meta.color, bordered: false }, meta.text + " " + byStatus[key]);
-            }),
-            h(Text, { style: s.tiny }, "计分 " + progress.scored + " / " + progress.total)),
+          h("div", { style: Object.assign({}, s.row, { justifyContent: "center", marginTop: 8 }) }, statusLine),
         ),
         h(
-          "div",
-          { style: s.row },
-          h(Text, { style: s.muted }, "总分"),
-          h(Text, { style: s.mono }, fmtPct(detail.score && detail.score.mean)),
-          h(Text, { style: s.tiny },
-            detail.score
-              ? "计分 " + detail.score.count + " 题 · 最高 " + fmtNum(detail.score.best, 3) +
-                " · 最低 " + fmtNum(detail.score.worst, 3)
-              : ""),
+          Panel,
+          { title: "切片", hint: "按题目标签聚合平均分" },
+          h(
+            "div",
+            { style: { display: "flex", flexDirection: "column", gap: 16, maxWidth: 520 } },
+            h("div", null, h("div", { style: s.tiny }, "场景"),
+              h(SliceBars, { data: detail.slices && detail.slices.scenario })),
+            h("div", null, h("div", { style: s.tiny }, "能力"),
+              h(SliceBars, { data: detail.slices && detail.slices.capability })),
+          ),
         ),
+      ),
+      h(
+        "div",
+        { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14, alignItems: "start" } },
         h(
-          "div",
-          { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 } },
-          h("div", null, h("div", { style: s.muted }, "场景切片"),
-            h(SliceBars, { data: detail.slices && detail.slices.scenario })),
-          h("div", null, h("div", { style: s.muted }, "能力切片"),
-            h(SliceBars, { data: detail.slices && detail.slices.capability })),
-        ),
-        h("div", null,
-          h("div", { style: s.muted }, "数据集来源"),
-          (detail.sources || []).map(function (source) {
-            return h("div", { key: source.dataset_id, style: s.row },
-              h(Tag, { bordered: false }, source.dataset_kind),
-              h(Text, { style: s.mono }, source.dataset_id),
-              h(Text, { style: s.tiny }, source.task_count + " 题 · 由 " + source.requested_by + " 请求"));
-          })),
-        h(Divider, { style: { margin: "8px 0" } }),
-        h(
-          "div",
-          { style: s.row },
-          h("span", { style: s.muted }, "报告"),
-          h(Select, {
-            size: "small",
-            style: { width: 170 },
-            value: reportFormat,
-            options: formatOptions,
-            onChange: setReportFormat,
-          }),
-          h(Button, { size: "small", loading: reporting, onClick: makeReport }, "生成"),
-          report
-            ? h("span", { style: s.row },
-                h(Text, { style: s.mono }, report.filename),
-                h(Text, { style: s.tiny }, (report.size / 1024).toFixed(1) + " KB"),
-                h(Button, {
-                  size: "small",
-                  type: "link",
-                  onClick: function () {
-                    var proxied = API + "/fetch?url=" + encodeURIComponent(report.url);
-                    fetch(host.getApiUrl(proxied), {
-                      headers: (function () {
-                        var token = typeof host.getApiToken === "function" ? host.getApiToken() : "";
-                        return token ? { Authorization: "Bearer " + token } : {};
-                      })(),
-                    })
-                      .then(function (response) {
-                        if (!response.ok) throw new Error("HTTP " + response.status);
-                        return response.blob();
-                      })
-                      .then(function (blob) {
-                        saveBlob(blob, report.filename);
-                      })
-                      .catch(function (err) {
-                        message.error("下载失败：" + err.message);
-                      });
-                  },
-                }, "下载"))
+          Panel,
+          { title: "配置" },
+          h(
+            "div",
+            { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 12 } },
+            h("div", { style: { gridColumn: "1 / -1" } },
+              h(Fact, { label: "ACP 地址" }, h("code", { style: s.mono }, detail.acp_url || "—"))),
+            h(Fact, { label: "窗口" },
+              detail.window
+                ? windowLabel(detail.window.kind) + " · " + fmtShort(detail.window.not_before)
+                : "—"),
+            h(Fact, { label: "提交" }, fmtFull(detail.created_at)),
+            h(Fact, { label: "开始" }, fmtFull(detail.started_at)),
+          ),
+          detail.error
+            ? h(Alert, { type: "error", showIcon: true, style: { marginTop: 12 }, message: detail.error })
             : null,
         ),
-        report
-          ? h("div", { style: s.stack },
-              h(Text, { style: s.tiny }, "sha256 " + report.sha256),
-              h(Text, { style: s.tiny }, "过期 " + fmtFull(report.expires_at) + "（" + untilText(report.expires_at) + "）"))
-          : null,
-        h(Divider, { style: { margin: "8px 0" } }),
         h(
-          Button,
-          { type: "primary", onClick: function () { setLevel("tasks"); } },
-          "看逐题（" + (detail.tasks || []).length + "）",
+          Panel,
+          { title: "数据来源" },
+          (detail.sources || []).length
+            ? (detail.sources || []).map(function (source) {
+                return h(
+                  "div",
+                  { key: source.dataset_id, style: Object.assign({}, s.row, { justifyContent: "space-between" }) },
+                  h(
+                    "div",
+                    { style: s.row },
+                    h(Tag, { bordered: false }, source.dataset_kind),
+                    h("code", { style: s.mono }, source.dataset_id),
+                  ),
+                  h("span", { style: s.tiny }, source.task_count + " 题"),
+                );
+              })
+            : h("span", { style: s.tiny }, "没有来源记录"),
         ),
-      );
-    }
+      ),
+      detail.env_fingerprint
+        ? h(
+            Panel,
+            { title: "环境指纹", hint: "提交时自报，原样保留" },
+            h(
+              "pre",
+              {
+                style: Object.assign({}, s.mono, {
+                  margin: 0,
+                  whiteSpace: "pre-wrap",
+                  background: s.token.colorFillQuaternary,
+                  border: "1px solid " + s.token.colorBorder,
+                  padding: 10,
+                  borderRadius: s.token.borderRadius,
+                }),
+              },
+              JSON.stringify(detail.env_fingerprint, null, 2),
+            ),
+          )
+        : null,
+    );
 
-    function levelTasks() {
-      if (!detail) return h(Spin, null);
-      var rows = detail.tasks || [];
-      var columns = [
-        {
-          title: "题目",
-          dataIndex: "name",
-          render: function (_, row) {
-            return h(
-              "div",
-              { style: { display: "flex", flexDirection: "column" } },
-              h(Text, { strong: true }, row.name || row.task_id),
-              h(Text, { style: s.mono }, row.task_id),
-            );
-          },
-        },
-        { title: "能力/场景", dataIndex: "labels", width: 220,
-          render: function (value) { return h(Text, { style: s.tiny }, labelText(value)); } },
-        {
-          title: "状态",
-          dataIndex: "status",
-          width: 96,
-          render: function (value, row) {
-            // Three of these are not job statuses at all: the runner records them
-            // per task and they have no Chinese spelling, so they are shown as the
-            // token the operator will grep for.
-            var labels = { skipped: "跳过", no_artifacts: "无产物", missing: "缺失" };
-            var colour = statusMeta(value).color;
-            if (labels[value] || value === "failed") colour = "error";
-            return h(Tooltip, { title: row.failure_reason || "" },
-              h(Tag, { color: colour }, labels[value] || statusMeta(value).text));
-          },
-        },
-        {
-          title: "分数",
-          dataIndex: "score",
-          width: 80,
-          render: function (value) { return h(Text, { style: s.mono }, value === null ? "—" : fmtNum(value, 3)); },
-        },
-        {
-          title: "耗时",
-          dataIndex: "duration_s",
-          width: 80,
-          render: function (value) { return h(Text, { style: s.mono }, fmtNum(value, 1) + "s"); },
-        },
-        { title: "写回", width: 96,
-          render: function (_, row) {
-            return h(Text, { style: s.tiny }, (row.protocol_written || 0) + " / " + (row.out_of_band_count || 0));
-          } },
-        {
-          title: "",
-          width: 72,
-          render: function (_, row) {
-            return h(Button, { size: "small", type: "link", onClick: function () { openTask(row.task_id); } }, "单题");
-          },
-        },
-      ];
-      return h(
-        "div",
-        { style: s.stack },
-        h(Button, {
-          size: "small",
-          style: ALIGN_START,
-          onClick: function () { setLevel("job"); },
-        }, "← 返回概览"),
-        h(Table, {
-          size: "small",
-          rowKey: "task_id",
-          dataSource: rows,
-          columns: columns,
-          pagination: { pageSize: 15, size: "small" },
-          scroll: { x: 900 },
-        }),
-      );
-    }
-
-    var title = "任务详情";
-    if (detail) title = detail.purpose || "任务详情";
-    return h(
-      Modal,
+    var taskColumns = [
       {
-        open: props.open,
-        onCancel: props.onClose,
-        footer: null,
-        width: 1080,
-        style: { top: 24 },
-        title: h(
+        title: "题目",
+        dataIndex: "name",
+        render: function (_, row) {
+          return h(
+            "div",
+            { style: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 } },
+            h("span", { style: { fontWeight: 600 } }, row.name || row.task_id),
+            h("code", { style: Object.assign({}, s.mono, s.tiny) }, row.task_id),
+          );
+        },
+      },
+      {
+        title: "标签",
+        dataIndex: "labels",
+        width: 190,
+        render: function (value) {
+          var parts = labelParts(value);
+          return parts.length
+            ? h(Space, { size: 2, wrap: true }, parts.map(function (part) {
+                return h(Tag, { key: part, bordered: false }, part);
+              }))
+            : h("span", { style: s.tiny }, "—");
+        },
+      },
+      {
+        title: "状态",
+        dataIndex: "status",
+        width: 96,
+        render: function (value, row) {
+          return h(StatusPill, {
+            taskStatus: value,
+            text: statusMeta(value).text,
+            title: row.failure_reason || "",
+          });
+        },
+      },
+      {
+        title: "分数",
+        dataIndex: "score",
+        width: 78,
+        render: function (value) {
+          return h(ScoreText, { value: value, bold: true });
+        },
+      },
+      {
+        title: "耗时",
+        dataIndex: "duration_s",
+        width: 76,
+        render: function (value) {
+          return h("span", { style: Object.assign({}, s.mono, s.num) }, fmtDuration(value));
+        },
+      },
+      {
+        title: "trace_id",
+        dataIndex: "trace_id",
+        width: 140,
+        render: function (value) {
+          return value
+            ? h("code", { style: s.mono }, String(value).slice(0, 12))
+            : h("span", { style: s.tiny }, "—");
+        },
+      },
+      {
+        title: "",
+        width: 66,
+        render: function (_, row) {
+          return h(
+            Button,
+            {
+              size: "small",
+              type: "link",
+              loading: taskLoading === row.task_id,
+              onClick: function (event) {
+                event.stopPropagation();
+                openTask(row);
+              },
+            },
+            "查看",
+          );
+        },
+      },
+    ];
+
+    var tasksTab = task
+      ? h(TaskPanel, {
+          jobId: jobId,
+          task: task,
+          sensitivity: sensitivity,
+          onBack: function () {
+            setTask(null);
+          },
+        })
+      : h(
           "div",
-          { style: Object.assign({}, s.row, { justifyContent: "space-between" }) },
-          h("div", { style: s.row },
-            h(Text, { strong: true }, title),
-            detail ? h(Tag, { style: s.mono }, shortId(detail.job_id)) : null,
-            detail
-              ? h(Button, {
-                  size: "small",
-                  type: "link",
-                  onClick: function () {
-                    var link = window.location.origin + window.location.pathname + "?app=pawbench-eval&job=" + props.jobId;
-                    if (navigator.clipboard) {
-                      navigator.clipboard.writeText(link);
-                      message.success("本题链接已复制");
-                    } else {
-                      message.info(link);
-                    }
-                  },
-                }, "复制本题链接")
-              : null),
+          { style: { display: "flex", flexDirection: "column", gap: 12 } },
           h(
             "div",
             { style: s.row },
             h(Segmented, {
               size: "small",
-              value: sensitivity,
-              onChange: function (value) {
-                setSensitivity(value);
-                setLevel("job");
-                setReport(null);
-                // zip is only issued for the full tier, so carrying the choice
-                // back into shared would make the next 生成 a guaranteed 400.
-                if (value === "shared" && reportFormat === "zip") setReportFormat("md");
-              },
+              value: taskFilter,
+              onChange: setTaskFilter,
               options: [
-                { value: "shared", label: "shared" },
-                { value: "full", label: "完整版" },
+                { value: "all", label: "全部 " + (detail.tasks || []).length },
+                { value: "failed", label: "异常" },
+                { value: "low", label: "低分" },
+                { value: "unscored", label: "未计分" },
               ],
             }),
+            h(Input, {
+              allowClear: true,
+              size: "small",
+              placeholder: "搜题名、task id、标签",
+              style: { width: 240 },
+              value: taskQuery,
+              onChange: function (event) {
+                setTaskQuery(event.target.value);
+              },
+            }),
+            h("span", { style: s.tiny }, "点一行看题干、判分与轨迹"),
           ),
+          h(Table, {
+            size: "middle",
+            rowKey: "task_id",
+            dataSource: taskRows,
+            columns: taskColumns,
+            pagination: taskRows.length > 20 ? { pageSize: 20, size: "small" } : false,
+            scroll: { x: 860 },
+            onHeaderRow: function () {
+              return { style: { background: s.token.colorFillQuaternary } };
+            },
+            onRow: function (row) {
+              return {
+                onClick: function () {
+                  openTask(row);
+                },
+                style: { cursor: "pointer" },
+              };
+            },
+            locale: {
+              emptyText: h(EmptyState, {
+                glyph: "◇",
+                title: "没有符合条件的题目",
+                hint: "换个筛选条件，或者清空搜索词。",
+              }),
+            },
+          }),
+        );
+
+    var exportTab = h(
+      "div",
+      { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 } },
+      h(
+        Panel,
+        { title: "生成报告文件", hint: "题干、trace_id 与 session_id 都在报告里" },
+        h(
+          "div",
+          { style: s.row },
+          h(Select, {
+            size: "small",
+            style: { width: 190 },
+            value: reportFormat,
+            onChange: setReportFormat,
+            options: REPORT_FORMATS.map(function (format) {
+              var disabled = format === "zip" && sensitivity !== "full";
+              return {
+                value: format,
+                label: disabled ? format + "（仅完整版）" : format,
+                disabled: disabled,
+              };
+            }),
+          }),
+          h(Button, { size: "small", type: "primary", loading: reporting, onClick: makeReport }, "生成"),
+          report
+            ? h(Button, { size: "small", onClick: downloadReport }, "下载 " + report.filename)
+            : null,
         ),
-      },
+        report
+          ? h(
+              "div",
+              { style: Object.assign({}, s.stack, { marginTop: 12, gap: 4 }) },
+              h("span", { style: s.tiny }, (report.size / 1024).toFixed(1) + " KB · sha256 " + report.sha256),
+              h("span", { style: s.tiny }, "链接 " + untilText(report.expires_at) + "过期"),
+            )
+          : h("div", { style: Object.assign({}, s.tiny, { marginTop: 12 }) },
+              "报告是一次性产物：每次生成都会写一份新文件，旧的按服务配置过期。"),
+      ),
+      h(
+        Panel,
+        { title: "报告里有什么" },
+        h(
+          "ul",
+          { style: Object.assign({}, s.muted, { paddingLeft: 18, margin: 0, lineHeight: 1.9 }) },
+          h("li", null, "总分、切片、逐题状态与分数"),
+          h("li", null, "每题题干原文（截断到 1200 字符）"),
+          h("li", null, "每题的 trace_id 与 session_id，可直接拿去搜日志"),
+          h("li", null, "产物清单与大小" + (sensitivity === "full" ? "，可下载" : "（完整版可下载）")),
+        ),
+      ),
+    );
+
+    return h(
+      "div",
+      { style: { display: "flex", flexDirection: "column", gap: 14 } },
+      header,
       sensitivity === "full"
         ? h(Alert, {
             type: "warning",
             showIcon: true,
-            style: { marginBottom: 12 },
-            message: "完整版含评分依据与他人产物，对外只发 shared 版",
+            message: "正在看完整版：含评分依据与他人产物，对外分享请切回 shared",
           })
         : null,
-      level === "job" ? levelJob() : null,
-      level === "tasks" ? levelTasks() : null,
-      level === "task" && task
-        ? h(TaskDetailView, {
-            detail: detail || { job_id: props.jobId },
-            task: task,
-            sensitivity: sensitivity,
-            onBack: function () {
-              setLevel("tasks");
+      h(Tabs, {
+        activeKey: tab,
+        onChange: setTab,
+        tabBarExtraContent: h(
+          Space,
+          null,
+          h(Space, { size: 6 },
+            h("span", { style: s.tiny }, "档位"),
+            h(Tooltip, { title: "完整版含评分依据与产物下载；对外分享用 shared" },
+              h(Segmented, {
+                size: "small",
+                value: sensitivity,
+                onChange: function (value) {
+                  setSensitivity(value);
+                  setTask(null);
+                  // zip is only issued for the full tier, so carrying the choice
+                  // back into shared would make the next 生成 a guaranteed 400.
+                  if (value === "shared" && reportFormat === "zip") setReportFormat("md");
+                },
+                options: [
+                  { value: "shared", label: "shared" },
+                  { value: "full", label: "完整版" },
+                ],
+              }))),
+          h(Button, {
+            size: "small",
+            onClick: function () {
+              copyText(
+                window.location.origin + window.location.pathname + "?app=pawbench-eval&job=" + jobId,
+                "报告链接已复制",
+              );
             },
-          })
-        : null,
+          }, "复制链接"),
+        ),
+        items: [
+          { key: "overview", label: "总览", children: overview },
+          { key: "tasks", label: "题目（" + (detail.tasks || []).length + "）", children: tasksTab },
+          { key: "export", label: "导出", children: exportTab },
+        ],
+      }),
     );
   }
 
-  // ── datasets ────────────────────────────────────────────────────────────
+  function labelParts(labels) {
+    if (!labels) return [];
+    var parts = [];
+    ["scenario", "complexity", "environment"].forEach(function (key) {
+      if (labels[key]) parts.push(labels[key]);
+    });
+    if (labels.modality) {
+      parts.push(typeof labels.modality === "string" ? labels.modality : labels.modality.type);
+    }
+    if ((labels.capabilities || []).length) parts.push(labels.capabilities.join("/"));
+    return parts.filter(Boolean);
+  }
 
-  function DatasetSection(props) {
+  // ── module: datasets ────────────────────────────────────────────────────
+
+  function DatasetsModule(props) {
     var s = useStyles();
     var [editing, setEditing] = useState(null); // "view" | "upload" | "category" | null
     var [form, setForm] = useState({});
     var [busy, setBusy] = useState(false);
-    var catalog = props.catalog;
+    var catalog = props.catalog || { datasets: [], categories: [] };
 
     function startView() {
       setForm({ id: "", name: "", description: "", categories: [], filter: {} });
@@ -2123,6 +2694,10 @@
         });
     }
 
+    var taskTotal = (catalog.datasets || []).reduce(function (sum, row) {
+      return sum + (Number(row.task_count) || 0);
+    }, 0);
+
     var columns = [
       {
         title: "数据集",
@@ -2130,65 +2705,100 @@
         render: function (_, row) {
           return h(
             "div",
-            { style: { display: "flex", flexDirection: "column" } },
-            h(Text, { strong: true }, row.name || row.id),
-            h(Text, { style: s.mono }, row.id + " · " + row.kind),
+            { style: { display: "flex", flexDirection: "column", gap: 2 } },
+            h("span", { style: { fontWeight: 600 } }, row.name || row.id),
+            h(
+              "div",
+              { style: Object.assign({}, s.row, { gap: 6 }) },
+              h("code", { style: s.mono }, row.id),
+              h(Tag, { bordered: false }, row.kind),
+            ),
+            row.description ? h("span", { style: s.tiny }, row.description) : null,
           );
         },
       },
-      { title: "题数", dataIndex: "task_count", width: 70 },
+      {
+        title: "题数",
+        dataIndex: "task_count",
+        width: 72,
+        render: function (value) {
+          return h("span", { style: Object.assign({}, s.num, { fontWeight: 600 }) }, value);
+        },
+      },
       {
         title: "分类",
         dataIndex: "categories",
-        width: 200,
+        width: 210,
         render: function (value) {
-          if (!value || !value.length) return h(Text, { style: s.tiny }, "未分类");
-          return h(Space, { size: 2, wrap: true },
-            value.map(function (name) { return h(Tag, { key: name, bordered: false }, name); }));
+          if (!value || !value.length) return h("span", { style: s.tiny }, "未分类");
+          return h(
+            Space,
+            { size: 2, wrap: true },
+            value.map(function (name) {
+              return h(Tag, { key: name, bordered: false }, name);
+            }),
+          );
         },
       },
-      { title: "维护人", dataIndex: "owner", width: 110 },
-      { title: "更新", dataIndex: "updated_at", width: 130,
-        render: function (value) { return h(Text, { style: s.tiny }, fmtShort(value)); } },
+      { title: "维护人", dataIndex: "owner", width: 100 },
+      {
+        title: "更新",
+        dataIndex: "updated_at",
+        width: 118,
+        render: function (value) {
+          return h("span", { style: s.tiny }, fmtShort(value));
+        },
+      },
       {
         title: "",
-        width: 80,
+        width: 66,
         render: function (_, row) {
           var mine = !props.subject || row.owner === props.subject;
           var node = h(Button, { size: "small", type: "link", danger: true, disabled: !mine }, "删除");
           if (mine) {
-            return h(Popconfirm, {
-              title: "删除 " + row.id + "？",
-              description: "跑过任务的删不掉，服务会拒绝。",
-              okText: "删除",
-              cancelText: "算了",
-              onConfirm: function () { removeDataset(row); },
-            }, node);
+            return h(
+              Popconfirm,
+              {
+                title: "删除 " + row.id + "？",
+                description: "跑过任务的删不掉，服务会拒绝。",
+                okText: "删除",
+                cancelText: "算了",
+                onConfirm: function () {
+                  removeDataset(row);
+                },
+              },
+              node,
+            );
           }
           return h(Tooltip, { title: "由 " + row.owner + " 维护" }, node);
         },
       },
     ];
 
-    var categoryRows = catalog.categories || [];
     var categoryColumns = [
       { title: "分类", dataIndex: "name" },
       { title: "数据集数", dataIndex: "dataset_count", width: 96 },
-      { title: "创建者", dataIndex: "created_by", width: 120 },
+      { title: "创建者", dataIndex: "created_by", width: 110 },
       {
         title: "",
-        width: 80,
+        width: 66,
         render: function (_, row) {
           var mine = !props.subject || row.created_by === props.subject;
           var node = h(Button, { size: "small", type: "link", danger: true, disabled: !mine }, "删除");
           if (mine) {
-            return h(Popconfirm, {
-              title: "删除分类 " + row.name + "？",
-              description: "只删空分类，还有数据集挂着会被拒。",
-              okText: "删除",
-              cancelText: "算了",
-              onConfirm: function () { removeCategory(row); },
-            }, node);
+            return h(
+              Popconfirm,
+              {
+                title: "删除分类 " + row.name + "？",
+                description: "只删空分类，还有数据集挂着会被拒。",
+                okText: "删除",
+                cancelText: "算了",
+                onConfirm: function () {
+                  removeCategory(row);
+                },
+              },
+              node,
+            );
           }
           return h(Tooltip, { title: "由 " + row.created_by + " 维护" }, node);
         },
@@ -2199,13 +2809,13 @@
       var distribution = catalog.label_distribution || {};
       return h(
         "div",
-        { style: s.stack },
+        { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 } },
         FILTER_KEYS.map(function (key) {
           var values = Object.keys(distribution[key] || {});
           if (!values.length) {
             return h(
               Field,
-              { key: key, label: key, hint: "服务不提供该维度的分布，手填值" },
+              { key: key, label: key, hint: "手填值" },
               h(Select, {
                 mode: "tags",
                 style: { width: "100%" },
@@ -2248,68 +2858,124 @@
     });
 
     return h(
-      Card,
-      {
-        title: "数据集",
-        style: s.card,
-        extra: h(
-          Space,
-          null,
-          h(Button, { size: "small", onClick: startView }, "新建视图"),
-          h(Button, { size: "small", onClick: startUpload }, "上传自定义集"),
-          h(Button, {
-            size: "small",
-            onClick: function () {
-              setForm({ name: "", description: "" });
-              setEditing("category");
-            },
-          }, "分类管理"),
-        ),
-      },
-      h(Table, {
-        size: "small",
-        rowKey: "id",
-        dataSource: catalog.datasets || [],
-        columns: columns,
-        pagination: false,
-        locale: { emptyText: h(Empty, { image: Empty.PRESENTED_IMAGE_SIMPLE, description: "还没有数据集" }) },
-      }),
+      "div",
+      { style: { display: "flex", flexDirection: "column", gap: 16 } },
+      h(
+        "div",
+        { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 } },
+        h(StatCard, { label: "数据集", value: (catalog.datasets || []).length, hint: "视图 + 自定义包" }),
+        h(StatCard, { label: "题目", value: taskTotal, hint: "各集合计" }),
+        h(StatCard, { label: "分类", value: (catalog.categories || []).length, hint: "用于整组选题" }),
+      ),
+      h(
+        Panel,
+        {
+          pad: false,
+          children: h(
+            "div",
+            null,
+            h(
+              "div",
+              { style: Object.assign({}, s.sectionHead, { padding: "14px 16px", marginBottom: 0 }) },
+              h("div", { style: s.h2 }, "全部数据集"),
+              h(
+                Space,
+                null,
+                h(Button, { size: "small", onClick: startView }, "新建视图"),
+                h(Button, { size: "small", onClick: startUpload }, "上传自定义集"),
+                h(
+                  Button,
+                  {
+                    size: "small",
+                    onClick: function () {
+                      setForm({ name: "", description: "" });
+                      setEditing("category");
+                    },
+                  },
+                  "分类管理",
+                ),
+              ),
+            ),
+            h(Table, {
+              size: "middle",
+              rowKey: "id",
+              dataSource: catalog.datasets || [],
+              columns: columns,
+              pagination: (catalog.datasets || []).length > 15 ? { pageSize: 15, size: "small" } : false,
+              scroll: { x: 820 },
+              locale: {
+                emptyText: h(EmptyState, {
+                  glyph: "▤",
+                  title: "还没有数据集",
+                  hint: "「新建视图」从内置语料里切一片，「上传自定义集」提交一个 zip 任务包。",
+                }),
+              },
+            }),
+          ),
+        },
+      ),
       h(
         Modal,
         {
           open: editing === "view",
           title: "新建视图（从内置语料切一片）",
-          onCancel: function () { setEditing(null); },
+          onCancel: function () {
+            setEditing(null);
+          },
           onOk: submitView,
           confirmLoading: busy,
           okText: "创建",
-          width: 640,
+          width: 660,
         },
-        h(Field, { label: "id", hint: "字母或数字开头，可含 . _ -，最长 80 位；会装进别人的选择器里"} ,
-          h(Input, {
-            value: form.id || "",
-            onChange: function (event) { setForm(Object.assign({}, form, { id: event.target.value })); },
-          })),
-        h(Field, { label: "显示名" },
-          h(Input, {
-            value: form.name || "",
-            onChange: function (event) { setForm(Object.assign({}, form, { name: event.target.value })); },
-          })),
-        h(Field, { label: "说明" },
+        h(
+          "div",
+          { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+          h(
+            Field,
+            { label: "id", hint: "字母或数字开头" },
+            h(Input, {
+              value: form.id || "",
+              onChange: function (event) {
+                setForm(Object.assign({}, form, { id: event.target.value }));
+              },
+            }),
+          ),
+          h(
+            Field,
+            { label: "显示名" },
+            h(Input, {
+              value: form.name || "",
+              onChange: function (event) {
+                setForm(Object.assign({}, form, { name: event.target.value }));
+              },
+            }),
+          ),
+        ),
+        h(
+          Field,
+          { label: "说明" },
           h(Input.TextArea, {
             rows: 2,
             value: form.description || "",
-            onChange: function (event) { setForm(Object.assign({}, form, { description: event.target.value })); },
-          })),
-        h(Field, { label: "归档分类" },
+            onChange: function (event) {
+              setForm(Object.assign({}, form, { description: event.target.value }));
+            },
+          }),
+        ),
+        h(
+          Field,
+          { label: "归档分类" },
           h(Select, {
             mode: "multiple",
             style: { width: "100%" },
             value: form.categories || [],
             options: categoryOptions,
-            onChange: function (next) { setForm(Object.assign({}, form, { categories: next })); },
-          })),
-        h("div", { style: s.muted }, "过滤条件（至少一条）"),
+            onChange: function (next) {
+              setForm(Object.assign({}, form, { categories: next }));
+            },
+          }),
+        ),
+        h("div", { style: Object.assign({}, s.muted, { marginBottom: 6 }) }, "过滤条件（至少一条）"),
         filterEditor(),
       ),
       h(
@@ -2317,36 +2983,62 @@
         {
           open: editing === "upload",
           title: "上传自定义任务包",
-          onCancel: function () { setEditing(null); },
+          onCancel: function () {
+            setEditing(null);
+          },
           onOk: submitUpload,
           confirmLoading: busy,
           okText: "上传",
-          width: 640,
+          width: 660,
         },
-        h(Field, { label: "id", hint: "字母或数字开头，可含 . _ -，最长 80 位"} ,
-          h(Input, {
-            value: form.id || "",
-            onChange: function (event) { setForm(Object.assign({}, form, { id: event.target.value })); },
-          })),
-        h(Field, { label: "显示名" },
-          h(Input, {
-            value: form.name || "",
-            onChange: function (event) { setForm(Object.assign({}, form, { name: event.target.value })); },
-          })),
-        h(Field, { label: "说明" },
+        h(
+          "div",
+          { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+          h(
+            Field,
+            { label: "id", hint: "字母或数字开头" },
+            h(Input, {
+              value: form.id || "",
+              onChange: function (event) {
+                setForm(Object.assign({}, form, { id: event.target.value }));
+              },
+            }),
+          ),
+          h(
+            Field,
+            { label: "显示名" },
+            h(Input, {
+              value: form.name || "",
+              onChange: function (event) {
+                setForm(Object.assign({}, form, { name: event.target.value }));
+              },
+            }),
+          ),
+        ),
+        h(
+          Field,
+          { label: "说明" },
           h(Input.TextArea, {
             rows: 2,
             value: form.description || "",
-            onChange: function (event) { setForm(Object.assign({}, form, { description: event.target.value })); },
-          })),
-        h(Field, { label: "归档分类" },
+            onChange: function (event) {
+              setForm(Object.assign({}, form, { description: event.target.value }));
+            },
+          }),
+        ),
+        h(
+          Field,
+          { label: "归档分类" },
           h(Select, {
             mode: "multiple",
             style: { width: "100%" },
             value: form.categories || [],
             options: categoryOptions,
-            onChange: function (next) { setForm(Object.assign({}, form, { categories: next })); },
-          })),
+            onChange: function (next) {
+              setForm(Object.assign({}, form, { categories: next }));
+            },
+          }),
+        ),
         h(Upload, {
           beforeUpload: function (file) {
             setForm(Object.assign({}, form, { file: file }));
@@ -2361,9 +3053,11 @@
         {
           open: editing === "category",
           title: "分类管理",
-          onCancel: function () { setEditing(null); },
+          onCancel: function () {
+            setEditing(null);
+          },
           footer: null,
-          width: 720,
+          width: 640,
         },
         h(
           "div",
@@ -2371,34 +3065,243 @@
           h(Input, {
             placeholder: "新分类名",
             value: form.name || "",
-            onChange: function (event) { setForm(Object.assign({}, form, { name: event.target.value })); },
+            onChange: function (event) {
+              setForm(Object.assign({}, form, { name: event.target.value }));
+            },
             style: { width: 240 },
           }),
-          h(Button, {
-            type: "primary",
-            onClick: function () {
-              if (!form.name) return;
-              api
-                .createCategory({ name: form.name, description: form.description || "" })
-                .then(function () {
-                  message.success("分类已创建");
-                  setForm(Object.assign({}, form, { name: "" }));
-                  return props.onRefresh();
-                })
-                .catch(function (err) {
-                  message.error("创建失败：" + errOf(err).message);
-                });
+          h(
+            Button,
+            {
+              type: "primary",
+              onClick: function () {
+                if (!form.name) return;
+                api
+                  .createCategory({ name: form.name, description: form.description || "" })
+                  .then(function () {
+                    message.success("分类已创建");
+                    setForm(Object.assign({}, form, { name: "" }));
+                    return props.onRefresh();
+                  })
+                  .catch(function (err) {
+                    message.error("创建失败：" + errOf(err).message);
+                  });
+              },
             },
-          }, "创建（同名幂等）"),
+            "创建（同名幂等）",
+          ),
         ),
         h(Table, {
           size: "small",
           rowKey: "name",
-          dataSource: categoryRows,
+          dataSource: catalog.categories || [],
           columns: categoryColumns,
           pagination: false,
-          locale: { emptyText: h(Empty, { image: Empty.PRESENTED_IMAGE_SIMPLE, description: "还没有分类" }) },
+          locale: {
+            emptyText: h(EmptyState, { glyph: "▤", title: "还没有分类", hint: "分类用于整组选题。" }),
+          },
         }),
+      ),
+    );
+  }
+
+  // ── module: settings ────────────────────────────────────────────────────
+
+  function SettingsModule(props) {
+    var s = useStyles();
+    var config = props.config || {};
+    var [baseUrl, setBaseUrl] = useState(config.base_url || "");
+    var [token, setToken] = useState("");
+    var [subject, setSubject] = useState(config.subject || "");
+    var [saving, setSaving] = useState(false);
+    var [probe, setProbe] = useState(props.probe || null);
+    var [error, setError] = useState(null);
+    var [prefs, setPrefs] = useState({
+      sensitivity: readLS("defaultSensitivity", "shared"),
+      format: readLS("defaultFormat", "md"),
+    });
+
+    useEffect(
+      function () {
+        setBaseUrl(config.base_url || "");
+        setSubject(config.subject || "");
+      },
+      [config.base_url, config.subject],
+    );
+
+    function save() {
+      setSaving(true);
+      setError(null);
+      var body = { base_url: baseUrl, subject: subject };
+      // An empty box means "keep the stored token" — the page never received it,
+      // so sending "" would delete a working credential on every edit.
+      if (token) body.token = token;
+      api
+        .saveConfig(body)
+        .then(function () {
+          setToken("");
+          return api.probe();
+        })
+        .then(function (result) {
+          setProbe(result);
+          message.success("连接已保存");
+          return props.onSaved();
+        })
+        .catch(function (err) {
+          setError(errOf(err));
+        })
+        .then(function () {
+          setSaving(false);
+        });
+    }
+
+    function doProbe() {
+      setSaving(true);
+      api
+        .probe()
+        .then(setProbe)
+        .catch(function (err) {
+          setError(errOf(err));
+        })
+        .then(function () {
+          setSaving(false);
+        });
+    }
+
+    var reachable = probe && probe.reachable;
+    return h(
+      "div",
+      { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 16 } },
+      h(
+        Panel,
+        { title: "服务连接", hint: "token 只留在本机插件目录，页面拿不到它" },
+        error
+          ? h(Alert, {
+              type: "error",
+              showIcon: true,
+              style: { marginBottom: 12 },
+              message: error.code,
+              description: error.message,
+            })
+          : null,
+        h(
+          Field,
+          { label: "评测服务地址", hint: "http:// 或 https:// 开头" },
+          h(Input, {
+            value: baseUrl,
+            placeholder: "http://127.0.0.1:8471",
+            onChange: function (event) {
+              setBaseUrl(event.target.value);
+            },
+          }),
+        ),
+        h(
+          Field,
+          {
+            label: "访问 token",
+            hint: config.has_token ? "已保存 " + config.token_hint + "，留空则不变" : "白名单签发",
+          },
+          h(Input.Password, {
+            value: token,
+            placeholder: config.has_token ? "留空保持不变" : "粘贴 token",
+            onChange: function (event) {
+              setToken(event.target.value);
+            },
+          }),
+        ),
+        h(
+          Field,
+          { label: "我的身份", hint: "提交人名字，用于判断队列里哪一行是你的", last: true },
+          h(Input, {
+            value: subject,
+            placeholder: "首次提交后自动识别",
+            onChange: function (event) {
+              setSubject(event.target.value);
+            },
+          }),
+        ),
+        h(
+          "div",
+          { style: Object.assign({}, s.row, { marginTop: 14 }) },
+          h(Button, { type: "primary", loading: saving, onClick: save }, "保存并探测"),
+          h(Button, { onClick: doProbe }, "只探测"),
+        ),
+      ),
+      h(
+        Panel,
+        { title: "服务状态" },
+        h(
+          "div",
+          { style: { display: "flex", flexDirection: "column", gap: 10 } },
+          h(
+            "div",
+            { style: s.row },
+            h(StatusPill, {
+              text: reachable ? (probe.authorised === false ? "token 被拒" : "服务正常") : "连不上",
+              color: reachable ? (probe.authorised === false ? "warning" : "success") : "error",
+            }),
+            h("span", { style: s.tiny },
+              probe && probe.checked_at
+                ? "检查于 " + String(probe.checked_at).replace("T", " ").slice(0, 16) + " UTC"
+                : ""),
+          ),
+          h(Fact, { label: "地址" }, h("code", { style: s.mono }, config.base_url || "—")),
+          h(Fact, { label: "服务标识" },
+            (probe && probe.service && probe.service.public_base_url) || "—"),
+          h(Fact, { label: "正在跑" },
+            probe && probe.service ? (probe.service.active_attempts || 0) + " 个尝试" : "—"),
+          h(Fact, { label: "当前身份" }, config.subject || "未知（提交一次后自动识别）"),
+          h(Fact, { label: "配置来源" }, config.source === "file" ? "本机插件目录" : config.source === "env" ? "环境变量" : "未配置"),
+        ),
+      ),
+      h(
+        Panel,
+        { title: "报告默认值", hint: "打开报告时的初始档位与导出格式" },
+        h(
+          "div",
+          { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
+          h(
+            Field,
+            { label: "档位", last: true },
+            h(Segmented, {
+              value: prefs.sensitivity,
+              onChange: function (value) {
+                setPrefs(Object.assign({}, prefs, { sensitivity: value }));
+                writeLS("defaultSensitivity", value);
+              },
+              options: [
+                { value: "shared", label: "shared" },
+                { value: "full", label: "完整版" },
+              ],
+            }),
+          ),
+          h(
+            Field,
+            { label: "导出格式", last: true },
+            h(Select, {
+              style: { width: "100%" },
+              value: prefs.format,
+              onChange: function (value) {
+                setPrefs(Object.assign({}, prefs, { format: value }));
+                writeLS("defaultFormat", value);
+              },
+              options: REPORT_FORMATS.map(function (format) {
+                return { value: format, label: format };
+              }),
+            }),
+          ),
+        ),
+      ),
+      h(
+        Panel,
+        { title: "关于 token", style: { gridColumn: "1 / -1" } },
+        h(
+          Paragraph,
+          { style: Object.assign({}, s.muted, { margin: 0, lineHeight: 1.8 }) },
+          "页面调的是本插件的 /v1 代理，转发时才注入凭据：浏览器里没有 token，" +
+            "插件目录里的配置文件是 0600。签发、吊销与 admin scope 都在服务的 auth 命令行里，" +
+            "不在这个页面上——能改凭据的面板，等于把凭据交给了任何能打开它的人。",
+        ),
       ),
     );
   }
@@ -2407,14 +3310,15 @@
 
   function Dashboard() {
     var s = useStyles();
+    var [view, setView] = useState("jobs");
     var [config, setConfig] = useState(null);
     var [probe, setProbe] = useState(null);
     var [probing, setProbing] = useState(false);
-    var [settingsOpen, setSettingsOpen] = useState(false);
     var [catalog, setCatalog] = useState({ datasets: [], categories: [], label_distribution: {} });
     var [jobs, setJobs] = useState([]);
     var [loadError, setLoadError] = useState(null);
-    var [detailJob, setDetailJob] = useState(null);
+    var [newOpen, setNewOpen] = useState(false);
+    var [reportJob, setReportJob] = useState(null);
 
     var refreshConfig = useCallback(function () {
       return api
@@ -2442,8 +3346,8 @@
         })
         .catch(function (err) {
           var info = errOf(err);
-          // An unconfigured service is not an error to shout about: the panel
-          // above already says so, and a red toast on every poll is noise.
+          // An unconfigured service is not an error to shout about: the rail
+          // already says so, and a red toast on every poll is noise.
           if (info.code !== "service_not_configured" && info.code !== "token_missing") {
             setLoadError(info);
           }
@@ -2478,10 +3382,13 @@
         });
     }, []);
 
-    useEffect(function () {
-      refreshConfig();
-      runProbe();
-    }, [refreshConfig, runProbe]);
+    useEffect(
+      function () {
+        refreshConfig();
+        runProbe();
+      },
+      [refreshConfig, runProbe],
+    );
 
     var ready = config && config.base_url && config.has_token;
     useEffect(
@@ -2499,15 +3406,18 @@
       [ready, refreshCatalog, refreshJobs],
     );
 
-    // A `?job=` in the URL opens that job's detail: the queue row's "复制本题
-    // 链接" is only useful if the link lands somewhere.
+    // A `?job=` in the URL opens that report: the "复制链接" button on a report
+    // is only useful if the link lands somewhere.
     useEffect(
       function () {
         if (!ready) return;
         try {
           var params = new URLSearchParams(window.location.search);
           var job = params.get("job");
-          if (job) setDetailJob(job);
+          if (job) {
+            setReportJob(job);
+            setView("jobs");
+          }
         } catch (err) {
           /* older webviews have no URLSearchParams; the page still works */
         }
@@ -2521,96 +3431,284 @@
       });
     }
 
-    var body;
-    if (!ready) {
-      body = h(
-        Card,
-        { style: s.card },
-        h(Empty, {
-          image: Empty.PRESENTED_IMAGE_SIMPLE,
-          description: h(
-            "div",
-            { style: s.stack },
-            h(Text, null, "还没有连上评测服务"),
-            h(Text, { style: s.tiny },
-              "填一次服务地址和 token 就能用；token 只留在本机插件目录，页面拿不到。"),
-          ),
-        }),
-        h("div", { style: { textAlign: "center", marginTop: 8 } },
-          h(Button, { type: "primary", onClick: function () { setSettingsOpen(true); } }, "配置服务连接")),
-      );
-    } else {
-      body = h(
-        "div",
-        { style: s.stack },
-        h(SubmitSection, {
-          catalog: catalog,
-          onSubmitted: function () {
-            refreshJobs();
-          },
-          onIdentity: onIdentity,
-        }),
-        h(QueueSection, {
-          jobs: jobs,
-          subject: config.subject,
-          onRefresh: refreshJobs,
-          onOpen: setDetailJob,
-        }),
-        h(ResultsSection, { jobs: jobs, onOpen: setDetailJob }),
-        h(DatasetSection, {
-          catalog: catalog,
-          subject: config.subject,
-          onRefresh: refreshCatalog,
-        }),
-      );
+    function openReport(jobId) {
+      setReportJob(jobId);
+      setView("jobs");
+      try {
+        var url = new URL(window.location.href);
+        url.searchParams.set("job", jobId);
+        window.history.replaceState({}, "", url.toString());
+      } catch (err) {
+        /* the address bar is a convenience, not the source of truth */
+      }
     }
 
-    return h(
+    function closeReport() {
+      setReportJob(null);
+      try {
+        var url = new URL(window.location.href);
+        url.searchParams.delete("job");
+        window.history.replaceState({}, "", url.toString());
+      } catch (err) {
+        /* same */
+      }
+    }
+
+    var running = jobs.filter(function (job) {
+      return job.status === "running";
+    }).length;
+    var waiting = jobs.filter(function (job) {
+      return ORDERABLE[job.status];
+    }).length;
+
+    var connectionState = "unconfigured";
+    if (probe && probe.configured) {
+      if (!probe.reachable) connectionState = "down";
+      else if (probe.authorised === false) connectionState = "denied";
+      else connectionState = "ok";
+    }
+    var connectionText = {
+      ok: "服务正常",
+      down: "连不上",
+      denied: "token 被拒",
+      unconfigured: "未配置服务",
+    }[connectionState];
+    var connectionColor = {
+      ok: s.token.colorSuccess,
+      down: s.token.colorError,
+      denied: s.token.colorWarning,
+      unconfigured: s.token.colorTextTertiary,
+    }[connectionState];
+
+    var title = view === "datasets" ? "数据集" : view === "settings" ? "配置" : "评测";
+    var subtitle = {
+      jobs: "提交评测、看队列、读报告",
+      datasets: "从内置语料切视图，或上传自定义任务包",
+      settings: "服务地址、token 与报告默认值",
+    }[view];
+
+    // Inside a report the page has its own title block; a module heading above
+    // it would repeat "评测" over a screen that is already one evaluation.
+    var header = reportJob
+      ? null
+      : h(
       "div",
-      { style: { padding: 16, display: "flex", flexDirection: "column", gap: 16 } },
+      { style: Object.assign({}, s.row, { justifyContent: "space-between", alignItems: "flex-end" }) },
       h(
-        Card,
-        { style: s.card, bodyStyle: { padding: 12 } },
-        h(ConnectionBar, {
-          config: config,
-          probe: probe,
-          probing: probing,
-          onProbe: function () {
-            runProbe();
-            refreshConfig();
-          },
-          onEdit: function () {
-            setSettingsOpen(true);
-          },
-        }),
+        "div",
+        null,
+        h("h1", { style: s.h1 }, title),
+        h("div", { style: Object.assign({}, s.muted, { marginTop: 2 }) }, subtitle),
       ),
-      loadError
-        ? h(Alert, {
-            type: "error",
-            showIcon: true,
-            closable: true,
-            onClose: function () { setLoadError(null); },
-            message: loadError.code,
-            description: loadError.message,
-          })
-        : null,
-      body,
-      h(ConnectionModal, {
-        open: settingsOpen,
-        config: config,
+      h(
+        "div",
+        { style: Object.assign({}, s.row, { paddingRight: 76 }) },
+        view === "jobs" && !reportJob
+          ? h(
+              Button,
+              {
+                type: "primary",
+                disabled: !ready,
+                onClick: function () {
+                  setNewOpen(true);
+                },
+              },
+              "＋ 新建评测",
+            )
+          : null,
+        view !== "jobs"
+          ? h(
+              Button,
+              {
+                onClick: function () {
+                  refreshCatalog();
+                  refreshJobs();
+                },
+              },
+              "刷新",
+            )
+          : null,
+      ),
+    );
+
+    var body;
+    if (view === "settings") {
+      body = h(SettingsModule, {
+        config: config || {},
         probe: probe,
-        onClose: function () { setSettingsOpen(false); },
         onSaved: function () {
           refreshConfig();
           refreshCatalog();
           refreshJobs();
+          runProbe();
         },
-      }),
-      h(JobDetailModal, {
-        open: Boolean(detailJob),
-        jobId: detailJob,
+      });
+    } else if (view === "datasets") {
+      body = h(DatasetsModule, {
+        catalog: catalog,
+        subject: config && config.subject,
+        onRefresh: refreshCatalog,
+      });
+    } else if (reportJob) {
+      body = h(ReportModule, {
+        jobId: reportJob,
+        onBack: closeReport,
+        defaultSensitivity: readLS("defaultSensitivity", "shared"),
+        defaultFormat: readLS("defaultFormat", "md"),
+      });
+    } else if (!ready) {
+      body = h(
+        Panel,
+        { pad: false },
+        h(EmptyState, {
+          glyph: "🔌",
+          title: "还没有连上评测服务",
+          hint: "填一次服务地址和 token 就能用；token 只留在本机插件目录，页面拿不到它。",
+          action: h(
+            Button,
+            {
+              type: "primary",
+              onClick: function () {
+                setView("settings");
+              },
+            },
+            "去配置",
+          ),
+        }),
+      );
+    } else {
+      body = h(JobsModule, {
+        jobs: jobs,
+        subject: config && config.subject,
+        onRefresh: refreshJobs,
+        onOpen: openReport,
+        onNew: function () {
+          setNewOpen(true);
+        },
+      });
+    }
+
+    return h(
+      "div",
+      { style: s.page },
+      h(
+        "aside",
+        { style: s.rail },
+        h(
+          "div",
+          { style: Object.assign({}, s.row, { gap: 10, padding: "0 8px 18px" }) },
+          h(
+            "div",
+            {
+              style: {
+                width: 30,
+                height: 30,
+                borderRadius: 8,
+                background: s.token.colorPrimary,
+                color: s.token.colorTextLightSolid,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 15,
+              },
+            },
+            "🧪",
+          ),
+          h(
+            "div",
+            null,
+            h("div", { style: { fontSize: 13, fontWeight: 600, lineHeight: "18px" } }, "PawBench"),
+            h("div", { style: s.tiny }, "远程评测"),
+          ),
+        ),
+        h("div", { style: Object.assign({}, s.tiny, { padding: "0 8px 6px" }) }, "工作台"),
+        h(
+          "div",
+          { style: { display: "flex", flexDirection: "column", gap: 2 } },
+          h(NavItem, {
+            glyph: "▦",
+            label: "评测",
+            badge: running ? String(running) : waiting ? String(waiting) : "",
+            active: view === "jobs",
+            onClick: function () {
+              setView("jobs");
+            },
+          }),
+          h(NavItem, {
+            glyph: "▤",
+            label: "数据集",
+            badge: String((catalog.datasets || []).length),
+            active: view === "datasets",
+            onClick: function () {
+              setView("datasets");
+            },
+          }),
+          h(NavItem, {
+            glyph: "⚙",
+            label: "配置",
+            active: view === "settings",
+            onClick: function () {
+              setView("settings");
+            },
+          }),
+        ),
+        h("div", { style: { flex: 1 } }),
+        h(
+          "div",
+          {
+            style: Object.assign({}, s.card, {
+              padding: 10,
+              background: s.token.colorFillQuaternary,
+              cursor: "pointer",
+            }),
+            onClick: function () {
+              runProbe();
+            },
+            title: "点一下重新探测",
+          },
+          h(
+            "div",
+            { style: Object.assign({}, s.row, { gap: 6 }) },
+            h(Dot, { color: connectionColor }),
+            h("span", { style: { fontSize: 12, fontWeight: 500 } }, connectionText),
+            probing ? h(Spin, { size: "small" }) : null,
+          ),
+          h(
+            "div",
+            { style: Object.assign({}, s.tiny, { marginTop: 2, wordBreak: "break-all" }) },
+            (config && config.base_url) || "还没有填写地址",
+          ),
+        ),
+      ),
+      h(
+        "main",
+        { style: s.main },
+        header,
+        loadError
+          ? h(Alert, {
+              type: "error",
+              showIcon: true,
+              closable: true,
+              onClose: function () {
+                setLoadError(null);
+              },
+              message: loadError.code,
+              description: loadError.message,
+            })
+          : null,
+        body,
+      ),
+      h(NewJobModal, {
+        open: newOpen,
+        catalog: catalog,
         onClose: function () {
-          setDetailJob(null);
+          setNewOpen(false);
+        },
+        onIdentity: onIdentity,
+        onSubmitted: function (result) {
+          setNewOpen(false);
+          refreshJobs();
+          if (result && result.job_id) openReport(result.job_id);
         },
       }),
     );

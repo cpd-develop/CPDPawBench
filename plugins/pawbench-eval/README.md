@@ -30,7 +30,7 @@ in the QwenPaw checkout): the endpoint is `<service>/mcp` and it needs
 ## First run
 
 Open **PawBench 评测** in the sidebar (route `/apps/pawbench-eval`), then
-**服务连接**:
+**配置** in the left rail:
 
 | Field | What goes in it |
 |---|---|
@@ -52,22 +52,49 @@ hands it to whoever is screen-sharing.
 
 ## What the page does
 
-- **提交评测** — ACP address, a mixed selector (whole categories + individual
-  datasets), and an inline panel that resolves the selection to a task count as
-  you pick.  Window: immediate / night / custom range, with the reader's zone and
-  the service's zone on separate lines (the seven-hour mistake this exists to
-  prevent).
-- **队列** — every job on the service, whoever submitted it.  Reordering is by
-  buttons (队首 / 上移 / 下移 / 队尾), disabled with a reason when the row is
-  running or belongs to somebody else; cancel and detail sit beside them.
-- **结果** — finished jobs expand to scores and per-capability / per-scenario
-  slices.
-- **任务详情** — one modal, three levels: job overview → per-task table →
-  one task's grading, artifacts and paged transcript.  Two tiers: `shared` for
-  everyone, and a `完整版` switch that carries the warning line the design asks
-  for.
-- **数据集** — list, new builtin view, custom package upload, category
+Three modules behind a fixed rail.  Submitting a run, curating datasets and
+pointing the board at a service are three different jobs done at different
+times; stacking them on one page meant scrolling past a form to read a score.
+
+- **评测 (jobs)** — the list is the landing page: four headline numbers (running
+  / waiting / finished / mean score) over one row per submission, each row
+  carrying its task progress and its mean score, taken from one grouped query
+  rather than a detail request per line.  **＋ 新建评测** opens the submission
+  form as a modal: ACP address, product, purpose, a mixed selector (whole
+  categories + individual datasets) that resolves to a task count as you pick,
+  and the window (immediate / night / custom range) with the reader's zone and
+  the service's zone on separate lines — the seven-hour mistake this exists to
+  prevent.
+- **报告 (report)** — a full page, not a modal, because it now carries the task
+  text.  Header: purpose, status, copyable job id, product, submitter, and the
+  `shared / 完整版` switch (on the tab bar, clear of the host's floating control
+  in the top-right corner).  Tabs: **总览** (score dial, slices, sources,
+  fingerprint), **题目** (searchable/filterable task table → one task's prompt,
+  criteria, artifacts and timeline), **导出** (report formats and download).
+- **数据集 (datasets)** — list, new builtin view, custom package upload, category
   management.  A delete button appears only on rows you own.
+- **配置 (settings)** — service address, token, identity, probe result, and the
+  defaults a report opens with.  The token is write-only here: the page is told
+  `has_token`, never the value.
+
+### What a report shows, and why
+
+A score nobody can trace back to a run is a number, not a measurement.  Each
+task entry therefore carries two ids, and the exported file carries them too:
+
+| id | whose | what it is for |
+|---|---|---|
+| `trace_id` | ours, 16 hex chars per attempt | `grep <trace_id>` on the service log: session open, manifest issued, the reason it failed |
+| `session_id` | the agent's own handle | the agent's logs, so both sides can be shown to describe the same conversation |
+
+Both live in the **shared** tier, not behind `完整版`: the report is the document
+a submitter forwards to the team that owns the agent.  A retry gets a new
+`trace_id`, which is the point — two attempts of the same task never share log
+lines.  Rows written before the columns existed read as `—`.
+
+The task's own prompt is in the report for the same reason: a reader who cannot
+see the question cannot argue with the answer, and sending them to another
+system to find it is how a report stops being read.
 
 ## Notes for whoever edits this
 
