@@ -2,6 +2,10 @@
 .idea/
 .agents/
 
+# WorkBuddy agent state: daily memory logs and per-session data. Local notes
+# for whoever ran the session, not a deliverable of this repo.
+.workbuddy/
+
 # Python bytecode / cache
 __pycache__/
 *.py[cod]
