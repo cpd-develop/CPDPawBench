@@ -734,3 +734,45 @@ def test_an_acp_url_the_runner_cannot_rebuild_is_refused(service: JobService, st
     assert endpoint.transport == "http"
     with pytest.raises(AcpError):
         http_endpoint({"acp_url": "ws://127.0.0.1:9000"})
+
+
+# ── what the list view needs on every row ────────────────────────────────────
+
+
+def test_the_list_carries_the_count_and_the_score_of_each_job(
+    service: JobService, store: Store
+):
+    """The dashboard's list decides which report to open, so a row without a
+    score cannot do its job.  It has to come from one grouped query: a per-row
+    detail request would turn a poll of twenty rows into twenty reads."""
+    job_id = service.submit(body(), SUBMITTER)["job_id"]
+    store.insert_job_tasks(
+        [
+            {"job_id": job_id, "task_id": "t1", "status": "pending"},
+            {"job_id": job_id, "task_id": "t2", "status": "pending"},
+        ]
+    )
+    store.update_job_task(job_id, "t1", 1, status="finished", score=0.5)
+    store.update_job_task(job_id, "t2", 1, status="failed", score=None, failure_reason="timeout")
+
+    row = next(
+        job for job in service.list_jobs()["jobs"] if job["job_id"] == job_id
+    )
+
+    assert row["task_count"] == 2
+    assert row["tasks_finished"] == 1
+    assert row["tasks_failed"] == 1
+    # Failed and pending rows have no score; the mean must not count them as 0.
+    assert row["score"] == 0.5
+
+
+def test_a_job_that_never_started_has_no_score_rather_than_zero(
+    service: JobService, store: Store
+):
+    job_id = service.submit(body(), SUBMITTER)["job_id"]
+    store.insert_job_tasks([{"job_id": job_id, "task_id": "t1", "status": "pending"}])
+
+    row = next(job for job in service.list_jobs()["jobs"] if job["job_id"] == job_id)
+
+    assert row["task_count"] == 1
+    assert row["score"] is None

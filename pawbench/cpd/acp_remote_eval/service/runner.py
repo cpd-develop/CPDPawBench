@@ -508,6 +508,8 @@ class JobRunner:
             "stop_reason": "",
             "transcript": [],
             "subject_model_reported": agent.recorder.subject_model_reported,
+            "trace_id": getattr(agent, "trace_id", ""),
+            "session_id": getattr(agent, "session_id", ""),
             "permissions": {},
             "timed_out": False,
         }
@@ -546,6 +548,8 @@ class JobRunner:
             duration_s=round(elapsed, 3),
             finished_at=self.clock.now().isoformat(),
             subject_model_reported=[str(result.get("subject_model_reported") or "unknown")],
+            session_id=str(result.get("session_id") or "") or None,
+            trace_id=str(result.get("trace_id") or "") or None,
         )
         return {
             "task_id": task_id,

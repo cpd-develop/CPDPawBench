@@ -21,6 +21,7 @@ import dataclasses
 import json
 import logging
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -109,6 +110,12 @@ class RemoteAcpAgent(BaseAgent):
         self.staging_dir = self.attempt_dir / "session"
         self.workspace_dir = self.attempt_dir / "workspace"
         self.recorder = TranscriptRecorder(self.attempt_dir / "transcript.jsonl")
+        # Our handle on this attempt.  The agent has its own session id, but a
+        # session id is only useful to whoever can grep the agent's logs; this
+        # one appears in *our* log lines for the attempt, so a report row and
+        # the stderr that explains it can be joined without guessing timestamps.
+        self.trace_id = uuid.uuid4().hex[:16]
+        self.session_id = ""
         self.manifest: dict[str, Any] = {}
         self.handshake: dict[str, Any] = {}
         self.session: Any = None
@@ -145,12 +152,16 @@ class RemoteAcpAgent(BaseAgent):
         )
         self.session = await connect(self._endpoint_for_attempt(), self.recorder)
         self.handshake = await self.session.initialize(client_name=self.client_name)
-        await self.session.new_session(str(self.staging_dir), self._declared_directories())
+        self.session_id = await self.session.new_session(
+            str(self.staging_dir), self._declared_directories()
+        )
         logger.info(
             "remote agent ready",
             extra={
                 "job_id": self.job_id,
                 "task_id": self.task_id,
+                "trace_id": self.trace_id,
+                "session_id": self.session_id,
                 "endpoint": self.session.describe,
                 "load_session": self.handshake.get("supports_load_session"),
             },
@@ -284,6 +295,8 @@ class RemoteAcpAgent(BaseAgent):
             "environment": "byo",
             "task_id": self.task_id,
             "attempt": self.attempt,
+            "trace_id": self.trace_id,
+            "session_id": self.session_id,
             "status": "error" if self._failure else "success",
             "failure": self._failure,
             "stop_reason": str(prompt_result.get("stop_reason") or ""),

@@ -303,15 +303,25 @@ class JobService:
     ) -> dict[str, Any]:
         """Every job on the service, not only the caller's (requirement 5).
 
-        Deliberately without per-task aggregates: this is the endpoint the
-        dashboard polls, and a progress count per row is one query per job.
+        Each row carries its task count and mean score.  That is one grouped
+        query for the whole page, not one per row, and it is what lets the list
+        answer "which of these is worth opening" without a detail request per
+        line -- the question the dashboard polls this endpoint for.
         """
         rows = self.store.list_jobs(
             statuses=tuple(statuses),
             submitter=submitter or None,
             limit=DEFAULT_LIST_LIMIT if limit is None else max(1, int(limit)),
         )
-        return {"jobs": [_job_item(row) for row in rows], "count": len(rows)}
+        items = [_job_item(row) for row in rows]
+        totals = self.store.job_task_totals([item["job_id"] for item in items])
+        for item in items:
+            item.update(
+                totals.get(item["job_id"])
+                or {"task_count": 0, "tasks_finished": 0, "tasks_failed": 0, "score": None}
+            )
+            item["score"] = item["score"] if item["task_count"] else None
+        return {"jobs": items, "count": len(items)}
 
     def get(self, job_id: str) -> dict[str, Any]:
         """One job with the rows the runner writes: state, score, and why not.

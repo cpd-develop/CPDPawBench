@@ -78,6 +78,11 @@ TRANSCRIPT_UNREADABLE = "unreadable"
 #: through to read a task's grading text out of the service.
 _RUBRIC_EXCERPT_CHARS = 600
 
+#: How much of a task's prompt the markdown report inlines.  Long enough for
+#: the instructions a reader needs to judge the answer, short enough that a
+#: 200-task report stays a document rather than an archive.
+_REPORT_PROMPT_CHARS = 1200
+
 #: The dimensions the catalogue can label a task with, in the order the report
 #: prints them.  ``values_for`` is the single place that knows how each one is
 #: spelled in the front matter, so the slices are built from it rather than from
@@ -443,6 +448,12 @@ class Reports:
             "subject_model_reported": row["subject_model_reported"],
             "resolved_from": list(row["resolved_from"] or ()),
             "automated_breakdown": row["automated_breakdown"],
+            # What the attempt can be looked up by afterwards.  Both are absent
+            # for attempts that never opened a session (skipped, cancelled
+            # before dispatch), which is why they are read defensively: a
+            # report must render for a row an older database wrote.
+            "trace_id": _optional(row, "trace_id"),
+            "session_id": _optional(row, "session_id"),
             "artifacts": [
                 {
                     "path": str(item["path"]),
@@ -721,6 +732,16 @@ def _window(job: Mapping[str, Any]) -> dict[str, Any]:
         "not_before": job["not_before"],
         "not_after": job["not_after"],
     }
+
+
+def _optional(row: Mapping[str, Any], key: str) -> str | None:
+    """A column that a row written before it existed does not have."""
+    try:
+        value = row[key]
+    except (KeyError, IndexError):
+        return None
+    text = str(value or "").strip()
+    return text or None
 
 
 def _excerpt(text: Any) -> str | None:
@@ -1009,7 +1030,9 @@ def _markdown(payload: Mapping[str, Any], results: Mapping[str, Any]) -> str:
     lines += ["", "## Tasks", ""]
     for task in payload["tasks"]:
         lines += [
-            f"### {task['task_id']}",
+            f"### {task.get('name') or task['task_id']}",
+            "",
+            f"`{task['task_id']}` · attempt {task.get('attempt') or 1}",
             "",
             f"- status: {task['status']}, score: {task['score']}",
             f"- duration: {task['duration_s']}s, artifacts: {len(task['artifacts'])}",
@@ -1018,6 +1041,22 @@ def _markdown(payload: Mapping[str, Any], results: Mapping[str, Any]) -> str:
             lines.append(f"- failure: {task['failure_reason']}")
         if task.get("judge_notes"):
             lines.append(f"- judge: {_judge_line(task['judge_notes'])}")
+        if task.get("trace_id") or task.get("session_id"):
+            # The two ids a reader needs to find this attempt in a log file.
+            lines.append(
+                f"- trace: `{task.get('trace_id') or '—'}` · "
+                f"session: `{task.get('session_id') or '—'}`"
+            )
+        prompt = str(task.get("prompt") or "").strip()
+        if prompt:
+            # The task itself, not a summary of it: a report whose scores cannot
+            # be argued with without opening another system is a report someone
+            # forwards and nobody reads twice.
+            lines += ["", "**Task**", "", "> " + prompt[:_REPORT_PROMPT_CHARS].replace("\n", "\n> "), ""]
+        if task.get("artifacts"):
+            lines.append("- artifacts: " + ", ".join(
+                f"`{item['path']}` ({item['size']}B)" for item in task["artifacts"]
+            ))
         lines.append("")
     return "\n".join(lines)
 

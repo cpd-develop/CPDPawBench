@@ -1345,3 +1345,48 @@ def test_an_artifact_download_needs_the_callers_token(
     assert missing.status_code == 404 and missing.json()["error"] == "artifact_not_found"
     assert unnamed.status_code == 422 and unnamed.json()["error"] == "empty_path"
 
+
+
+# ── the two ids that lead back to what actually happened ──────────────────────
+
+
+def test_the_report_carries_the_ids_that_find_the_attempt(env: Env) -> None:
+    """A score nobody can trace back to a run is a number, not a measurement.
+
+    ``trace_id`` is ours and appears in this service's log lines for the
+    attempt; ``session_id`` is the agent's own handle.  Both have to reach the
+    reader at the shared tier, because that is the document a submitter
+    forwards to the team that owns the agent.
+    """
+    finish(
+        env,
+        "mail_a",
+        1.0,
+        trace_id="8cc7763718eb468b",
+        session_id="d5b16b29dc0d4a8d95b6f8552e656359",
+    )
+
+    shared = task_at(env.reports.job_detail(JOB, SENSITIVITY_SHARED), "mail_a")
+    assert shared["trace_id"] == "8cc7763718eb468b"
+    assert shared["session_id"] == "d5b16b29dc0d4a8d95b6f8552e656359"
+
+    # And in the file, not only in the JSON: the markdown report is the thing
+    # that gets pasted into a ticket.
+    document = reports_mod._markdown(
+        env.reports.job_detail(JOB, SENSITIVITY_SHARED), env.reports.results(JOB)
+    )
+    assert "8cc7763718eb468b" in document
+    assert "d5b16b29dc0d4a8d95b6f8552e656359" in document
+
+
+def test_the_exported_report_states_the_task_before_scoring_it(env: Env) -> None:
+    """A score without the question is unarguable: the reader has to be able to
+    see what the agent was asked without opening another system."""
+    score_all(env, {"mail_a": 1.0, "mail_b": 0.5, "chart_c": 0.0})
+
+    document = reports_mod._markdown(
+        env.reports.job_detail(JOB, SENSITIVITY_SHARED), env.reports.results(JOB)
+    )
+
+    assert "Write output/result.txt with the answer." in document
+    assert "artifacts:" in document

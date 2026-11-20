@@ -127,6 +127,12 @@ CREATE TABLE IF NOT EXISTS job_tasks (
     subject_model_reported  TEXT,
     transcript_path         TEXT,
     artifact_manifest_path  TEXT,
+    -- What ties one attempt to what the agent did.  ``trace_id`` is ours and
+    -- appears in every log line of the attempt, so an operator can jump from a
+    -- report row to the stderr that explains it; ``session_id`` is the agent's
+    -- own handle and is what its own logs are indexed by.
+    session_id              TEXT,
+    trace_id                TEXT,
     PRIMARY KEY (job_id, task_id, attempt)
 );
 
@@ -141,6 +147,27 @@ CREATE TABLE IF NOT EXISTS artifacts (
     PRIMARY KEY (job_id, task_id, path)
 );
 """
+
+#: Columns added after the first database was written.
+#:
+#: ``CREATE TABLE IF NOT EXISTS`` is a no-op on a file that already has the
+#: table, so a new column in ``_SCHEMA`` reaches fresh databases and silently
+#: never reaches the one an operator is running.  This is the running list the
+#: constructor reconciles; SQLite has no ``ADD COLUMN IF NOT EXISTS``, hence the
+#: caught error rather than a lookup.
+_ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("job_tasks", "session_id", "TEXT"),
+    ("job_tasks", "trace_id", "TEXT"),
+)
+
+
+def _reconcile_columns(conn: sqlite3.Connection) -> None:
+    for table, column, sql_type in _ADDED_COLUMNS:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
 
 
 def utc_now_iso() -> str:
@@ -191,6 +218,8 @@ _JOB_TASK_COLUMNS = frozenset(
         "subject_model_reported",
         "transcript_path",
         "artifact_manifest_path",
+        "session_id",
+        "trace_id",
     }
 )
 
@@ -232,6 +261,7 @@ class Store:
         # "database is locked" out of the middle of a scheduler tick.
         self._conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
         self._conn.executescript(_SCHEMA)
+        _reconcile_columns(self._conn)
         self._conn.commit()
 
     def close(self) -> None:
@@ -511,6 +541,27 @@ class Store:
 
     def jobs_in_state(self, *statuses: str) -> list[dict[str, Any]]:
         return self.list_jobs(statuses=statuses)
+
+    def job_task_totals(self, job_ids: Sequence[str]) -> dict[str, dict[str, Any]]:
+        """Per-job aggregates for the list view: tasks, done, failed, mean score.
+
+        One grouped query rather than one per row.  The dashboard polls this
+        list, so the choice is between a single scan of an indexed column and
+        N queries per poll; the list view is also where a reader decides which
+        report to open, and a row without a score cannot help them decide.
+        """
+        ids = [str(job_id) for job_id in job_ids]
+        if not ids:
+            return {}
+        rows = self.query(
+            "SELECT job_id, COUNT(*) AS task_count, "
+            "SUM(CASE WHEN status = 'finished' THEN 1 ELSE 0 END) AS tasks_finished, "
+            "SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS tasks_failed, "
+            "AVG(score) AS score "
+            f"FROM job_tasks WHERE job_id IN ({_placeholders(ids)}) GROUP BY job_id",
+            ids,
+        )
+        return {str(row["job_id"]): row for row in rows}
 
     def update_job(self, job_id: str, **fields: Any) -> None:
         if not fields:

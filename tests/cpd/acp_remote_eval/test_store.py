@@ -520,3 +520,27 @@ def test_settling_is_a_one_shot_write(store: Store) -> None:
     assert second["settled"] is False
     job = store.get_job("job-1")
     assert (job["error"], job["finished_at"]) == ("recovered", _beat(0))
+
+
+# ── columns that arrived after the first database was written ─────────────────
+
+
+def test_a_database_from_before_a_column_existed_gains_it(tmp_path: Path):
+    """``CREATE TABLE IF NOT EXISTS`` is a no-op on a table that already exists.
+
+    Without the reconcile step a column added to ``_SCHEMA`` reaches every new
+    install and none of the running ones -- and the failure surfaces as
+    "no such column" in the middle of a report, not at startup.
+    """
+    path = tmp_path / "old.db"
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            "CREATE TABLE job_tasks ("
+            "job_id TEXT NOT NULL, task_id TEXT NOT NULL, attempt INTEGER NOT NULL DEFAULT 1,"
+            "status TEXT NOT NULL, PRIMARY KEY (job_id, task_id, attempt))"
+        )
+
+    with Store(path) as opened:
+        columns = {str(row["name"]) for row in opened.query("PRAGMA table_info(job_tasks)")}
+
+    assert {"session_id", "trace_id"} <= columns
