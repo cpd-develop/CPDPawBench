@@ -167,7 +167,6 @@ export function ReportModule(props: {
               {detail?.product || "—"} · {detail?.submitter || "—"}
             </span>
             <span className="pbe-meta">
-              <span className="pbe-meta__sep">·</span>
               <CopyId value={props.jobId} label="job id" keep={20} />
               <span className="pbe-meta__sep">·</span>
               <StatusPill

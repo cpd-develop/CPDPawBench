@@ -1898,7 +1898,7 @@ function ReportModule(props) {
     PageHead,
     {
       title: detail?.purpose || "报告",
-      sub: /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h("span", null, detail?.product || "—", " · ", detail?.submitter || "—"), /* @__PURE__ */ __h("span", { className: "pbe-meta" }, /* @__PURE__ */ __h("span", { className: "pbe-meta__sep" }, "·"), /* @__PURE__ */ __h(CopyId, { value: props.jobId, label: "job id", keep: 20 }), /* @__PURE__ */ __h("span", { className: "pbe-meta__sep" }, "·"), /* @__PURE__ */ __h(
+      sub: /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h("span", null, detail?.product || "—", " · ", detail?.submitter || "—"), /* @__PURE__ */ __h("span", { className: "pbe-meta" }, /* @__PURE__ */ __h(CopyId, { value: props.jobId, label: "job id", keep: 20 }), /* @__PURE__ */ __h("span", { className: "pbe-meta__sep" }, "·"), /* @__PURE__ */ __h(
         StatusPill,
         {
           tone: detail ? jobStatus(detail.status).tone : "muted",
