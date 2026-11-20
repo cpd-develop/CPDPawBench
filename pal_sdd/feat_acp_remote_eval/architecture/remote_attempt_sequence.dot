@@ -1,0 +1,70 @@
+// 远端单题 attempt 的下钻流程：manifest → ACP → 取附件 → 交产物 → 重建 → 判分
+// 视图状态：current state；M5 判分沙箱为 gap（未建），远端内部执行为 unknown（不可观测）。
+// 场景技能 flow-visualizer + 基础格式 graphviz。证据：节点内 path:line。
+digraph remote_attempt_sequence {
+  rankdir=TB;
+  compound=true;
+  fontname="Helvetica";
+  fontsize=15;
+  labelloc="t";
+  label="远端单题 attempt：文件怎么过去、产物怎么回来、分怎么打\n实线=已实现链路  紫=跨信任边界  红虚线=未建成的保障  灰点线=不可观测\l";
+  nodesep=0.32;
+  ranksep=0.40;
+
+  node [fontname="Helvetica", fontsize=10, shape=box, style="filled,rounded",
+        margin="0.24,0.10",
+        fillcolor="#fff4e5", color="#e08a00", fontcolor="#1f2933"];
+  edge [fontname="Helvetica", fontsize=9, color="#c47000", fontcolor="#8a5200"];
+
+  subgraph cluster_server {
+    label="我们的服务进程（单进程：HTTP 数据面 + 调度 tick + 判分）";
+    fontsize=12; fontcolor="#b26a00"; color="#e08a00"; style="rounded";
+    fillcolor="#fffaf2"; bgcolor="#fffaf2";
+
+    s1 [label="1  runtime.tick_once :189 → _launch :206\n取租约 → JobRunner.run_job :250"];
+    s2 [label="2  plan :187 → datasets.tasks_for_run :534\n快照题目 id：开跑后选题不再变"];
+    s3 [label="3  run_task :307 → 直接 new RemoteAcpAgent :325\nattempt_dir/session（远端 cwd）\nattempt_dir/workspace（判分用）harness.py:107-109"];
+    s4 [label="4  setup :127 → exchange.build_manifest :314\n铸 run token（带文件数预算）+ HMAC 预签名 fixture URL\n绝对 URL 只由 public_base_url 拼出，禁止回退请求 Host",
+             fillcolor="#ffe9cc", color="#c47000", penwidth=2];
+    s5 [label="5  acp.connect :566 → initialize :373 → new_session :396\nstdio 子进程 spawn_command :503 或 http spawn_url :541\nmcp_servers=[] :409；自动批权限 :210；拒绝 fs/terminal 委托 :246"];
+    s6 [label="6  run :159 → session/prompt\n题面 + PROTOCOL_HELP + manifest JSON 围栏（pawbench-exchange/1）\n+ resource_link 块 :300"];
+    s10 [label="10  post_run_collect :205 → rebuild_workspace :575\n先铺 fixture，再用上传产物覆盖（服务端本地磁盘）\nCOLLECT_TIMEOUT_SECONDS=300 harness.py:69",
+              fillcolor="#ffe9cc", color="#c47000", penwidth=2];
+    s11 [label="11  teardown :234 → 吊销 run token :239\ntranscript.jsonl：ACP session/update → grader 事件形状\ntranscript.py:70 / find_model_reported :77"];
+    s12 [label="12  Scorer :234 → _score :555\n_grade_automated 在工作线程 :266（内部 exec grader.py:141）\n+ LlmJudge.ask :169 异步 judge"];
+    s13 [label="13  reports.job_detail :118\nshared（可外发）/ full（含判分依据与他人产物）\n看板 / MCP / 报告共用同一聚合函数"];
+
+    ju [label="judge 429 退避用尽\n→ judge_unavailable :49\n不计 0 分、不改分母（没测到 ≠ 做错）",
+        fillcolor="#fff8e1", color="#b26a00", style="filled,dashed,rounded"];
+    to [label="题面 timeout 缺失/非法\n→ DEFAULT 1800s :60，上限 4h :64\n（0 会让 wait_for 永久等待并占住队列槽）",
+        fillcolor="#fff8e1", color="#b26a00", style="filled,dashed,rounded"];
+  }
+
+  subgraph cluster_remote {
+    label="信任边界外：被评测方自己的机器（我们不在场，不装任何东西）";
+    fontsize=12; fontcolor="#5e35b1"; color="#7e57c2"; style="rounded";
+    fillcolor="#faf5ff"; bgcolor="#faf5ff";
+
+    r7 [label="7  GET /v1/exchange/{job}/{task}/{attempt}/assets/{dest}\napi.py:369 → verify_asset_request :418 → fixture_for :439\n按 dest 存进自己的工作区",
+        fillcolor="#f3e8ff", color="#7e57c2"];
+    r8 [label="8  被测 agent 自己执行\n内部模型 / 工具 / 文件系统对我们不可观测\n我们只看得到 ACP session/update 与最终上传",
+        fillcolor="#ede7f6", color="#7e57c2", style="filled,dashed,rounded"];
+    r9 [label="9  PUT …/artifacts/{path}\napi.py:405 → check_run_token :449 → accept_artifact :458\n文件名/后缀 allowlist + 隔离区 + os.replace :483\n→ store.record_artifact :491",
+        fillcolor="#f3e8ff", color="#7e57c2"];
+  }
+
+  gap [label="判分沙箱：未建（README:93）\n第 12 步的 exec 仍在服务进程内\n接受提交者脚本 = 交出评分机\n已知缺口，不是现状保障",
+       shape=box, style="filled,dashed,rounded", fillcolor="#fdecea", color="#c62828", fontcolor="#8e1f1f"];
+
+  s1 -> s2 -> s3 -> s4 -> s5 -> s6;
+  s6 -> r7 [label="跨边界：ACP 下发 manifest", color="#7e57c2", fontcolor="#5e35b1", penwidth=2];
+  r7 -> r8 [color="#7e57c2"];
+  r8 -> r9 [color="#7e57c2"];
+  r9 -> s10 [label="跨边界：HTTP 数据面回收产物", color="#7e57c2", fontcolor="#5e35b1", penwidth=2];
+  s10 -> s11 -> s12 -> s13;
+
+  s5 -> to [style=dotted, color="#b26a00", label="超时兜底"];
+  s12 -> ju [style=dotted, color="#b26a00", label="judge 不可用"];
+  gap -> s12 [style=dashed, color="#c62828", fontcolor="#c62828", label="缺隔离"];
+  r8 -> s11 [style=dotted, color="#9aa5b1", fontcolor="#6b7280", label="仅 transcript 可见"];
+}

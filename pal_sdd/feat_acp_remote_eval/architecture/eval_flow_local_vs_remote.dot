@@ -1,0 +1,97 @@
+// 评测流程对比：原有本地链路（左） vs acp-remote-eval 远端链路（右）
+// 视图状态：current state（两条链路都已在代码里）。中列为该阶段的差异性质。
+// 场景技能 flow-visualizer + 基础格式 graphviz。证据：节点内 path:line。
+digraph eval_flow_local_vs_remote {
+  rankdir=TB;
+  fontname="Helvetica";
+  fontsize=15;
+  labelloc="t";
+  label="同一套题库与判分语义，两条评测链路：本地容器内 vs 远端自带环境（BYO）\l左=原有 PawBench（run_bench.py）  右=新增 acp-remote-eval 常驻服务  中=该阶段差异性质\l";
+  nodesep=0.35;
+  ranksep=0.42;
+
+  node [fontname="Helvetica", fontsize=10, shape=box, style="filled,rounded",
+        margin="0.22,0.10",
+        fillcolor="#eef2f7", color="#8fa3bf", fontcolor="#1f2933"];
+  edge [fontname="Helvetica", fontsize=9, color="#5b6b7f"];
+
+  lh [label="原有：本地链路（核心，只读）", shape=plaintext, fontsize=12, fontcolor="#3d5a80"];
+  dh [label="差异", shape=plaintext, fontsize=12, fontcolor="#6b7280"];
+  rh [label="新增：远端链路（cpd/acp_remote_eval）", shape=plaintext, fontsize=12, fontcolor="#b26a00"];
+  lh -> dh -> rh [style=invis];
+  { rank=same; lh; dh; rh; }
+
+  // ① 入口 -------------------------------------------------------------------
+  l1 [label="① 入口\npython run_bench.py --agents qwenpaw --model …\nrun_bench.py:389 / 矩阵 :426"];
+  d1 [label="CLI 一次性执行\n↔\n常驻服务提交", shape=plaintext, fontsize=9, fontcolor="#6b7280"];
+  r1 [label="① 入口\npython -m pawbench.cpd.acp_remote_eval.cli submit --acp-url …\n→ POST /v1/jobs（api.py:535，Bearer 白名单）",
+      fillcolor="#fff4e5", color="#e08a00"];
+  l1 -> d1 -> r1 [style=invis]; { rank=same; l1; d1; r1; }
+
+  // ② 选题 -------------------------------------------------------------------
+  l2 [label="② 选题\nTaskLoader.load_all_tasks（task_loader.py:88）\ndata/pawbench-v1.0/tasks/*.md 150 题\nbackend.py:154"];
+  d2 [label="复用同一份题库格式\n多一层数据集解析", shape=plaintext, fontsize=9, fontcolor="#2e7d32"];
+  r2 [label="② 选题\ndatasets.resolve :729 → tasks_for_run :534\n内置 / pilot / 自定义 zip（Task/TaskLoader 复用）",
+      fillcolor="#fff4e5", color="#e08a00"];
+  l2 -> d2 -> r2 [style=invis]; { rank=same; l2; d2; r2; }
+
+  // ③ 调度 -------------------------------------------------------------------
+  l3 [label="③ 调度\nBenchmarkRunner.run :54\nSemaphore(--concurrency) :136 + gather :164\n进程退出即结束"];
+  d3 [label="进程内并发\n↔\n全局队列 + 租约 + 窗口", shape=plaintext, fontsize=9, fontcolor="#6b7280"];
+  r3 [label="③ 调度\nJobQueue.tick :228（全局并发 4，非每人）\nruntime.tick_once :189 租约 + schedule.py UTC 窗口\n重启不续跑：failed(recovered)、未跑 skipped",
+      fillcolor="#fff4e5", color="#e08a00"];
+  l3 -> d3 -> r3 [style=invis]; { rank=same; l3; d3; r3; }
+
+  // ④ 运行环境 ---------------------------------------------------------------
+  l4 [label="④ 运行环境\nDockerEnvironment 起容器（钉镜像）\n或 PAWBENCH_ENV=local\nbackend.py:261-285"];
+  d4 [label="【根本差异】\n我们提供并控制环境\n↔\n对方自带环境 BYO", shape=plaintext, fontsize=9, fontcolor="#c62828"];
+  r4 [label="④ 运行环境\n不建任何环境对象（envs/ 完全绕过）\nsetup(environment=None) harness.py:127\n结果硬编码 environment=\"byo\" :263",
+      fillcolor="#ffe9cc", color="#c47000", penwidth=2];
+  l4 -> d4 -> r4 [style=invis]; { rank=same; l4; d4; r4; }
+
+  // ⑤ 下发题面与附件 ---------------------------------------------------------
+  l5 [label="⑤ 下发题面 + 附件\n_stage_workspace_files backend.py:590\nenv.copy_to / write_file 拷进容器\nassets/<task_id>/ → workspace"];
+  d5 [label="进程内拷贝\n↔\n预签名 URL 让对方来取", shape=plaintext, fontsize=9, fontcolor="#6b7280"];
+  r5 [label="⑤ 下发题面 + 附件\nexchange.build_manifest :314\n铸 run token + HMAC 预签名 fixture URL\nmanifest JSON 写进 prompt（pawbench-exchange/1 :54）",
+      fillcolor="#fff4e5", color="#e08a00"];
+  l5 -> d5 -> r5 [style=invis]; { rank=same; l5; d5; r5; }
+
+  // ⑥ 执行 -------------------------------------------------------------------
+  l6 [label="⑥ 执行\nagent.run(prompt, env) backend.py:306\ndocker exec / 容器内 HTTP\n被测 agent 装在我们镜像里"];
+  d6 [label="我们控制被测进程\n↔\n外部只给一个 ACP 地址", shape=plaintext, fontsize=9, fontcolor="#6b7280"];
+  r6 [label="⑥ 执行\nacp.connect :566 → initialize → new_session :396\nsession/prompt：题面 + 协议说明 + resource_link\n被测 agent 在对方机器上跑",
+      fillcolor="#fff4e5", color="#e08a00"];
+  l6 -> d6 -> r6 [style=invis]; { rank=same; l6; d6; r6; }
+
+  // ⑦ 回收产物 ---------------------------------------------------------------
+  l7 [label="⑦ 回收产物\ndocker cp backend.py:322 / collect_workspace :319\nextract_transcript :375"];
+  d7 [label="直接读容器文件系统\n↔\n对方 PUT 上来再本地重建", shape=plaintext, fontsize=9, fontcolor="#6b7280"];
+  r7 [label="⑦ 回收产物\n对方 PUT artifacts（run token 限额 + 文件名消毒）\naccept_artifact :458 隔离 → os.replace :483\nrebuild_workspace :575：先铺 fixture，上传覆盖",
+      fillcolor="#fff4e5", color="#e08a00"];
+  l7 -> d7 -> r7 [style=invis]; { rank=same; l7; d7; r7; }
+
+  // ⑧ 判分 -------------------------------------------------------------------
+  l8 [label="⑧ 判分\ngrader.grade_task :67\nexec(grading_code) 进程内 :141\n同步 urllib judge :288/:337"];
+  d8 [label="判分语义完全复用\n传输与并发重写", shape=plaintext, fontsize=9, fontcolor="#2e7d32"];
+  r8 [label="⑧ 判分\nScorer :234 → _grade_automated（工作线程 :266）\nLlmJudge.ask :169 异步，退避上限 30s :63\njudge 用尽 → judge_unavailable :49（不计 0 分、不改分母）",
+      fillcolor="#fff4e5", color="#e08a00"];
+  l8 -> d8 -> r8 [style=invis]; { rank=same; l8; d8; r8; }
+
+  // ⑨ 出结果 ---------------------------------------------------------------
+  l9 [label="⑨ 出结果\nresults/<ts>/…json + transcripts/*.jsonl\n_print_summary :314 / _save_results :358"];
+  d9 [label="本地文件\n↔\n落库 + 两档外发报告", shape=plaintext, fontsize=9, fontcolor="#6b7280"];
+  r9 [label="⑨ 出结果\nSQLite store.py:213（WAL）\nreports.job_detail :118 → shared / full 两档\nGET report / transcript / artifacts（看板/MCP 共用同一聚合）",
+      fillcolor="#fff4e5", color="#e08a00"];
+  l9 -> d9 -> r9 [style=invis]; { rank=same; l9; d9; r9; }
+
+  // ⑩ 可比性 ---------------------------------------------------------------
+  l10 [label="⑩ 可比性\n同镜像、同环境、同钉版本\n→ 与他人结果同环境可比"];
+  d10 [label="【取舍后果】\n失去环境可比性保障", shape=plaintext, fontsize=9, fontcolor="#c62828"];
+  r10 [label="⑩ 可比性\nreports.py:209 by_environment 分档\nbyo 单独成档，不与同环境混排（设计取舍）\nsubject_model_reported 拿不到则显式 unknown",
+       fillcolor="#ffe9cc", color="#c47000", penwidth=2];
+  l10 -> d10 -> r10 [style=invis]; { rank=same; l10; d10; r10; }
+
+  // 两条链路各自的纵向流 -----------------------------------------------------
+  l1 -> l2 -> l3 -> l4 -> l5 -> l6 -> l7 -> l8 -> l9 -> l10 [color="#3d5a80", penwidth=1.4];
+  r1 -> r2 -> r3 -> r4 -> r5 -> r6 -> r7 -> r8 -> r9 -> r10 [color="#c47000", penwidth=1.4];
+}

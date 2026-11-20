@@ -1,0 +1,121 @@
+// PawBench 原有核心 × acp-remote-eval：边界与复用关系（粗粒度，回答"两者是什么关系"）
+// 视图状态：current state（分支 feat/acp-remote-eval，2026-11-11，代码在盘上未 commit）
+// 模块级清单见同目录 README.md 的表格；本图只画边界、复用插槽、绕过关系。
+// 场景技能 system-modeler + 基础格式 graphviz。证据：节点/边标注 path:line。
+digraph pawbench_acp_boundary {
+  rankdir=TB;
+  compound=true;
+  fontname="Helvetica";
+  fontsize=14;
+  labelloc="t";
+  label="PawBench 原有核心 × acp-remote-eval：扩展，不是分叉\l绿实线=复用核心（全部只有 3 处）  灰虚线=绕过/替换，不调用  橙=新增  紫=跨信任边界  红虚线=尚未建成\l";
+  nodesep=0.30;
+  ranksep=0.50;
+
+  node [fontname="Helvetica", fontsize=10, shape=box, style="filled,rounded",
+        margin="0.22,0.10",
+        fillcolor="#eef2f7", color="#8fa3bf", fontcolor="#1f2933"];
+  edge [fontname="Helvetica", fontsize=9, color="#5b6b7f", fontcolor="#3e4c59"];
+
+  dev [label="团队开发人员", shape=ellipse, fillcolor="#ffffff", color="#5b6b7f"];
+
+  // ── 新增：CPD 特性目录 ─────────────────────────────────────────────────────
+  subgraph cluster_cpd {
+    label="新增  pawbench/cpd/acp_remote_eval/   常驻评测服务";
+    fontsize=12; fontcolor="#b26a00"; color="#e08a00"; style="rounded";
+    fillcolor="#fffaf2"; bgcolor="#fffaf2";
+
+    cpd_entry [label="cli.py + service/api.py + auth.py\n提交侧 CLI（EvalClient :69）\n控制面 Bearer 白名单 :456 + 数据面签名",
+               fillcolor="#fff4e5", color="#e08a00"];
+    cpd_sched [label="service/queue + runtime + schedule + jobs + datasets\n常驻调度：全局并发 4、租约、UTC 窗口\nJobQueue.tick :228 / tick_once :189 / resolve :729",
+               fillcolor="#fff4e5", color="#e08a00"];
+    cpd_harness [label="harness.py + acp/\nRemoteAcpAgent(BaseAgent) :76\nconnect :566 / transcript 映射 :97",
+                 fillcolor="#ffe9cc", color="#c47000", penwidth=2];
+    cpd_exchange [label="service/exchange.py  自建 HTTP 数据面\nbuild_manifest :314 / accept_artifact :458\nrebuild_workspace :575",
+                  fillcolor="#ffe9cc", color="#c47000", penwidth=2];
+    cpd_score [label="service/grading + reports + store\nScorer :234 / LlmJudge.ask :169\nshared·full 两档 :118 / SQLite :213",
+               fillcolor="#fff4e5", color="#e08a00"];
+  }
+
+  // ── 原有核心（只读） ───────────────────────────────────────────────────────
+  subgraph cluster_core {
+    label="原有核心  run_bench.py + pawbench/   只读，社区持续合并（本次零改动）";
+    fontsize=12; fontcolor="#3d5a80"; color="#8fa3bf"; style="rounded";
+    fillcolor="#f7f9fc"; bgcolor="#f7f9fc";
+
+    core_entry [label="run_bench.py + runner.py + backend.py\n一次性 CLI 编排：models × agents 矩阵\n:389 / :54 / run_and_grade :185"];
+    core_exec [label="agents/factory.py + impl/* + envs/\n_REGISTRY :32 硬编码（无动态注册点）\n被测 agent 装进我们镜像，Docker|Local 环境"];
+
+    slot_base [label="agents/base.py\nBaseAgent 生命周期 :11\n【已有插槽】",
+               fillcolor="#e8f5e9", color="#2e7d32", penwidth=2];
+    slot_loader [label="task_loader.py\nTask :25 / TaskLoader :81\n【已有插槽】",
+                 fillcolor="#e8f5e9", color="#2e7d32", penwidth=2];
+    slot_helpers [label="grader.py 判分 helper（语义真源）\n_grade_automated :105 / _combine_grades :391\n⚠ exec(grading_code) 在进程内 :141",
+                  fillcolor="#e8f5e9", color="#2e7d32", penwidth=2];
+    core_gradeentry [label="grader.grade_task :67\n+ 同步 urllib judge :288/:337\n（入口绕过，helper 复用）"];
+  }
+
+  dataset [label="data/pawbench-v1.0/\ntasks/*.md 150 题 + assets/ 124 目录",
+           shape=cylinder, fillcolor="#eaf3ea", color="#5f8f5f"];
+
+  subject [label="被评测方自己的机器\nQwenPaw + 自带 harness / 模型 / 工具\n外部只给一个 ACP 地址",
+           fillcolor="#f3e8ff", color="#7e57c2", penwidth=2];
+
+  subgraph cluster_gaps {
+    label="尚未建成（README:90-96）—— 目标态，非现状";
+    fontsize=11; fontcolor="#c62828"; color="#c62828"; style="dashed,rounded";
+    gap_dash [label="M3 看板", style="filled,dashed,rounded", fillcolor="#fdecea", color="#c62828"];
+    gap_mcp [label="M4 MCP + 出题 skill", style="filled,dashed,rounded", fillcolor="#fdecea", color="#c62828"];
+    gap_sandbox [label="判分沙箱", style="filled,dashed,rounded", fillcolor="#fdecea", color="#c62828"];
+  }
+
+  // ── 复用：整个特性对核心的依赖只有这 3 条 ──────────────────────────────────
+  cpd_harness -> slot_base [label="① 继承 BaseAgent\nharness.py:28",
+                            color="#2e7d32", fontcolor="#2e7d32", penwidth=2.2];
+  cpd_sched -> slot_loader [label="② Task / TaskLoader\ndatasets.py:36",
+                            color="#2e7d32", fontcolor="#2e7d32", penwidth=2.2];
+  cpd_score -> slot_helpers [label="③ 8 个判分 helper\ngrading.py:31-40",
+                             color="#2e7d32", fontcolor="#2e7d32", penwidth=2.2];
+
+  // ── 绕过 / 替换（不调用） ──────────────────────────────────────────────────
+  cpd_entry -> core_entry [label="不走 run_bench\n无 --agent acp（:104）",
+                           style=dashed, color="#9aa5b1"];
+  cpd_sched -> core_entry [label="替换：常驻队列 + 租约\n不调用 runner/backend",
+                           style=dashed, color="#9aa5b1"];
+  cpd_harness -> core_exec [label="不注册进 _REGISTRY（故意）\n不建环境对象 setup(None) :127",
+                            style=dashed, color="#9aa5b1"];
+  cpd_score -> core_gradeentry [label="绕过 grade_task\njudge 改异步重写",
+                                style=dashed, color="#9aa5b1"];
+
+  // ── 核心内部原有链路 ───────────────────────────────────────────────────────
+  core_entry -> core_exec [label="create :204 → docker exec"];
+  core_exec -> slot_base [arrowhead=empty, label="实现"];
+  core_entry -> slot_loader [label="load_tasks :154"];
+  core_entry -> core_gradeentry [label="grade :409"];
+  core_gradeentry -> slot_helpers;
+  slot_loader -> dataset [label="读题面"];
+
+  // ── 新增内部链路 ───────────────────────────────────────────────────────────
+  dev -> cpd_entry [label="submit / status / report"];
+  cpd_entry -> cpd_sched [label="POST /v1/jobs :535", color="#c47000", fontcolor="#b26a00"];
+  cpd_sched -> cpd_harness [label="run_task :307\n直接 new RemoteAcpAgent :325",
+                            color="#c47000", fontcolor="#b26a00", penwidth=2];
+  cpd_sched -> dataset [label="读内置题库\ndatasets.resolve :729", color="#c47000", fontcolor="#b26a00"];
+  cpd_harness -> cpd_exchange [label="铸 manifest / 重建 workspace",
+                               color="#c47000", fontcolor="#b26a00"];
+  cpd_harness -> cpd_score [label="transcript.jsonl", color="#c47000", fontcolor="#b26a00"];
+  cpd_exchange -> cpd_score [label="产物落库", color="#c47000", fontcolor="#b26a00"];
+  cpd_entry -> cpd_score [label="detail / report", color="#c47000", fontcolor="#b26a00", style=dotted];
+
+  // ── 跨信任边界：唯一进出被评测方的两条通道 ─────────────────────────────────
+  cpd_harness -> subject [label="ACP（stdio 子进程 或 http URL）\ninitialize / new_session / session/prompt",
+                          dir=both, color="#7e57c2", fontcolor="#5e35b1", penwidth=2];
+  subject -> cpd_exchange [label="HTTP 数据面\nGET assets（HMAC 预签名）\nPUT artifacts（run token 限额）",
+                           color="#7e57c2", fontcolor="#5e35b1", penwidth=2];
+
+  // ── 缺口 ───────────────────────────────────────────────────────────────────
+  gap_sandbox -> slot_helpers [label="未隔离：exec 仍在服务进程内\ngrading.py:266 → grader.py:141",
+                               style=dashed, color="#c62828", fontcolor="#c62828"];
+  gap_dash -> cpd_entry [label="计划共用 job_detail", style=dashed, color="#c62828", fontcolor="#c62828"];
+  gap_mcp -> cpd_entry [label="计划同一套 HTTP", style=dashed, color="#c62828", fontcolor="#c62828"];
+}
