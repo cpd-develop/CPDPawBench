@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PawBench 远端 Agent 评测 · 产品组周会汇报</title>
+<style>
+  :root{
+    --bg:#f5f7f6; --paper:#ffffff; --ink:#18202b; --ink-2:#46525f; --ink-3:#7b8794;
+    --line:#e3e8e6; --line-2:#eef1f0;
+    --brand:#16a34a; --brand-d:#0f7a37; --brand-l:#e8f6ed; --brand-ll:#f3fbf6;
+    --blue:#2563eb; --blue-l:#eaf1ff; --amber:#d97706; --amber-l:#fdf3e3;
+    --violet:#7c3aed; --violet-l:#f2edff; --slate:#0f1e2d;
+    --shadow:0 1px 2px rgba(16,24,40,.04),0 8px 24px rgba(16,24,40,.05);
+    --shadow-lg:0 12px 40px rgba(16,24,40,.10);
+    --mono:"SF Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:var(--sans);color:var(--ink);background:var(--bg);line-height:1.7;-webkit-font-smoothing:antialiased}
+  img{display:block;max-width:100%}
+
+  /* ---------- Layout ---------- */
+  .wrap{display:grid;grid-template-columns:214px minmax(0,1fr);gap:0;max-width:1560px;margin:0 auto}
+  nav{position:sticky;top:0;height:100vh;padding:26px 18px 26px 22px;border-right:1px solid var(--line);background:var(--paper);display:flex;flex-direction:column}
+  .nav-brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:14.5px;letter-spacing:.2px;padding:0 8px 18px}
+  .nav-brand .mark{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#22c55e,#0f7a37);display:grid;place-items:center;color:#fff;font-size:15px;box-shadow:0 3px 8px rgba(22,163,74,.3)}
+  .nav-sec{font-size:10.5px;font-weight:800;letter-spacing:1.4px;color:var(--ink-3);text-transform:uppercase;padding:16px 8px 8px}
+  nav a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;color:var(--ink-2);text-decoration:none;font-size:13px;font-weight:600;transition:.16s}
+  nav a:hover{background:var(--brand-ll);color:var(--brand-d)}
+  nav a .n{width:20px;height:20px;flex:none;border-radius:6px;background:var(--line-2);color:var(--ink-3);font-size:10.5px;display:grid;place-items:center;font-weight:800}
+  nav a.active{background:var(--brand-l);color:var(--brand-d)}
+  nav a.active .n{background:var(--brand);color:#fff}
+  .nav-foot{margin-top:auto;font-size:11px;color:var(--ink-3);padding:12px 8px 0;border-top:1px solid var(--line-2);line-height:1.6}
+  main{min-width:0;padding:0 0 100px}
+  section{padding:56px 60px 20px;scroll-margin-top:0}
+  section + section{border-top:1px solid var(--line)}
+
+  /* ---------- Cover ---------- */
+  .cover{background:linear-gradient(150deg,#0f1e2d 0%,#152a3d 55%,#123524 100%);color:#fff;padding:74px 60px 60px;position:relative;overflow:hidden;border:none}
+  .cover::after{content:"";position:absolute;right:-90px;top:-90px;width:420px;height:420px;border-radius:50%;background:radial-gradient(circle,rgba(34,197,94,.28),transparent 68%)}
+  .cover::before{content:"";position:absolute;right:120px;bottom:-160px;width:360px;height:360px;border-radius:50%;background:radial-gradient(circle,rgba(37,99,235,.18),transparent 70%)}
+  .cover .tag{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;letter-spacing:.5px;color:#b9f2cf;background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.3);padding:6px 13px;border-radius:100px}
+  .cover .tag .dot{width:7px;height:7px;border-radius:50%;background:#4ade80;box-shadow:0 0 0 4px rgba(74,222,128,.18)}
+  .cover h1{font-size:46px;line-height:1.18;letter-spacing:-1px;margin:24px 0 16px;font-weight:850;position:relative;z-index:1}
+  .cover h1 span{color:#7ee2a4}
+  .cover .lead{font-size:18px;color:#c9d6e2;max-width:800px;position:relative;z-index:1;line-height:1.8}
+  .cover .lead b{color:#fff}
+  .cover-meta{display:flex;flex-wrap:wrap;gap:12px;margin-top:38px;position:relative;z-index:1}
+  .cover-meta .m{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.13);border-radius:12px;padding:12px 18px;min-width:132px}
+  .cover-meta .m .k{font-size:11px;color:#9fb3c4;letter-spacing:.5px}
+  .cover-meta .m .v{font-size:22px;font-weight:800;margin-top:2px}
+  .cover-meta .m .v small{font-size:12px;font-weight:600;color:#9fb3c4;margin-left:3px}
+
+  /* ---------- Common ---------- */
+  .eyebrow{font-size:11px;font-weight:800;letter-spacing:2px;color:var(--brand-d);text-transform:uppercase;display:flex;align-items:center;gap:9px}
+  .eyebrow::before{content:"";width:22px;height:2px;background:var(--brand);border-radius:2px}
+  h2.sec-t{font-size:30px;letter-spacing:-.6px;margin:10px 0 8px;font-weight:820}
+  .sec-sub{color:var(--ink-2);font-size:14.5px;max-width:900px;margin-bottom:6px}
+  .callout{background:var(--brand-ll);border:1px solid #cdebd8;border-left:4px solid var(--brand);border-radius:10px;padding:16px 20px;margin:22px 0;font-size:14px;color:#28513a}
+  .callout b{color:var(--brand-d)}
+  .note{font-size:12px;color:var(--ink-3);margin-top:10px}
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:var(--shadow)}
+  .card h3{font-size:15.5px;margin-bottom:8px;display:flex;align-items:center;gap:9px}
+  .card p{font-size:13.2px;color:var(--ink-2)}
+  .ico{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:15px;flex:none}
+
+  /* Metric cards */
+  .metric{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .metric::after{content:"";position:absolute;right:-18px;top:-18px;width:80px;height:80px;border-radius:50%;background:var(--brand-ll)}
+  .metric .num{font-size:40px;font-weight:850;letter-spacing:-1.5px;line-height:1;color:var(--brand-d);position:relative;z-index:1}
+  .metric .num small{font-size:16px;font-weight:700}
+  .metric .lbl{font-size:12.5px;color:var(--ink-2);margin-top:10px;font-weight:600;position:relative;z-index:1}
+  .metric .sub{font-size:11px;color:var(--ink-3);margin-top:3px;position:relative;z-index:1}
+
+  /* Architecture layers */
+  .arch{background:var(--slate);border-radius:16px;padding:26px;color:#e7eef4;position:relative;box-shadow:var(--shadow-lg)}
+  .layer{display:flex;align-items:center;gap:16px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.11);border-radius:12px;padding:15px 18px;margin-bottom:11px;position:relative}
+  .layer:last-of-type{margin-bottom:0}
+  .layer .lnum{width:26px;height:26px;border-radius:7px;background:rgba(34,197,94,.2);color:#7ee2a4;display:grid;place-items:center;font-size:12px;font-weight:800;flex:none}
+  .layer .ltxt{flex:1}
+  .layer .lt{font-size:14px;font-weight:750;color:#fff}
+  .layer .ld{font-size:11.5px;color:#9fb3c4;margin-top:2px}
+  .layer .lchip{font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:100px;background:rgba(37,99,235,.2);color:#a9c6ff;white-space:nowrap}
+  .layer.agent{background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.35)}
+  .arrow-dn{text-align:center;color:#6d8296;font-size:16px;line-height:1;margin:-3px 0 8px}
+  .channels{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:20px}
+  .ch{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:12px 14px}
+  .ch .ct{font-size:11.5px;font-weight:800;color:#fff;display:flex;align-items:center;gap:7px}
+  .ch .ct i{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .ch .cd{font-size:10.8px;color:#9fb3c4;margin-top:5px;line-height:1.55}
+
+  /* Flow chain */
+  .flow{display:flex;align-items:stretch;gap:0;margin:22px 0;flex-wrap:wrap}
+  .fnode{flex:1;min-width:140px;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:15px 14px;text-align:center;position:relative;box-shadow:var(--shadow)}
+  .fnode .fi{font-size:22px}
+  .fnode .ft{font-size:12.5px;font-weight:750;margin-top:6px}
+  .fnode .fd{font-size:10.5px;color:var(--ink-3);margin-top:3px}
+  .fnode.hl{border-color:var(--brand);background:var(--brand-ll)}
+  .farr{display:grid;place-items:center;padding:0 6px;color:var(--brand);font-size:18px;font-weight:800;flex:none}
+
+  /* tables */
+  table{width:100%;border-collapse:collapse;font-size:12.8px;background:var(--paper);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--line)}
+  th{background:#f2f5f4;color:var(--ink-2);font-weight:750;text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);font-size:11.5px;letter-spacing:.3px}
+  td{padding:11px 14px;border-bottom:1px solid var(--line-2);vertical-align:top;color:var(--ink-2)}
+  tr:last-child td{border-bottom:none}
+  .pill{display:inline-block;font-size:10.5px;font-weight:750;padding:3px 9px;border-radius:100px;white-space:nowrap}
+  .p-ok{background:var(--brand-l);color:var(--brand-d)}
+  .p-part{background:var(--amber-l);color:var(--amber)}
+  .p-blue{background:var(--blue-l);color:var(--blue)}
+  .p-vio{background:var(--violet-l);color:var(--violet)}
+
+  /* capability cards */
+  .cap{display:flex;gap:13px;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:15px 16px;box-shadow:var(--shadow)}
+  .cap .cn{width:24px;height:24px;flex:none;border-radius:7px;background:var(--brand-l);color:var(--brand-d);font-size:11px;font-weight:850;display:grid;place-items:center}
+  .cap h4{font-size:13.2px;margin-bottom:3px}
+  .cap p{font-size:11.6px;color:var(--ink-3);line-height:1.6}
+
+  /* screenshots */
+  .shot{background:var(--paper);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
+  .shot .bar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fbfcfb;border-bottom:1px solid var(--line)}
+  .shot .bar .dots{display:flex;gap:5px}
+  .shot .bar .dots i{width:9px;height:9px;border-radius:50%;background:#d9dfdc}
+  .shot .bar .ttl{font-size:11px;color:var(--ink-3);font-weight:650;font-family:var(--mono)}
+  .shot .shot-body{position:relative;cursor:zoom-in;overflow:hidden}
+  .shot img{width:100%;display:block;transition:transform .25s ease}
+  .shot .shot-body:hover img{transform:scale(1.015)}
+  .shot .zoom-hint{position:absolute;right:10px;bottom:10px;display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;color:#fff;background:rgba(16,24,40,.72);border:1px solid rgba(255,255,255,.18);padding:5px 10px;border-radius:100px;opacity:0;transition:.2s;pointer-events:none;backdrop-filter:blur(4px)}
+  .shot .shot-body:hover .zoom-hint{opacity:1}
+
+  /* ---------- Lightbox ---------- */
+  .lb{position:fixed;inset:0;z-index:9999;display:none;background:rgba(8,14,22,.92);backdrop-filter:blur(6px)}
+  .lb.open{display:flex;flex-direction:column}
+  .lb-top{display:flex;align-items:center;gap:12px;padding:14px 20px;color:#e7eef4;flex:none}
+  .lb-top .lb-title{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lb-top .lb-title small{color:#8fa6ba;font-weight:500;margin-left:8px;font-family:var(--mono);font-size:11px}
+  .lb-tools{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .lb-btn{width:36px;height:36px;border-radius:9px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.08);color:#e7eef4;font-size:18px;font-weight:600;cursor:pointer;display:grid;place-items:center;transition:.15s;line-height:1}
+  .lb-btn:hover{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.3)}
+  .lb-btn.wide{width:auto;padding:0 13px;font-size:12.5px;font-weight:700;gap:6px;display:flex;align-items:center}
+  .lb-btn.close{background:#d64545;border-color:#d64545}
+  .lb-btn.close:hover{background:#e05252}
+  .lb-zoom{font-family:var(--mono);font-size:12px;color:#9fb3c4;min-width:48px;text-align:center}
+  .lb-stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:grab;touch-action:none}
+  .lb-stage.grabbing{cursor:grabbing}
+  .lb-stage img{max-width:none;user-select:none;-webkit-user-drag:none;will-change:transform;box-shadow:0 20px 70px rgba(0,0,0,.5)}
+  .lb-hint{text-align:center;padding:10px 20px 16px;color:#6f869b;font-size:11px;flex:none}
+  .lb-hint kbd{font-family:var(--mono);background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);border-radius:5px;padding:1px 6px;color:#aebfcd;font-size:10.5px}
+  .shot .cap2{padding:11px 15px;font-size:11.8px;color:var(--ink-2);border-top:1px solid var(--line-2)}
+  .shot .cap2 b{color:var(--ink)}
+
+  /* story steps */
+  .story{display:grid;grid-template-columns:32px 1fr;gap:0}
+  .story .step{display:contents}
+  .story .st-n{display:grid;place-items:center}
+  .story .st-n span{width:28px;height:28px;border-radius:50%;background:var(--brand);color:#fff;font-weight:800;font-size:12px;box-shadow:0 0 0 5px var(--brand-ll)}
+  .story .st-c{padding-left:16px;padding-bottom:20px;position:relative}
+  .story .st-c::before{content:"";position:absolute;left:13px;top:28px;bottom:-3px;width:2px;background:var(--line)}
+  .story .step:last-child .st-c::before{display:none}
+  .story .st-c h4{font-size:14px;margin-bottom:3px}
+  .story .st-c p{font-size:12.5px;color:var(--ink-2)}
+
+  /* guide */
+  .role{display:flex;gap:14px;align-items:flex-start;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow)}
+  .role .r-ico{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font-size:18px;flex:none}
+  .role h4{font-size:13.5px}
+  .role p{font-size:12px;color:var(--ink-2);margin-top:3px}
+  .kbd{font-family:var(--mono);font-size:11px;background:#f0f3f2;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 6px;color:var(--ink)}
+  .steps3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:18px 0}
+  .step3{background:var(--paper);border:1px solid var(--line);border-top:3px solid var(--brand);border-radius:12px;padding:18px;box-shadow:var(--shadow)}
+  .step3 .big{font-size:34px;font-weight:850;color:var(--brand-l);line-height:1}
+  .step3 h4{font-size:14px;margin:2px 0 6px}
+  .step3 p{font-size:12px;color:var(--ink-2)}
+
+  ul.clean{list-style:none;display:grid;gap:8px;margin-top:10px}
+  ul.clean li{font-size:12.8px;color:var(--ink-2);padding-left:22px;position:relative}
+  ul.clean li::before{content:"";position:absolute;left:4px;top:9px;width:6px;height:6px;border-radius:50%;background:var(--brand)}
+  ul.clean li b{color:var(--ink)}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;font-size:11.5px;color:var(--ink-3)}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+  .divider{height:1px;background:var(--line);margin:30px 0}
+  h3.block{font-size:17px;margin:28px 0 4px;letter-spacing:-.2px}
+  .foot-note{font-size:11px;color:var(--ink-3);margin-top:14px;border-top:1px dashed var(--line);padding-top:12px}
+
+  /* ---------- Full architecture map ---------- */
+  .amap{background:#0d1b29;border-radius:16px;padding:24px 22px 22px;box-shadow:var(--shadow-lg);color:#e7eef4}
+  .amap-band{border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:14px 16px 15px;margin-bottom:0;background:rgba(255,255,255,.035)}
+  .amap-band.access{background:rgba(37,99,235,.09);border-color:rgba(96,165,250,.28)}
+  .amap-band.core{background:rgba(34,197,94,.07);border-color:rgba(34,197,94,.26)}
+  .amap-band.agent{background:rgba(124,58,237,.1);border-color:rgba(167,139,250,.3)}
+  .amap-bd{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+  .amap-bd .bn{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:11px;font-weight:850;color:#0d1b29}
+  .amap-band.access .bn{background:#60a5fa}
+  .amap-band.core .bn{background:#4ade80}
+  .amap-band.agent .bn{background:#c4b5fd}
+  .amap-bd .bt{font-size:13px;font-weight:800;color:#fff;letter-spacing:.2px}
+  .amap-bd .bs{font-size:10.5px;color:#8fa6ba;margin-left:auto;font-family:var(--mono)}
+  .amod-row{display:grid;gap:9px}
+  .amod{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.11);border-radius:9px;padding:10px 11px;min-width:0}
+  .amod .at{font-size:11.8px;font-weight:750;color:#fff;display:flex;align-items:center;gap:6px;white-space:nowrap}
+  .amod .at .ai{font-size:13px}
+  .amod .ac{font-size:9.6px;color:#7fd6a0;font-family:var(--mono);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .amod .ad{font-size:9.8px;color:#94a9bc;margin-top:4px;line-height:1.5}
+  .amod.access-card{background:rgba(37,99,235,.1);border-color:rgba(96,165,250,.22)}
+  .amod.access-card .ac{color:#a9c6ff}
+  .amod.agent-card{background:rgba(124,58,237,.12);border-color:rgba(167,139,250,.22)}
+  .amod.agent-card .ac{color:#d3c0ff}
+  .amod.core-card .ac{color:#7fd6a0}
+  .amconn{display:flex;align-items:center;justify-content:center;gap:12px;margin:7px 0;color:#7f97ac}
+  .amconn .line{flex:1;height:1px;background:linear-gradient(90deg,transparent,rgba(127,151,172,.55),transparent)}
+  .amconn .lbl{font-size:10px;font-weight:700;letter-spacing:.3px;padding:4px 12px;border-radius:100px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);white-space:nowrap}
+  .amconn .lbl b{color:#8fd6ae}
+  .amconn .lbl.acp b{color:#c4b5fd}
+  .amconn .down{font-size:11px;color:#5f7890}
+  .amap-core-sub{display:grid;grid-template-columns:1.15fr .85fr;gap:10px;margin-top:10px}
+  .amap-core-box{background:rgba(255,255,255,.04);border:1px dashed rgba(255,255,255,.14);border-radius:9px;padding:10px 11px}
+  .amap-core-box .bx-t{font-size:10px;font-weight:800;color:#8fa6ba;letter-spacing:.6px;margin-bottom:8px;text-transform:uppercase}
+  .chips5{display:grid;grid-template-columns:repeat(5,1fr);gap:7px}
+  .chip5{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.22);border-radius:7px;padding:9px 8px;text-align:center}
+  .chip5 .ci{font-size:15px}
+  .chip5 .ct{font-size:10.5px;font-weight:750;color:#fff;margin-top:4px;white-space:nowrap}
+  .chip5 .cc{font-size:9px;color:#7fd6a0;font-family:var(--mono);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chip5 .cd{font-size:9.3px;color:#94a9bc;margin-top:4px;line-height:1.45}
+  .support-list{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .sup{background:rgba(255,255,255,.05);border-radius:7px;padding:7px 9px;font-size:10px;color:#c4d3df;display:flex;gap:7px;align-items:baseline}
+  .sup code{color:#8fd6ae;font-family:var(--mono);font-size:9.4px}
+  .sup span{color:#8fa6ba}
+  .amap-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:16px;padding-top:13px;border-top:1px solid rgba(255,255,255,.1)}
+  .amap-legend div{display:flex;align-items:center;gap:6px;font-size:10px;color:#94a9bc}
+  .amap-legend i{width:9px;height:9px;border-radius:3px;display:inline-block}
+
+  @media print{
+    nav{display:none}.wrap{display:block}main{padding:0}
+    section{padding:28px 30px;page-break-inside:avoid}
+    .cover{padding:50px 40px}
+    body{background:#fff}
+    .card,.metric,.shot,table{box-shadow:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ============ NAV ============ -->
+<nav>
+  <div class="nav-brand"><span class="mark">P</span> PawBench 远端评测</div>
+  <div class="nav-sec">汇报导航</div>
+  <a href="#top" class="active"><span class="n">00</span> 一页总览</a>
+  <a href="#what"><span class="n">01</span> 做了什么</a>
+  <a href="#effect"><span class="n">02</span> 达到什么效果</a>
+  <a href="#demo"><span class="n">03</span> 真实示例</a>
+  <a href="#guide"><span class="n">04</span> 用户使用指南</a>
+  <a href="#appendix"><span class="n">05</span> 边界与附录</a>
+  <div class="nav-foot">产品组周会 · 2026-11-23<br>特性分支 <span class="kbd">feat/acp-remote-eval</span></div>
+</nav>
+
+<main>
+
+<!-- ============ COVER ============ -->
+<section class="cover" id="top">
+  <span class="tag"><span class="dot"></span> 特性汇报 · M1–M3 已落地</span>
+  <h1>PawBench <span>远端 Agent 评测</span><br>从本地工具到常驻评测服务</h1>
+  <p class="lead">别人只需暴露一个 <b>ACP 地址</b>，我们下发评测集、回收产物、自动出分。<br>
+  被评测对象是完整的 <b>agent + harness + 它自己那套环境配置</b>——而不是我们装进容器里的脚手架。</p>
+  <div class="cover-meta">
+    <div class="m"><div class="k">自动化测试</div><div class="v">716<small>全部通过</small></div></div>
+    <div class="m"><div class="k">HTTP 路由</div><div class="v">32<small>条</small></div></div>
+    <div class="m"><div class="k">核心目录改动</div><div class="v">0<small>行</small></div></div>
+    <div class="m"><div class="k">提交前独立检视</div><div class="v">15<small>轮</small></div></div>
+  </div>
+</section>
+
+<!-- ============ 01 WHAT ============ -->
+<section id="what">
+  <div class="eyebrow">01 · What we built</div>
+  <h2 class="sec-t">做了什么</h2>
+  <p class="sec-sub">把 PawBench 从「只有一条本地 CLI 入口」升级为「常驻评测运行时服务 + 人人可用的看板 + MCP 智能体入口」。下面从定位、架构、能力、工程边界四个角度看。</p>
+
+  <div class="callout">
+    <b>一句话定位：</b>评测方在这边选数据集、排队、看结果；agent 在对方机器做题，只把轨迹和产物回传。评审的是「对方交付的整套东西」，与本工程环境解耦。
+  </div>
+
+  <h3 class="block">整体架构：五种接入 · 五大服务 · 一座 ACP 桥</h3>
+  <div class="amap">
+    <!-- 接入层 -->
+    <div class="amap-band access">
+      <div class="amap-bd"><div class="bn">1</div><div class="bt">接入层 · 五种方式，同一批服务函数</div><div class="bs">ACCESS</div></div>
+      <div class="amod-row" style="grid-template-columns:repeat(5,1fr)">
+        <div class="amod access-card"><div class="at"><span class="ai">🖥️</span>看板 UI</div><div class="ac">ui/index.js</div><div class="ad">评测 / 数据集 / 配置三模块；提交、队列、三级报告</div></div>
+        <div class="amod access-card"><div class="at"><span class="ai">🔌</span>插件后端</div><div class="ac">backend/main.py</div><div class="ad">透明代理 /v1/*，注入 token；托管看板与 skill</div></div>
+        <div class="amod access-card"><div class="at"><span class="ai">🤖</span>MCP Server</div><div class="ac">mcp/server.py</div><div class="ad">19 个 tools：选集 / 提交 / 详情 / 报告</div></div>
+        <div class="amod access-card"><div class="at"><span class="ai">📚</span>Skill</div><div class="ac">pawbench-datasets</div><div class="ad">prepare 备集 + catalog 选题两条工作流</div></div>
+        <div class="amod access-card"><div class="at"><span class="ai">⌨️</span>CLI</div><div class="ac">cli.py</div><div class="ad">本地提交等价路径，脚本 / CI 用</div></div>
+      </div>
+    </div>
+
+    <div class="amconn"><div class="line"></div><div class="lbl">管理面 HTTP <b>/v1/*</b> · Bearer token</div><div class="line"></div><div class="down">▼</div></div>
+
+    <!-- 服务层 -->
+    <div class="amap-band core">
+      <div class="amap-bd"><div class="bn">2</div><div class="bt">评测服务 · FastAPI 常驻进程</div><div class="bs">pawbench/cpd/acp_remote_eval/</div></div>
+      <div class="amap-core-sub">
+        <div class="amap-core-box">
+          <div class="bx-t">五大核心模块</div>
+          <div class="chips5">
+            <div class="chip5"><div class="ci">🔐</div><div class="ct">鉴权管理</div><div class="cc">auth.py</div><div class="cd">白名单 token<br>只存 hash</div></div>
+            <div class="chip5"><div class="ci">🗂️</div><div class="ct">数据集管理</div><div class="cc">datasets.py</div><div class="cd">内置视图+自定义包<br>分类 / 解析去重</div></div>
+            <div class="chip5"><div class="ci">🚦</div><div class="ct">队列</div><div class="cc">queue.py</div><div class="cd">并发闸=4<br>插队 / 崩溃恢复</div></div>
+            <div class="chip5"><div class="ci">⏰</div><div class="ct">任务调度</div><div class="cc">schedule.py</div><div class="cd">即时 / 夜间 / 自定义<br>服务时钟判定</div></div>
+            <div class="chip5"><div class="ci">⚙️</div><div class="ct">评测服务</div><div class="cc">api.py</div><div class="cd">控制面 32 路由<br>作业生命周期</div></div>
+          </div>
+        </div>
+        <div class="amap-core-box">
+          <div class="bx-t">执行与产出支撑</div>
+          <div class="support-list">
+            <div class="sup"><code>runner.py</code><span>job→执行</span></div>
+            <div class="sup"><code>store.py</code><span>SQLite 状态</span></div>
+            <div class="sup"><code>exchange.py</code><span>数据面交换</span></div>
+            <div class="sup"><code>reports.py</code><span>详情+4格式</span></div>
+            <div class="sup"><code>grading_sandbox</code><span>隔离判分</span></div>
+            <div class="sup"><code>redact.py</code><span>统一脱敏</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="amconn"><div class="line"></div><div class="lbl acp">控制面 <b>ACP</b> · 数据面 <b>HTTP</b>（fixture ↓ / 产物 ↑）</div><div class="line"></div><div class="down">▼</div></div>
+
+    <!-- ACP 桥 + 被测方 -->
+    <div class="amap-band agent">
+      <div class="amap-bd"><div class="bn">3</div><div class="bt">ACP 桥 → 被测 agent（黑盒，自带环境 / 自带模型）</div><div class="bs">BYO · byo</div></div>
+      <div class="amod-row" style="grid-template-columns:repeat(3,1fr)">
+        <div class="amod agent-card"><div class="at"><span class="ai">🌉</span>RemoteAcpAgent</div><div class="ac">harness.py</div><div class="ad">生命周期对齐现有 agent；setup / run / cancel / teardown</div></div>
+        <div class="amod agent-card"><div class="at"><span class="ai">🔗</span>ACP Client</div><div class="ac">acp/client.py</div><div class="ad">官方 SDK；stdio 或 http/sse；session/prompt/cancel</div></div>
+        <div class="amod agent-card"><div class="at"><span class="ai">🎯</span>被测 agent + harness</div><div class="ac">对方环境 · 黑盒</div><div class="ad">回传 transcript 与产物；不依赖我方文件系统</div></div>
+      </div>
+    </div>
+
+    <div class="amap-legend">
+      <div><i style="background:#60a5fa"></i>接入层（人 / agent 的入口）</div>
+      <div><i style="background:#4ade80"></i>评测服务（我方控制）</div>
+      <div><i style="background:#c4b5fd"></i>ACP 桥与被测方（对方控制）</div>
+      <div style="margin-left:auto;color:#7fd6a0">三通道不混用 · 数据面不依赖远端文件系统</div>
+    </div>
+  </div>
+  <p class="note">接入层五种方式最终都调用同一批 service 函数，避免「看板一套语义、MCP 另一套」；被测方只通过 ACP 桥接触服务，题目与答案始终留在服务侧。</p>
+
+  <h3 class="block">九大需求，逐条落地</h3>
+  <div class="grid g3" style="margin-top:14px">
+    <div class="cap"><div class="cn">1</div><div><h4>插件看板提交取结果</h4><p>QwenPaw 装插件即可提测、看队列、读报告，无需命令行。</p></div></div>
+    <div class="cap"><div class="cn">2</div><div><h4>MCP + skill 双入口</h4><p>能力以 MCP tools 开放，配套 <span class="kbd">pawbench-datasets</span> skill 备集与选题。</p></div></div>
+    <div class="cap"><div class="cn">3</div><div><h4>白名单 token 鉴权</h4><p>只存 hash、日志打前 8 位；白名单外一律 401，形状一致不可枚举。</p></div></div>
+    <div class="cap"><div class="cn">4</div><div><h4>队列 / 并发 / 调序</h4><p>全局默认 4 并发，浮点队列位支持插队，running 只能取消；崩溃自动恢复。</p></div></div>
+    <div class="cap"><div class="cn">5</div><div><h4>全量任务可见</h4><p>看板列出所有人的作业，含提交人、窗口、队列位与状态。</p></div></div>
+    <div class="cap"><div class="cn">6</div><div><h4>三种可运行时间</h4><p>即时 / 夜间固定窗（00:00–07:00）/ 自定义区间，服务单一时钟判定。</p></div></div>
+    <div class="cap"><div class="cn">7</div><div><h4>数据集与分类管理</h4><p>内置切片 + 自定义 zip 上传；分类整组与单集多选混合，提交前解析去重。</p></div></div>
+    <div class="cap"><div class="cn">8</div><div><h4>三级评测详情</h4><p>作业概览 → 逐题分数 → 单题判分 / 轨迹时间线 / 产物清单。</p></div></div>
+    <div class="cap"><div class="cn">9</div><div><h4>MCP 详情与报告</h4><p>与看板共用同一聚合函数；报告 json / md / html / zip 四种格式。</p></div></div>
+  </div>
+
+  <h3 class="block">关键机制：数据面五段主链</h3>
+  <p class="sec-sub">远端模式下新增的部分，必须端到端证明它通了——带附件的 pilot 题逐段落盘取证：</p>
+  <div class="flow">
+    <div class="fnode"><div class="fi">📦</div><div class="ft">Fixture 下发</div><div class="fd">一次性预签名 URL + TTL</div></div>
+    <div class="farr">→</div>
+    <div class="fnode"><div class="fi">🤖</div><div class="ft">远端做题</div><div class="fd">对方环境 · 自带工具链</div></div>
+    <div class="farr">→</div>
+    <div class="fnode"><div class="fi">⬆️</div><div class="ft">产物回传</div><div class="fd">扩展名 / 大小 / 路径白名单</div></div>
+    <div class="farr">→</div>
+    <div class="fnode hl"><div class="fi">🗂️</div><div class="ft">Workspace 重建</div><div class="fd">我方 fixture + 回收产物</div></div>
+    <div class="farr">→</div>
+    <div class="fnode hl"><div class="fi">✅</div><div class="ft">判分出分</div><div class="fd">LLM judge / 隔离脚本</div></div>
+  </div>
+
+  <h3 class="block">工程边界：对开源核心零改动</h3>
+  <div class="grid g3" style="margin-top:14px">
+    <div class="card"><h3><span class="ico" style="background:var(--brand-l);color:var(--brand-d)">◎</span>全部新增代码隔离</h3><p>服务、harness、MCP 共 <b>30 个 .py</b> 落在 <span class="kbd">pawbench/cpd/acp_remote_eval/</span>；测试 <b>30 个 .py</b> 独立目录。对 <span class="kbd">pawbench/</span> 主目录、<span class="kbd">run_bench.py</span>、题库零 diff。</p></div>
+    <div class="card"><h3><span class="ico" style="background:var(--blue-l);color:var(--blue)">↔</span>不注册进 AgentFactory</h3><p>核心 registry 无动态插槽，首期不碰它；本地提交走等价 CLI 入口。等社区合入注册插槽，挪一行即可，<span class="kbd">cpd/</span> 内代码不动。</p></div>
+    <div class="card"><h3><span class="ico" style="background:var(--violet-l);color:var(--violet)">⊘</span>单一真源 + 机器可检</h3><p>脱敏、泄露词表都收敛到一处；边界规则写成用例（<span class="kbd">H3</span>），每次提交自动断言核心目录 diff 为空。</p></div>
+  </div>
+</section>
+
+<!-- ============ 02 EFFECT ============ -->
+<section id="effect">
+  <div class="eyebrow">02 · Impact</div>
+  <h2 class="sec-t">达到什么效果</h2>
+  <p class="sec-sub">从「能不能跑通」到「跑得可比、看得明白、守得住边界」——四组量化指标 + 真实端到端证据。</p>
+
+  <div class="grid g4" style="margin-top:20px">
+    <div class="metric"><div class="num">716</div><div class="lbl">自动化测试全部通过</div><div class="sub">覆盖服务 / 队列 / 鉴权 / 报告 / 插件 / 前端</div></div>
+    <div class="metric"><div class="num">15<small> 轮</small></div><div class="lbl">提交前独立检视</div><div class="sub">新上下文独立检视，严重项全部修复</div></div>
+    <div class="metric"><div class="num">0.03<small> ms</small></div><div class="lbl">选择器 resolve 量级</div><div class="sub">仅读 task_ids；全量解析 9–18ms</div></div>
+    <div class="metric"><div class="num">15<small> 题</small></div><div class="lbl">pilot 内置评测集</div><div class="sub">含附件 / 多形态 / 两种判分方式</div></div>
+  </div>
+
+  <h3 class="block">效果一：真机端到端跑通，不是假 agent</h3>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card">
+      <h3><span class="ico" style="background:var(--brand-l);color:var(--brand-d)">✓</span>真实服务通道</h3>
+      <p>被测 agent 是本地 QwenPaw（ACP stdio，<b>用自己配好的默认模型</b>，我们不注入、不钉 model id）；judge 走 OpenRouter 免费档。跑通内置集提交 → 排队 → 评分 → 看板出分全链路。</p>
+      <ul class="clean">
+        <li>带附件题 <b>budget.xlsx</b> 逐项断言到磁盘路径：fixture 已下发 / 产物已回收 / workspace 两文件齐</li>
+        <li>pilot 15 题构成约束写成启动断言，缺口不满足即拒绝就绪</li>
+        <li>覆盖 xlsx / png / pdf、closed / open、llm_judge / automated</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3><span class="ico" style="background:var(--blue-l);color:var(--blue)">⚙</span>判分忠实复用 + 可比性记账</h3>
+      <p>LLM judge 沿用现有 grader，只在产物与轨迹外加边界标记防提示注入；自动化脚本进一次性隔离容器。结果 schema 增加 <span class="kbd">environment=byo</span> 维度分档。</p>
+      <ul class="clean">
+        <li><b>没测到 ≠ 做错</b>：无产物 / judge 限流记错误或跳过，不记 0 分、不进分母</li>
+        <li>被测模型记 <span class="kbd">subject_model_reported</span>，拿不到显式标注「未知」</li>
+        <li>judge 免费路由换后端模型时自动标注「与其他轮次不可比」</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3 class="block">效果二：11 条成功判据逐条有结论</h3>
+  <table style="margin-top:14px">
+    <thead><tr><th style="width:34%">PRD 成功判据</th><th style="width:15%">结论</th><th>要点</th></tr></thead>
+    <tbody>
+      <tr><td>外部人员仅凭 ACP 地址 + 资源 URL 完成一轮</td><td><span class="pill p-part">服务端达成</span></td><td>假 agent 独立进程只靠 prompt 里的 manifest 完成下载→写→回传，全程不碰我方文件系统；真机从零起步已由真机通道验证</td></tr>
+      <tr><td>判分不依赖远端文件系统</td><td><span class="pill p-ok">达成</span></td><td>workspace 全由我方 fixture + 回收产物重建；fs/* 与 terminal/* 一律 method_not_found</td></tr>
+      <tr><td>白名单外拿不到任何资源</td><td><span class="pill p-ok">达成</span></td><td>32 条路由逐条验过「无 token 即 401」；白名单内也不互换端点凭据（视图与报告统一脱敏）</td></tr>
+      <tr><td>队列行为可脚本验证</td><td><span class="pill p-ok">达成</span></td><td>并发上限 / 插队取中值 / running 拒调序 / 单人限流均在 HTTP 层验过</td></tr>
+      <tr><td>团队 ≥3 人经插件完成真实评测</td><td><span class="pill p-blue">已具备能力</span></td><td>看板已落地并通过宿主契约测试，分发给团队使用属推广动作</td></tr>
+      <tr><td>夜间与自定义窗口按服务时钟起跑</td><td><span class="pill p-ok">达成</span></td><td>冻结时钟层 21 项通过；窗口只拦起跑不掐在跑，跑不完记 skipped 不进分母</td></tr>
+      <tr><td>skill 建集后看板立即可见、混合选择可核对</td><td><span class="pill p-ok">服务端达成</span></td><td>解析 / 去重 / 快照复现 / 建开放改删收紧 / zip 上传注册即可选，看板与 skill 双消费者都落地</td></tr>
+      <tr><td>任一 job 都能看到详情、多路径一致</td><td><span class="pill p-ok">达成</span></td><td>看板 / HTTP / MCP 共用同一聚合函数；已收敛为单一完整视图，访问边界由白名单 token 把关；泄露扫描器机检无判分依据外泄</td></tr>
+      <tr><td>报告四格式、sha256 可复现、URL 一次性</td><td><span class="pill p-ok">服务端达成</span></td><td>四格式渲染、数字不变复用缓存、zip 限完整版、下载口一次性带 TTL</td></tr>
+      <tr><td>pilot 带附件题拿到三段证据</td><td><span class="pill p-part">单题已证</span></td><td>一道真附件题逐项断言到磁盘；pilot 全量一轮属真机批次</td></tr>
+      <tr><td>核心目录零 diff，新增全在 cpd/</td><td><span class="pill p-ok">达成</span></td><td>边界由 H3 用例机器检查，每次提交断言</td></tr>
+    </tbody>
+  </table>
+
+  <h3 class="block">效果三：安全与质量守得住</h3>
+  <div class="grid g3" style="margin-top:14px">
+    <div class="card"><h3>🔒 题库与凭据不泄露</h3><p>run_token 一次性、作用域到 task、禁止枚举；asset URL 带 TTL；端点凭据（userinfo / query）在库行保留、离开进程一律脱敏。</p></div>
+    <div class="card"><h3>🛡 外发边界可机检</h3><p>可外发版不含 rubric、判分代码与产物本体；泄露词表扫描器有退出码契约，改为字段名 / 标题 / 标签匹配，误报也有对照。</p></div>
+    <div class="card"><h3>🔬 每批都独立检视</h3><p>15 轮新上下文检视，只给 diff 与规范、不给作者方案；最近一轮（数据集下钻）检出的 2 个严重项（答案从 markdown 预览外泄、表格行键盘不可达）均已修复并复检。</p></div>
+  </div>
+</section>
+
+<!-- ============ 03 DEMO ============ -->
+<section id="demo">
+  <div class="eyebrow">03 · Live examples</div>
+  <h2 class="sec-t">真实示例</h2>
+  <p class="sec-sub">以下均为本地真实看板截图（非设计稿）：从提测列表，到一份报告三级下钻，再到数据集一路点到单题判分规则。</p>
+
+  <h3 class="block">示例 A · 一次完整评测的用户旅程</h3>
+  <div class="story" style="margin:18px 0 24px">
+    <div class="step"><div class="st-n"><span>1</span></div><div class="st-c"><h4>评测列表：所有人的作业一目了然</h4><p>每行列状态、题目、分数、提交人、耗时；筛选「运行中 / 等待中 / 已结束」，右上角「＋ 新建评测」提测。</p></div></div>
+    <div class="step"><div class="st-n"><span>2</span></div><div class="st-c"><h4>报告总览：总分环 + 切片 + 配置 + 数据来源</h4><p>点任意一行进报告。顶部四个数（总分 / 完成度 / 分数区间 / 耗时），能力·场景·复杂度三条切片，配置与数据来源都摊开。</p></div></div>
+    <div class="step"><div class="st-n"><span>3</span></div><div class="st-c"><h4>单题详情：题干 → 判据逐项 → 产物 → 轨迹</h4><p>判据哪条过、哪条没过一眼看到；trace_id / session_id 可一键复制，是通往服务日志与被测 agent 控制台的入口。</p></div></div>
+  </div>
+
+  <div class="grid g2">
+    <div class="shot">
+      <div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="ttl">评测列表 · 10 条已完成作业</div></div>
+      <img src="assets/y-jobs.png" alt="评测列表">
+      <div class="cap2"><b>看点：</b>分数条 + 数值双呈现，「验证带附件任务的铺放、读取与产物回收」得分 1.00，运行 34s。</div>
+    </div>
+    <div class="shot">
+      <div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="ttl">报告总览 · 带附件任务</div></div>
+      <img src="assets/y-overview.png" alt="报告总览">
+      <div class="cap2"><b>看点：</b>总分环 1.00 / 完成度 1/1 / 切片均分 / 环境指纹原样保留；无指纹时明说「这次没有带指纹」。</div>
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="shot">
+      <div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="ttl">单题详情 · 判据逐项 + 产物</div></div>
+      <img src="assets/v-task.png" alt="单题详情">
+      <div class="cap2"><b>看点：</b>这是 Shell Command Generator 的一次失败复现 attempt，得分 0.60（手册另一轮同题为 1.00 全绿）；5 条判据中 <span style="color:var(--brand-d)">3 过 2 挂</span>，executes_successfully / outputs_correct_matches 挂掉——一眼定位失败原因。</div>
+    </div>
+    <div class="shot">
+      <div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="ttl">单题详情 · 轨迹区分页读取</div></div>
+      <img src="assets/v-trace.png" alt="单题详情内的轨迹区">
+      <div class="cap2"><b>看点：</b>单题详情内的轨迹区按页读取（右下「回到开头 / 下一页」为分页入口），长会话不一次糊满屏幕；配 <span class="kbd">trace_id</span> / <span class="kbd">session_id</span> 可去服务日志与被测 agent 控制台对账。</div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+  <h3 class="block">示例 B · 数据集一路点到单题判分规则</h3>
+  <p class="sec-sub">数据集页支持两级下钻，下钻时左侧导航始终停在「数据集」，地址栏可直接分享同一道题。</p>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="shot">
+      <div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="ttl">题目清单 · pilot_v1（15 题）</div></div>
+      <img src="assets/ds-2-detail.png" alt="题目清单">
+      <div class="cap2"><b>看点：</b>「这个集合」摘要 + 筛选条件；逐题一行显示场景 / 复杂度 / 判分 / 超时 / 附件数。</div>
+    </div>
+    <div class="shot">
+      <div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="ttl">单题 · 题干 / 期望行为 / 判分规则</div></div>
+      <img src="assets/ds-3-task.png" alt="单题详情">
+      <div class="cap2"><b>看点：</b>题干与期望行为原文；下方「判分规则」把判据、判分方式、权重摊开，附件行可直接预览下载。</div>
+    </div>
+  </div>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="shot">
+      <div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="ttl">判分细则 · 默认收起</div></div>
+      <img src="assets/rubric-collapsed.png" alt="判分细则折叠">
+      <div class="cap2"><b>看点：</b>judge 细则一两千字，默认收起、右侧标字数，点一行展开——题干 / 判据 / 附件这三样才是用来横向比较的。</div>
+    </div>
+    <div class="shot">
+      <div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="ttl">附件预览 · 图片直接看</div></div>
+      <img src="assets/ds-4-fixture.png" alt="附件预览">
+      <div class="cap2"><b>看点：</b>只认题目声明过的文件；文本 / 图片直接预览，xlsx / pdf 提示下载后用本地程序打开。</div>
+    </div>
+  </div>
+  <div class="callout" style="margin-top:20px">
+    <b>可见边界：</b>题面与判分规则（判据、权重、judge 细则）可见，但 <b>automated_checks 里的期望值永远不出服务</b>——那是答案钥匙。「看题目 markdown」兜底预览会把答案那一节替换成说明文字，任何页面都拿不到。
+  </div>
+</section>
+
+<!-- ============ 04 GUIDE ============ -->
+<section id="guide">
+  <div class="eyebrow">04 · How to use</div>
+  <h2 class="sec-t">用户端使用指南</h2>
+  <p class="sec-sub">三类人各读各的：使用者提测看分、管理员起服务发 token、出题人沉淀数据集。</p>
+
+  <div class="grid g3" style="margin-top:18px">
+    <div class="role"><div class="r-ico" style="background:var(--brand-l);color:var(--brand-d)">🙋</div><div><h4>使用者</h4><p>装插件 → 配一次连接 → 之后提测 / 排队 / 读结果 / 下钻报告。全程不碰命令行，也看不到 token。</p></div></div>
+    <div class="role"><div class="r-ico" style="background:var(--blue-l);color:var(--blue)">⚙️</div><div><h4>管理员</h4><p>起一次评测服务，签发 token，把服务地址与 token 发给团队。token 只存 hash，吊销走 CLI。</p></div></div>
+    <div class="role"><div class="r-ico" style="background:var(--violet-l);color:var(--violet)">✍️</div><div><h4>出题人</h4><p>把真实失败的任务沉淀成数据集：内置切片或 zip 任务包，归档分类，供全队复用。</p></div></div>
+  </div>
+
+  <h3 class="block">使用者三步走</h3>
+  <div class="steps3">
+    <div class="step3"><div class="big">01</div><h4>装插件</h4><p>管理员下发插件目录，执行 <span class="kbd">qwenpaw plugin install &lt;路径&gt;</span>。看板出现在 QwenPaw 左侧导航。</p></div>
+    <div class="step3"><div class="big">02</div><h4>配连接</h4><p>进「配置」填服务地址与 token，一键探活。token 由后端保管，浏览器里永远看不到副本。</p></div>
+    <div class="step3"><div class="big">03</div><h4>提测 + 看结果</h4><p>「＋ 新建评测」填表单提交，队列看进度，点进报告读分与下钻，导出目录下载四种格式。</p></div>
+  </div>
+
+  <h3 class="block">提测表单：三段填完即可提交</h3>
+  <table style="margin-top:12px">
+    <thead><tr><th style="width:20%">段落</th><th style="width:28%">字段</th><th>关键规则</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill p-blue">目标</span></td><td>ACP 地址 · 评测产品 · 评测目的 · 环境指纹</td><td>地址必须 http(s)；产品/目的会解释「曲线为什么跳」；指纹每行 <span class="kbd">key=value</span>，留空是诚实的，>4KB 拒收。</td></tr>
+      <tr><td><span class="pill p-vio">选题</span></td><td>分类整组 + 单数据集多选（可混用）</td><td>下方实时显示总题数、各集贡献、去重数、无法解析的 id；<b>题量为 0 直接拒</b>。</td></tr>
+      <tr><td><span class="pill p-ok">窗口</span></td><td>即时 / 夜间固定窗 / 自定义区间</td><td>本地与服务时区分两行显示，避免 7 小时错位；窗口容量提示「可能装不下」只提醒不阻拦。</td></tr>
+    </tbody>
+  </table>
+  <p class="note">常见拒因：单人已有在跑任务（<span class="kbd">per_user_limit</span>）、空选择、id 不存在、夜间窗硬塞时间、窗口在过去。全局 4 并发满了不会拒，只会排队并告诉你前面有几个。</p>
+
+  <h3 class="block">读报告：三 Tab + 三级下钻</h3>
+  <div class="grid g3" style="margin-top:12px">
+    <div class="card"><h3>📊 总览</h3><p>总分环 + 计分题数 + 状态分布；能力 / 场景 / 复杂度切片均分；配置、数据来源、环境指纹原样保留。</p></div>
+    <div class="card"><h3>📋 题目</h3><p>逐题表可按「异常 / 低分 / 未计分」筛选。点一行进单题：题干、附件、本次执行、判据逐项、产物、轨迹时间线。</p></div>
+    <div class="card"><h3>⬇️ 导出</h3><p>选格式 → 生成 → 拿签名链接 → 下载。<span class="kbd">md</span> 粘周报、<span class="kbd">json</span> 二次处理、<span class="kbd">html</span> 直读、<span class="kbd">zip</span> 含全部产物。</p></div>
+  </div>
+
+  <h3 class="block">出题人：三种数据集来源</h3>
+  <div class="grid g3" style="margin-top:12px">
+    <div class="card"><h3>① 内置语料</h3><p>仓库自带题库，直接引用。</p></div>
+    <div class="card"><h3>② 内置切片视图</h3><p>给一组过滤条件，创建时快照成题 id 列表；建集全员开放，改删限本人 / 管理员。</p></div>
+    <div class="card"><h3>③ 自定义 zip 包</h3><p>按模板准备 task md + 夹具，上传先校验再登记；<span class="kbd">Grading Criteria</span> 每行必须是 <span class="kbd">- [ ]</span> checkbox。</p></div>
+  </div>
+
+  <h3 class="block">等价入口：不只看板</h3>
+  <div class="grid g2" style="margin-top:12px">
+    <div class="card"><h3><span class="ico" style="background:var(--blue-l);color:var(--blue)">⌘</span>命令行</h3><p><span class="kbd">python -m pawbench.cpd.acp_remote_eval.cli</span> 与看板同语义；报告下载按服务端 sha256 校验落盘字节。适合脚本化与 CI。</p></div>
+    <div class="card"><h3><span class="ico" style="background:var(--violet-l);color:var(--violet)">🤖</span>对话里（MCP + skill）</h3><p>让 agent 帮你列数据集、建切片、解析选题、提交、取详情与报告。默认给可外发版，完整内容显式请求；正文不内联，只给分页与链接。</p></div>
+  </div>
+
+  <div class="callout" style="margin-top:22px">
+    <b>更新提醒：</b>插件安装是「复制到本机」而非软链，我们改了看板后，需要装的同事 <span class="kbd">install --force</span> 重装才会生效，不会自动跟。分发与通知节奏由插件负责人把关。
+  </div>
+</section>
+
+<!-- ============ 05 APPENDIX ============ -->
+<section id="appendix">
+  <div class="eyebrow">05 · Boundary & appendix</div>
+  <h2 class="sec-t">边界与附录</h2>
+  <p class="sec-sub">把「明确不做」和「仍待推进」讲清楚，避免周会上被追问时含糊。</p>
+
+  <div class="grid g2" style="margin-top:18px">
+    <div class="card">
+      <h3><span class="ico" style="background:var(--amber-l);color:var(--amber)">⛔</span>首期明确不做</h3>
+      <ul class="clean">
+        <li><b>不托管被评测 agent</b>——ACP 地址不可达即任务失败，不是我们的责任边界</li>
+        <li><b>不做 <span class="kbd">run_bench.py --agent acp</span></b>——本地 CLI 走等价入口</li>
+        <li><b>不声明 fs/* 与 terminal/*</b>——文件只走 HTTP 数据面，结果与同环境 harness 分档</li>
+        <li><b>不做全量 150 题 remote 榜</b>——首期只放开判分仅依赖文本 / 文件产物的子集</li>
+        <li><b>不做周期计划 / 在线改分 / 报告模板自定义</b>——避免幂等、榜单污染与维护负担</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3><span class="ico" style="background:var(--blue-l);color:var(--blue)">🔜</span>后续里程碑</h3>
+      <ul class="clean">
+        <li><b>M4</b> · MCP server + pawbench-datasets skill（prepare / catalog 两条工作流）+ 判分沙箱正式落地</li>
+        <li><b>M5</b> · 任务打标矩阵 + 榜单按 <span class="kbd">by_environment</span> 分档，明确哪些任务不支持 BYO</li>
+        <li><b>安全硬门槛</b> · 自定义集判分脚本的隔离容器与 <span class="kbd">network: none</span> 验证（上线前必须完成）</li>
+        <li><b>向社区提 harness 注册插槽的 PR</b>，将来把一行注册挪进核心</li>
+        <li>三处人工确认（可外发版措辞、自定义集互见范围、pilot 分类）需评测负责人拍板</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3 class="block">附：项目信息与素材</h3>
+  <table style="margin-top:12px">
+    <tbody>
+      <tr><th style="width:20%">代码分支</th><td><span class="kbd">feat/acp-remote-eval</span> · commit <span class="kbd">23b789f</span> · 已推送 origin</td></tr>
+      <tr><th>核心文档</th><td>同目录 <span class="kbd">prd_</span> / <span class="kbd">design_</span> / <span class="kbd">acceptance_</span> / <span class="kbd">test_</span> / <span class="kbd">review_</span> / <span class="kbd">manual_acp_remote_eval.md</span></td></tr>
+      <tr><th>使用手册</th><td><span class="kbd">manual_acp_remote_eval.md</span>——§3 使用者 / §2 管理员 / §9 出题人 / §4 提测 / §7 报告 / §10-11 等价入口</td></tr>
+      <tr><th>数据口径</th><td>716 用例、32 路由、15 轮检视、resolve 0.03ms 量级均取自最新测试与设计文档；界面截图取自本地真实看板</td></tr>
+    </tbody>
+  </table>
+
+  <p class="foot-note">本汇报页用于产品组周会内部沟通。数字随特性演进更新，以 <span class="kbd">test_acp_remote_eval.md</span> 与 <span class="kbd">acceptance_acp_remote_eval.md</span> 的最新记录为准。</p>
+</section>
+
+</main>
+</div>
+
+<script>
+  // nav highlight on scroll
+  const links=[...document.querySelectorAll('nav a')];
+  const ids=links.map(a=>a.getAttribute('href').slice(1));
+  const obs=new IntersectionObserver((es)=>{
+    es.forEach(e=>{if(e.isIntersecting){
+      const id=e.target.id;
+      links.forEach(a=>a.classList.toggle('active',a.getAttribute('href')==='#'+id));
+    }});
+  },{rootMargin:'-15% 0px -55% 0px'});
+  ids.forEach(id=>{const el=document.getElementById(id);if(el)obs.observe(el)});
+
+  // ---- Lightbox: click a screenshot to zoom / pan / step through ----
+  (function(){
+    const shots=[...document.querySelectorAll('.shot img')];
+    if(!shots.length) return;
+
+    // wrap each screenshot in a clickable body with a hover hint
+    shots.forEach(img=>{
+      const wrap=document.createElement('div');
+      wrap.className='shot-body';
+      img.parentNode.insertBefore(wrap,img);
+      wrap.appendChild(img);
+      const hint=document.createElement('span');
+      hint.className='zoom-hint';
+      hint.textContent='⤢ 点击放大';
+      wrap.appendChild(hint);
+      wrap.addEventListener('click',()=>openAt(img));
+    });
+
+    // build lightbox DOM
+    const lb=document.createElement('div');
+    lb.className='lb';
+    lb.innerHTML =
+      '<div class="lb-top">'+
+        '<div class="lb-title"></div>'+
+        '<div class="lb-tools">'+
+          '<button class="lb-btn wide" data-act="prev" title="上一张 (←)">‹ 上一张</button>'+
+          '<button class="lb-btn wide" data-act="next" title="下一张 (→)">下一张 ›</button>'+
+          '<button class="lb-btn" data-act="out" title="缩小 (-)">−</button>'+
+          '<span class="lb-zoom">100%</span>'+
+          '<button class="lb-btn" data-act="in" title="放大 (+)">+</button>'+
+          '<button class="lb-btn wide" data-act="fit" title="适应屏幕 (0)">适应</button>'+
+          '<button class="lb-btn close" data-act="close" title="关闭 (Esc)">✕</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="lb-stage"><img alt=""></div>'+
+      '<div class="lb-hint">滚轮缩放 · 拖拽移动 · <kbd>+</kbd><kbd>−</kbd> 缩放 · <kbd>0</kbd> 适应 · <kbd>←</kbd><kbd>→</kbd> 切换 · <kbd>Esc</kbd> 关闭</div>';
+    document.body.appendChild(lb);
+
+    const stage=lb.querySelector('.lb-stage');
+    const view=lb.querySelector('.lb-stage img');
+    const title=lb.querySelector('.lb-title');
+    const zoom=lb.querySelector('.lb-zoom');
+    let idx=0, scale=1, fit=1, tx=0, ty=0, dragging=false, moved=false, sx=0, sy=0;
+
+    function clampPan(){
+      const nw=(view.naturalWidth||1)*scale, nh=(view.naturalHeight||1)*scale;
+      const r=stage.getBoundingClientRect();
+      const mx=Math.max(0,(nw-r.width)/2)+40, my=Math.max(0,(nh-r.height)/2)+40;
+      tx=Math.min(mx,Math.max(-mx,tx)); ty=Math.min(my,Math.max(-my,ty));
+    }
+    function apply(){
+      clampPan();
+      view.style.transform='translate('+tx+'px,'+ty+'px) scale('+scale+')';
+      zoom.textContent=Math.round(scale/fit*100)+'%';
+    }
+    function setFit(){
+      const nw=view.naturalWidth||1, nh=view.naturalHeight||1;
+      const r=stage.getBoundingClientRect();
+      fit=Math.max(0.01,Math.min((r.width-48)/nw,(r.height-40)/nh));
+      scale=fit; tx=0; ty=0; apply();
+    }
+    function show(i){
+      idx=(i+shots.length)%shots.length;
+      const src=shots[idx].getAttribute('src');
+      const cap=shots[idx].closest('.shot').querySelector('.bar .ttl');
+      const name=cap?cap.textContent:shots[idx].alt;
+      title.innerHTML=name+' <small>'+(idx+1)+' / '+shots.length+'</small>';
+      view.onload=function(){ setFit(); view.onload=null; };
+      view.src=src;
+    }
+    function openAt(img){ show(shots.indexOf(img)); lb.classList.add('open'); document.body.style.overflow='hidden'; }
+    function close(){ lb.classList.remove('open'); document.body.style.overflow=''; view.onload=null; view.removeAttribute('src'); }
+    function center(){ return {px:stage.clientWidth/2, py:stage.clientHeight/2}; }
+    function zoomAt(factor,px,py){
+      const ns=Math.min(Math.max(scale*factor,fit*0.4),fit*10);
+      const k=ns/scale;
+      tx=px-(px-tx)*k; ty=py-(py-ty)*k; scale=ns; apply();
+    }
+
+    lb.querySelector('.lb-tools').addEventListener('click',e=>{
+      const b=e.target.closest('[data-act]'); if(!b) return;
+      const a=b.dataset.act, c=center();
+      if(a==='in') zoomAt(1.25,c.px,c.py);
+      else if(a==='out') zoomAt(0.8,c.px,c.py);
+      else if(a==='fit') setFit();
+      else if(a==='prev') show(idx-1);
+      else if(a==='next') show(idx+1);
+      else if(a==='close') close();
+    });
+    stage.addEventListener('click',e=>{ if(moved){moved=false;return;} if(e.target===stage) close(); });
+    stage.addEventListener('wheel',e=>{
+      e.preventDefault();
+      const r=stage.getBoundingClientRect();
+      zoomAt(e.deltaY<0?1.12:0.89, e.clientX-r.left, e.clientY-r.top);
+    },{passive:false});
+    // two-finger pinch zoom on touch devices
+    let pinch=null;
+    stage.addEventListener('touchstart',e=>{
+      if(e.touches.length!==2) return;
+      const [a,b]=e.touches;
+      pinch={d:Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY)};
+    },{passive:true});
+    stage.addEventListener('touchmove',e=>{
+      if(e.touches.length!==2||!pinch) return;
+      e.preventDefault();
+      const [a,b]=e.touches, d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+      const r=stage.getBoundingClientRect();
+      zoomAt(d/pinch.d,(a.clientX+b.clientX)/2-r.left,(a.clientY+b.clientY)/2-r.top);
+      pinch={d};
+    },{passive:false});
+    stage.addEventListener('touchend',e=>{ if(e.touches.length<2) pinch=null; },{passive:true});
+    stage.addEventListener('pointerdown',e=>{
+      if(e.pointerType==='mouse'&&e.button!==0) return;
+      dragging=true; moved=false; sx=e.clientX-tx; sy=e.clientY-ty;
+      stage.setPointerCapture(e.pointerId);
+      stage.classList.add('grabbing');
+    });
+    stage.addEventListener('pointermove',e=>{
+      if(!dragging) return;
+      if(Math.abs(e.clientX-sx-tx)>3||Math.abs(e.clientY-sy-ty)>3) moved=true;
+      tx=e.clientX-sx; ty=e.clientY-sy; apply();
+    });
+    const endDrag=()=>{ dragging=false; stage.classList.remove('grabbing'); };
+    stage.addEventListener('pointerup',endDrag);
+    stage.addEventListener('pointercancel',endDrag);
+    window.addEventListener('keydown',e=>{
+      if(!lb.classList.contains('open')) return;
+      const c=center();
+      if(e.key==='Escape') close();
+      else if(e.key==='+'||e.key==='=') zoomAt(1.25,c.px,c.py);
+      else if(e.key==='-') zoomAt(0.8,c.px,c.py);
+      else if(e.key==='0') setFit();
+      else if(e.key==='ArrowLeft') show(idx-1);
+      else if(e.key==='ArrowRight') show(idx+1);
+      else return;
+      e.preventDefault();
+    });
+    window.addEventListener('resize',()=>{ if(lb.classList.contains('open')) setFit(); });
+  })();
+</script>
+</body>
+</html>

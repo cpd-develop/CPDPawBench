@@ -889,3 +889,37 @@ Playwright 驱动真 console（`http://127.0.0.1:8088/apps/pawbench-eval`）+ �
 | L50 | `TaskLoader` 构造日志 | 每请求一条 INFO | 不越界改核心；责任：语料/loader owner |
 | L51 | `dataset task unreadable` warn | 逐请求重复 | 低优先级；责任：服务 owner |
 | L52 | `reports.py` 的 dest 判定 | 与看板归一规则不一致 | 单独评估分享链接兼容；责任：报告模块 owner |
+
+## 汇报材料检视：产品组周会 HTML（2026-11-23）
+
+对象：`weekly-report/index.html` + 8 张真实看板截图，非服务代码。检视者：**一个新上下文
+subagent**，只给汇报文件与六份特征文档（prd/design/acceptance/manual/test/review），不给作者说明。
+五类必查中"资源泄漏 / 阻塞卡顿 / 日志 / XSS / 敏感信息"均无发现；重点是数字与事实一致性。
+
+### 属实并已修
+
+| # | 严重度 | 问题 | 处理 |
+|---|---|---|---|
+| 1 | 严重 | 封面与正文写"34 条路由"，源文档与代码实际为 **32**（精确数 `@app.get/post/...` 装饰器：29 控制面 + 3 数据面） | 全页 4 处 34→32；"控制面 34 路由"→32 |
+| 2 | 严重 | 判据 8 写"两档详情（shared/完整版）"，但 `review_` 第十一轮已撤档、`manual_` §7.4 明确"只有一个视图" | 改为"单一完整视图 + 白名单 token 边界"，判据措辞同步 |
+| 3 | 一般 | MCP tools 写 11 个，代码 `mcp/server.py` 实际 **19** 个 `@server.tool()` | 改为 19 |
+| 4 | 一般 | "累计发现 2 个严重项"实为最近一轮（第十五轮）的数 | 改"最近一轮检出的 2 个严重项" |
+| 5 | 一般 | "0.03ms 选择器解析"是 `resolve()` 单步量级（design §12 只认量级不认精确值），全量解析 9–18ms | 改为"resolve 量级 0.03ms，全量 9–18ms" |
+| 6 | 一般 | lightbox 触屏无平移/缩放、拖拽可把图拖出视口、极小视口 fit 为负翻转、`src=''` 副作用、切图用旧尺寸算 fit、末节导航高亮不更新 | 全部修：Pointer Events + 双指 pinch、clampPan 拖拽边界、fit 下限 0.01、`removeAttribute('src')`、只在 onload 里 setFit、rootMargin 下边界放宽 |
+| 7 | 建议 | `v-trace.png` 与 `v-task.png` 主体像素相同（仅右上角差异），配文却说"轨迹事件列表" | 配图与配文不符：配文改为诚实描述"轨迹区分页读取入口"，不假称图中有事件列表 |
+| 8 | 建议 | 单题 0.60 分与 `manual_` 同题 1.00 全绿冲突 | 配文注明"某次失败复现 attempt，手册另一轮同题 1.00" |
+| 9 | 建议 | "四种接入"与图内 5 个入口卡自相矛盾 | 改为"五种接入" |
+
+### 检视者误判（据证据驳回，未改）
+
+- **"MCP 未实现、属 M4"**：`acceptance_` 状态行是 M3 时的旧快照。实据：`test_` §4.26
+  「M4 增量：同进程 MCP 控制面」、`tests/.../test_mcp.py` 存在、`service/daemon.py:169`
+  调 `mount_mcp`、`mcp/server.py` 19 个 tool 均落地。汇报按已实现写，正确。
+- **"30 个 .py 与 26/24 计数不符"**：实查 `find` 得 service 侧 30、test 侧 30，
+  检视者引用的 26/24 是 M2 旧口径。汇报数字正确。
+
+### 复检
+
+数字全页 grep 无残留；HTMLParser 通过、6 段 section 闭合、8 张图引用齐全；
+Playwright lightbox 14 项交互回归 ALL PASS（含缩放 100→156→125%、适应复位、切换、
+Esc/按钮关闭、零 pageerror）。
