@@ -2436,7 +2436,7 @@ function SettingsModule(props) {
         { value: "zip", label: "ZIP" }
       ]
     }
-  ))), /* @__PURE__ */ __h("div", { className: "pbe-cell-sub" }, "这两个只影响打开报告时的默认选择，存在这台浏览器里。")), /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "关于 token"), /* @__PURE__ */ __h("div", { className: "pbe-cell-sub", style: { lineHeight: 1.8 } }, "页面调的是 ", /* @__PURE__ */ __h("span", { className: "pbe-mono" }, "/api/pawbench-eval/v1/…"), "，插件后端在转发时加上", /* @__PURE__ */ __h("span", { className: "pbe-mono" }, " Authorization: Bearer …"), "。所以：", /* @__PURE__ */ __h("br", null), "· 浏览器里没有 token 的副本，同事来屏幕共享也看不到；", /* @__PURE__ */ __h("br", null), "· 换机器要重新填一次，因为它跟着这台机器的插件目录走；", /* @__PURE__ */ __h("br", null), "· 轮换 token 之后，页面学到的提交人身份会作废，第一次提交时重新学。"))));
+  ))), /* @__PURE__ */ __h("div", { className: "pbe-cell-sub" }, "只影响导出面板一开始选中的格式，存在这台浏览器里。")), /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "关于 token"), /* @__PURE__ */ __h("div", { className: "pbe-cell-sub", style: { lineHeight: 1.8 } }, "页面调的是 ", /* @__PURE__ */ __h("span", { className: "pbe-mono" }, "/api/pawbench-eval/v1/…"), "，插件后端在转发时加上", /* @__PURE__ */ __h("span", { className: "pbe-mono" }, " Authorization: Bearer …"), "。所以：", /* @__PURE__ */ __h("br", null), "· 浏览器里没有 token 的副本，同事来屏幕共享也看不到；", /* @__PURE__ */ __h("br", null), "· 换机器要重新填一次，因为它跟着这台机器的插件目录走；", /* @__PURE__ */ __h("br", null), "· 轮换 token 之后，页面学到的提交人身份会作废，第一次提交时重新学。"))));
 }
 
 // src/shell.tsx

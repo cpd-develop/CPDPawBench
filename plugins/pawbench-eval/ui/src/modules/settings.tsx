@@ -177,7 +177,7 @@ export function SettingsModule(props: {
               />
             </Field>
           </Fieldset>
-          <div className="pbe-cell-sub">这两个只影响打开报告时的默认选择，存在这台浏览器里。</div>
+          <div className="pbe-cell-sub">只影响导出面板一开始选中的格式，存在这台浏览器里。</div>
         </Panel>
 
         <Panel>
