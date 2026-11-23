@@ -976,6 +976,46 @@ the_installed_copy` 与反向 `IGNORE_OFF` 一起守它。同时把握在插件�
 **646 passed, 1 warning in 41.17s**（630 + 16）。核心目录
 `pawbench/ tests/ data/ run_bench.py pyproject.toml requirements.txt` 零改动。
 
+### 4.30 console 门：让评测尝试出现在被测 agent 自己的 console 上（678→695，2026-11-23）
+
+**为什么要有这一批。** `qwenpaw acp` 那条门是临时会话（`--runtime-provider`），
+`SessionSaveHook` 直接返回，`~/.qwenpaw/workspaces/<agent>/` 下既没有 `chats.json` 行也没有
+session 文件——提交了评测，被测 agent 的 console 页面上什么也看不到。`--console` 门改为
+直接调 `POST /api/console/chat`，每个 attempt 于是是那个 agent 聊天列表里的一行。这一批记的
+是那一层的用例与实测。
+
+环境：`/Users/anderson/Desktop/ClawParterner/QwenPaw/venv_312/bin/python`（3.12，acp 1.0），
+真机 QwenPaw console `127.0.0.1:8088`，桥 `--console … --agent pawbench_eval --port 8474`，
+服务 `127.0.0.1:8471`。
+
+```
+PYTHONPATH=$PWD <venv>/bin/python -m pytest tests/cpd -q --basetemp=./.tmp-py
+→ 695 passed in 28.38s（678 → 695，+17 全在 test_console_agent.py）
+```
+
+`test_console_agent.py` 共 23 项，分四组：
+
+| 组 | 用例 | 钉住的东西 |
+|---|---|---|
+| 投递与命名 | `an_attempt_files_itself_under_the_id_the_report_quotes`、`the_chat_is_named_after_the_attempt_it_belongs_to`、`a_working_directory_that_is_not_an_attempt_is_left_alone`、`the_prompt_carries_the_fixture_links_the_manifest_points_at` | body 的 `session_id`/`user_id`/`channel` 三字段、会话名 `task · job（第 n 次）`、非 attempt 目录不改名 |
+| 翻译 | `a_tool_call_arrives_as_a_call_and_a_result`、`a_tool_call_survives_a_console_that_omits_delta_and_status`、`the_answer_is_sent_once_even_when_the_closing_row_names_no_message`、`a_refusal_reaches_the_transcript_as_the_words_it_was` | 工具调用是 call + result；缺 `delta`/`status` 也不丢；收尾全文行 `msg_id: null` 不导致同一段话发两次；拒答的字进 transcript |
+| 失败的形状 | `a_turn_that_says_nothing_is_a_failed_attempt`、`a_stream_error_is_a_failed_attempt_not_an_empty_answer`、`a_200_that_is_not_an_event_stream_is_a_failed_attempt`、`a_failed_run_is_not_reported_as_a_finished_turn`、`a_console_that_goes_quiet_fails_the_turn_instead_of_hanging` | 四种"没成"都是**失败的 attempt**（`RequestError`），不是"agent 什么都没说"；静默 300s 判 `console_stalled` |
+| 停止与放手 | `a_cancelled_turn_stops_the_console_run`、`a_client_that_stops_reading_stops_the_console_run`、`a_stop_the_console_did_not_perform_is_logged_as_such`、`a_cancel_that_loses_its_client_still_stops_the_console_run`、`two_callers_asking_to_stop_share_one_request`、`a_finished_turn_lets_go_of_the_client_connection`、`a_second_turn_on_one_session_still_reaches_its_client`、`a_busy_session_is_told_so_instead_of_racing_itself`、`a_closed_agent_does_not_open_another_connection`、`the_turn_summary_is_readable_in_a_plain_log_line` | 停止按 session id（不查列表）、写失败要停运行、`stopped:false` 不说谎、shield、一次取消一次 stop、轮末放掉连接而下一轮仍能收到事件、日志里的数字在 `message` 里 |
+
+判据（`review_` 第十二轮同名发现）：`reverse_checks/reverse_round12.py` **15 条变异、
+15/15 判红、零幸存者**，恢复后 sha256 一致。
+
+真机三条作业（细节见 `review_` 第十二轮"真实端到端"）：`job-b228b5e26a88ee03` finished、
+`overall 1.0`、`session_id=1795405812343-9hwkro2`，console 侧 `chats.json` 一行 + 历史文件 +
+`GET /api/chats/{id}` 18 条消息；`job-8e4188770f0b33e7` 的桥日志
+`console turn finished: session=… stop_reason=end_turn updates=234 skipped=0 tokens=86285`；
+取消路径最后一条 `job-098a5d91c37ebb27` 只发**一次** stop 且记 `console run stopped`。
+
+两条如实记：① 这一层**不测** console 自己的错（它 409/500 时我们只保证"不被当成成功"）；
+② `test_a_busy_session_is_told_so_instead_of_racing_itself` 直接把 `_Session.running` 置位
+（`# noqa: SLF001`），因为造一次真实并发需要两个 prompt 抢同一 session，代价比收益大——
+它钉的是"这个分支在"，不是"这个分支会被走到"。
+
 ## 5. 下一批要补的执行记录
 
 R 组（真机 QwenPaw + `openrouter/free` judge）与 G 组（插件 validate→install→看板）目前还没有可贴的输出，落地时按 §4.1 的格式记环境、命令与逐项结论，不要只写"已验证"。

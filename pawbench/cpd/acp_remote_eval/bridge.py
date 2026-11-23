@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""``python -m pawbench.cpd.acp_remote_eval.bridge`` -- a stdio agent, on a port.
+"""``python -m pawbench.cpd.acp_remote_eval.bridge`` -- ACP over a port, two doors.
 
 The service reaches subjects over streamable HTTP only (``AcpEndpoint.http``,
 ``runtime.http_endpoint``), and that is deliberate: a job row must not carry a
@@ -14,6 +14,16 @@ connections.
         --command "qwenpaw acp" --port 8472
 
 Then submit with ``acp_url=http://127.0.0.1:8472/acp``.
+
+``--console`` is the other door, and it exists because the first one leaves no
+trace on the agent's own console: a session opened over ``qwenpaw acp`` is
+ephemeral (``--runtime-provider`` asks for that), so nothing is registered or
+saved on that side -- no chat row, no session file, nothing to click.  Pointed
+at a running console instead, each attempt becomes a real conversation there,
+under the session id the report quotes (see :mod:`.console_agent`):
+
+    python -m pawbench.cpd.acp_remote_eval.bridge \
+        --console http://127.0.0.1:8088 --agent pawbench_eval --port 8472
 
 Two decisions worth stating, because both are the opposite of "just proxy the
 bytes":
@@ -45,6 +55,11 @@ from acp.interfaces import Agent, Client
 
 #: The path the service's own client appends to whatever base URL it is given.
 DEFAULT_PATH = "/acp"
+
+#: Calls that decide which connection receives a session's updates.  A turn is
+#: delivered to the connection that asked for it; the ``session/*`` calls that
+#: open one name their connection in their response instead.
+_ROUTING_CALLS = frozenset({"prompt"})
 
 _log = logging.getLogger("pawbench.bridge")
 
@@ -212,7 +227,26 @@ class _Proxy:
         self._connection = connection
 
     async def _call(self, name: str, **kwargs: Any) -> Any:
-        backend = await self._backend.connection()
+        # The stdio lane's backend is a *process*: reaching it is an await.
+        # The console lane's backend is the console itself, which is already
+        # reachable, so the same call has nothing to wait for.
+        backend = self._backend
+        reach = getattr(backend, "connection", None)
+        if callable(reach):
+            backend = await reach()
+        # A turn belongs to the connection that asked for it.  Routing only on
+        # ``session/new`` was enough while a session lived exactly one turn; the
+        # console lane lets go of a session's connection when its turn ends (so a
+        # long-lived bridge does not hold every closed ASGI connection alive), and
+        # this is what re-establishes it.  Cancel is deliberately not routed: the
+        # connection that drives the turn is the one that must keep receiving
+        # updates, and a cancel often arrives over a second one.  Note this goes
+        # to the *bridge* backend, not to the resolved one -- on the stdio lane
+        # that resolves to the child process, which knows nothing of HTTP peers.
+        session_id = kwargs.get("session_id")
+        route = getattr(self._backend, "route", None)
+        if session_id and name in _ROUTING_CALLS and callable(route):
+            route(str(session_id), self._connection)
         method = getattr(backend, name, None)
         if method is None:
             from acp.exceptions import RequestError
@@ -276,6 +310,29 @@ class _Proxy:
         return _missing
 
 
+def _close_with_the_server(app: Any, backend: Any) -> Any:
+    """Release the backend when the ASGI app shuts down.
+
+    ``create_asgi_app`` installs its own lifespan (it closes the ACP server), and
+    Starlette runs exactly one, so this composes around it rather than adding a
+    second.  Without it, ``main`` returning leaves a shared ``AsyncClient`` and
+    -- on the stdio lane -- a child process with nothing to stop it.
+    """
+    inner = app.router.lifespan_context
+
+    @contextlib.asynccontextmanager
+    async def lifespan(scope: Any) -> Any:
+        async with inner(scope) as state:
+            try:
+                yield state
+            finally:
+                with contextlib.suppress(Exception):
+                    await backend.close()
+
+    app.router.lifespan_context = lifespan
+    return app
+
+
 def create_app(command: Sequence[str], *, cwd: str | None = None, path: str = DEFAULT_PATH) -> Any:
     """The ASGI app, so a test can drive it without a port."""
     from acp.http.asgi import create_asgi_app
@@ -283,20 +340,60 @@ def create_app(command: Sequence[str], *, cwd: str | None = None, path: str = DE
     backend = _Backend(command, cwd=cwd, env=None)
     app = create_asgi_app(lambda connection: _Proxy(backend, connection), path=path)
     app.state.bridge_backend = backend
-    return app
+    return _close_with_the_server(app, backend)
+
+
+def create_console_app(
+    base_url: str,
+    *,
+    agent: str | None = None,
+    path: str = DEFAULT_PATH,
+    client: Any = None,
+) -> Any:
+    """The same seam, with a running QwenPaw console behind it instead of a child.
+
+    Two doors, one protocol. The stdio door is right for an agent that keeps no
+    history of its own; the console door is right when the person who owns the
+    agent wants to watch the run on the agent's own page, because the console is
+    what registers and stores the conversation (see
+    :mod:`...console_agent` for why the stdio lane cannot do that).
+    """
+    from acp.http.asgi import create_asgi_app
+
+    from .console_agent import ConsoleAgent
+
+    backend = ConsoleAgent(base_url, agent=agent, client=client)
+    app = create_asgi_app(lambda connection: _Proxy(backend, connection), path=path)
+    app.state.bridge_backend = backend
+    return _close_with_the_server(app, backend)
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m pawbench.cpd.acp_remote_eval.bridge",
         description=(
-            "Serve a stdio ACP agent over the streamable HTTP transport the service speaks."
+            "Serve an agent over the streamable HTTP transport the service speaks: "
+            "either a stdio command (--command) or a running QwenPaw console (--console)."
+        ),
+    )
+    door = parser.add_mutually_exclusive_group(required=True)
+    door.add_argument(
+        "--command",
+        help='the agent, as one shell-quoted line, e.g. "qwenpaw acp --agent default"',
+    )
+    door.add_argument(
+        "--console",
+        metavar="URL",
+        help=(
+            "a running QwenPaw console, e.g. http://127.0.0.1:8088 . Turns are posted to "
+            "its /api/console/chat, so each evaluation attempt appears on that console's "
+            "own chat list, with its history, under the session id the report quotes."
         ),
     )
     parser.add_argument(
-        "--command",
-        required=True,
-        help='the agent, as one shell-quoted line, e.g. "qwenpaw acp --agent default"',
+        "--agent",
+        default=None,
+        help="which agent the console should answer as (sent as X-Agent-Id)",
     )
     parser.add_argument("--host", default="127.0.0.1", help="bind address (default loopback only)")
     parser.add_argument("--port", type=int, default=8472, help="port to listen on")
@@ -312,8 +409,11 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    command = shlex.split(args.command)
-    if not command:
+    if args.agent and args.command:
+        print("error: --agent only applies to --console", file=sys.stderr)
+        return 2
+    command = shlex.split(args.command) if args.command else []
+    if args.command and not command:
         print("error: --command is empty", file=sys.stderr)
         return 2
     logging.basicConfig(
@@ -326,16 +426,21 @@ def main(argv: list[str] | None = None) -> int:
         print("error: the bridge needs uvicorn: pip install uvicorn", file=sys.stderr)
         return 1
 
-    app = create_app(command, cwd=args.cwd, path=args.path)
+    if args.console:
+        app = create_console_app(args.console, agent=args.agent, path=args.path)
+        target = f"{args.console} (console, agent={args.agent or 'active'})"
+    else:
+        app = create_app(command, cwd=args.cwd, path=args.path)
+        target = command[0]
     print(
-        f"serving {command[0]} over ACP/HTTP on http://{args.host}:{args.port}{args.path}",
+        f"serving {target} over ACP/HTTP on http://{args.host}:{args.port}{args.path}",
         file=sys.stderr,
     )
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     return 0
 
 
-__all__ = ["Agent", "create_app", "main"]
+__all__ = ["Agent", "create_app", "create_console_app", "main"]
 
 
 if __name__ == "__main__":

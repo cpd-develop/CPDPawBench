@@ -297,6 +297,54 @@ chmod +x "$VENV/bin/qwenpaw-acp-legacy"
 `qwenpaw acp --runtime-provider openai-env` 配 `OPENAI_BASE_URL` / `OPENAI_API_KEY` /
 `OPENAI_MODEL` 三个环境变量走临时 provider（上面的 wrapper 已经替你做了）。
 
+#### 要让被测 agent 的 console 页面上看得见这次评测：换个门
+
+上面这条路有一个后果，第一次用的人都会问"我提交的任务呢"：`qwenpaw acp` 是**临时会话**
+（wrapper 里的 `--runtime-provider` 正是让它临时的那句话），QwenPaw 因此把会话标成
+`qwenpaw.ephemeral`，`SessionSaveHook` 直接返回——`~/.qwenpaw/workspaces/<agent>/` 下
+**既没有 chats.json 行，也没有 session 文件**。而 console 的列表读的就是前者、历史读的是
+后者，所以那边什么都没有。报告里的 `session_id` 在那台 console 上搜不到，不是 id 不对，
+是根本没有落盘。
+
+桥的第二个门就是为这件事：不去 `qwenpaw acp`，直接调**正在运行的 console** 的聊天接口。
+每个 attempt 于是变成那个 agent 聊天列表里的一行，带完整历史与工具调用：
+
+```bash
+# console 就是被测 agent 自己的那个 QwenPaw（默认 127.0.0.1:8088，见 config.json 的 last_api）
+python -m pawbench.cpd.acp_remote_eval.bridge \
+    --console http://127.0.0.1:8088 \
+    --agent pawbench_eval \
+    --port 8472
+# 提交时 ACP 地址一样填：http://127.0.0.1:8472/acp
+```
+
+`--agent` 是 console 的 agent 档案 id，和 `X-Agent-Id` 同一个意思——评测哪个 agent 就写哪个，
+不写就是 console 当前的活跃 agent。会话 id 沿用报告里那个（`1795156778446-y2r8j2a` 形状），
+所以报告里的 id 直接粘到 console 的会话里就能对上。
+
+桥在这条路上做的事，以及它**不**做的事：
+
+- **投递**：`POST /api/console/chat`，body 里 `session_id` 用报告那个、`channel: "console"`、
+  `user_id: "default"`；然后把 SSE 事件翻成 ACP 的 `session/update`（正文、思考、工具调用与
+  结果、token 用量）回给服务。
+- **命名**：attempt 结束后把会话名改成 `<task_id> · <job_id>（第 n 次）`，因为 console 默认
+  拿首句当标题，一串任务读起来分不清哪次是哪次。
+- **取消**：服务侧超时/取消时，桥会 `POST /api/console/chat/stop?chat_id=<session_id>`——不加
+  这一下，console 那边会继续跑，直到它自己结束。传的可以是 session id，console 自己会反查
+  成 chat id，所以取消路径上不查会话列表；而且这个请求是**独立任务 + shield** 的：取消发生时
+  客户端往往立刻断开，直接 await 会让 stop 自己也被取消（实测就是这个形状：日志里只剩
+  `connect_tcp.failed CancelledError`，而 console 还在写）。
+- **失败要说出来**：console 有四种"这一轮没成"的形态——200 但不是 SSE、流里
+  `data: {"error": ...}`、`response.status: failed`、流正常关掉却一条事件都没有。四种都记成
+  一次**失败的 attempt**，不是"agent 什么都没说"。后者会被照常打分，那是这里最贵的一种静默。
+- **不写任何文件**：历史是 QwenPaw 自己存的，桥不碰 `sessions/` 和 `chats.json`。这条是刻意的，
+  两边对同一段对话的理解只能有一个来源。
+
+代价也要说清楚：**这条路用的是 agent 自己的模型配置**。`--runtime-provider` 就是让它临时的
+那句，所以 console 模式没有临时 provider；想让评测固定跑在某个模型上（比如 `eval-runtime.env`
+里的 `gpt-6-sol`），只能走上面的 stdio 门，并接受 console 里看不到。两边不可兼得，这是
+QwenPaw 对"临时会话"的定义决定的，不是桥偷懒。
+
 ### 3.4 让 agent 真的把文件写出来
 
 这一步比连通更容易翻车，而且症状很像"评测器坏了"：作业 `finished`，每道题
@@ -551,6 +599,10 @@ agent**，让 agent 用它来命名这场会话——所以报告里印的那个
 
 agent 只有声明了 `loadSession` 能力才接得住这个 id。接不住（能力没声明，或明确拒绝）时它
 会自己起一个，报告照样印它起的那个——仍然是正确的 grep 目标，只是不是我们挑的那个。
+
+还要注意一件事：**"在那个 agent 的 console 里能点开这场会话"取决于走的是哪个门**，不是
+取决于 id。`qwenpaw acp` 那条是临时会话，agent 不落盘，console 里自然点不到（原因见 3.3 末尾）；
+走 `--console` 那条才有——每条 attempt 一行，名字是 `<task_id> · <job_id>（第 n 次）`。
 
 一次尝试一个 `trace_id`，重试会换新的——这正是它有用的地方：**两次重试的日志不会混在
 一起**。升级前跑的老作业这两个字段是空的，报告里显示 `—`。

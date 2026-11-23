@@ -565,3 +565,135 @@ M4 单独做了反向验证：临时移除 `finally` 里的 try/except 后跑 `t
 理由见上表，未做代码变更。
 
 遗留：上表第 4、6 项；另有第七轮遗留的第九轮检视状态未回填，与本轮无关。
+
+## 第十二轮：console 门（第 21 轮检视）的 20 条发现与处理（2026-11-23）
+
+- 检视者：新上下文 subagent（`reviewer-console-lane`），检视时间 2026-11-23 03:20 UTC
+- 检视范围：`pawbench/cpd/acp_remote_eval/console_agent.py`（新增 640 行）、
+  `bridge.py` 的 `--console` 那一段（`_App`/`_Proxy._call`/`create_console_app`/CLI）、
+  `tests/cpd/acp_remote_eval/test_console_agent.py`（当时 6 项）、
+  `manual_acp_remote_eval.md` §3.3 与 §7.3 的改动
+- 提供的材料：改动文件全文 + 首次真实作业的证据（`job-c7240d10d5b12140`，
+  `session_id=1795404629278-g5uh8wf`，`chats.json` 一行 + 历史文件 +
+  `GET /api/chats/{id}` 的 18 条消息）+ 只读的 `QwenPaw/src/qwenpaw/app/routers/console.py`
+  与 `app/chats/*`；**未提供作者方案说明**，也未告知新用例断言什么
+- 检视者独立做了什么：自己读 `console.py` 的 `post_console_chat_stop` 与 SSE 生成器，
+  按五类必查逐项过文件，并按"一轮能怎么结束而没有答案"列出四种形态；未跑用例（当时
+  6 项都在作者手里跑过），**仓库零改动**
+
+结论：1 条严重、8 条一般、11 条建议。检视者原话「#4 是唯一一处会让评测结论本身失真的
+静默路径，建议优先处理」。按规则"严重项未修不许 commit"，#4 与其余 19 条一并处理如下。
+
+### 五类必查逐项结论
+
+| # | 类别 | 结论 |
+|---|---|---|
+| 1 | 性能 | #1（连接池上限未声明，池满 30s 排队后报 `console_unreachable`）、#2（每个 attempt 一次全量 `GET /api/chats`）、#3（改名在 `PromptResponse` 前同步 await）、#12（整轮无 idle 边界） |
+| 2 | 未处理异常 | #4（四种"没成"都记成 `end_turn` 空答案）、#5（畸形 `data` 块中止整轮）、#6（`session_update` 写失败不处理）、#8（`failed` 映射成 `end_turn`）、#13（stop 不查状态码）、#14（`_chat_id` 失败只打 debug） |
+| 3 | 资源泄漏 | #7（`close()` 后静默新建客户端）、#9（`_sessions` 只增不减、`connection` 引用已关闭的 ASGI 对象）、#10（自建 `AsyncClient` 没挂 shutdown） |
+| 4 | 阻塞卡顿 | #11（取消路径无超时）、#12（同上）；另有并发节的"同一 session 两条连接互抢 / `running` 是个布尔量" |
+| 5 | 日志 | #13/#14（stop 日志说谎）、#15（畸形 SSE 打了 120 字符内容）、#16（一轮起止无 info） |
+| — | 越界改动 | 无：改动全在 `pawbench/cpd/acp_remote_eval/` 与 `tests/cpd/`；核心 `pawbench/` 一个字节未动（H3 仍空） |
+
+### 发现与处理
+
+| # | 严重度 | 位置 | 发现 | 处理 |
+|---|---|---|---|---|
+| 4 | **严重** | `console_agent.py` `_stream_turn`/`_apply` | 四种"这一轮没成"的形态都返回 `("end_turn", None)`：200 但非 SSE、流里 `data: {"error": ...}`（`console.py` 的 `event_generator` 就是这么报错的）、`response.status == failed`、流关掉却零事件。评测照常打分，报告里看不出这次是失败 | **已修**，四条各有一个入口：`_require_event_stream` 查 `content-type`；`payload["error"]` 直接 `raise ConsoleError("console_stream_error")`；`status == "failed"` → `console_run_failed`；整轮 `updates == 0`（`cancelled` 除外）→ `console_empty_turn`。四者都是 `ConsoleError`，经 ACP 层变成 `RequestError`，harness 记 `acp_agent_error` |
+| 1 | 一般 | 同上 `client` 属性 | 共享 `AsyncClient` 用 httpx 默认池（100/20），代码里没有闸门：并行 attempt 一多先排 30s 再抛 `PoolTimeout`，被归成"console 挂了" | **部分修**：显式 `httpx.Limits(max_connections=32, max_keepalive=16)`，并把 `httpx.PoolTimeout` 单独映射成 `console_capacity`（"桥的容量不足"，不是"console 不可达"）。**不加 `Semaphore`**，理由见 L43 |
+| 2 | 一般 | `_stop`/`_chat_id` | 每个 attempt 至少一次全量 `GET /api/chats`（无分页），取消时再一次；这次查询还在 prompt 关键路径上 | **已修**：停止直接用 session id（`post_console_chat_stop` 自己会 `get_chat_id_by_session`，`console.py:601-607`），取消路径**零**列表查询；列表只剩改名那一次，且带 4s 超时。真实作业实测：每轮 1 次 `GET /api/chats`（改名前），取消时 0 次 |
+| 3 | 建议 | `prompt` 末尾 | 改名在 `PromptResponse` 返回前同步 await（`list` + `put` 两次请求，read timeout `None`），console 慢时会把一次成功作答拖成 harness 的超时 | **已修**：改名两次请求都 `asyncio.wait_for(..., 4s)`，失败只 warning——名字是便利，对话才是交付物 |
+| 5 | 一般 | `_apply` 映射 | 构造 `ToolCallStart`/`ToolCallProgress` 的异常刻意不捕获，一条畸形工具数据会中止整轮、丢掉其后所有内容，还会被记成"被测 agent 出错" | **已修**：`_apply` 包一层，`KeyError/TypeError/ValueError/AttributeError` → warning + `turn.skipped += 1` + 跳过该事件；`_parse_arguments` 保证返回 Mapping（JSON 数组/标量包成 `{"arguments": …}`），因为 ACP 的 `raw_input` 是对象 |
+| 6 | 一般 | `_emit` | `connection.session_update` 写失败不处理：客户端已断开时抛个非 `CancelledError` 就打死整轮，而 `prompt` 只对 `CancelledError` 调 `_stop`——运行没人停 | **已修**：捕获写失败 → 清 owner → `_stop` → `raise ConsoleError("console_client_gone")`。"没人读的一轮"不该算成功 |
+| 7 | 建议 | `close()` | 置 `_client = None` 但不动注入的客户端，之后再访问 `client` 会静默新建一个真实 httpx 客户端 | **已修**：`_closed` 标志 + 只关自建实例；关闭后再取 `client` 抛 `console_closed` |
+| 8 | 建议 | `response.status` | `failed` 映射成 `end_turn`，与正常完成在 `stop_reason` 上完全一样 | **已修**：`failed` → `console_run_failed`（见 #4） |
+| 9 | 一般 | `_sessions` | 只在 `close_session` 里删；本仓库客户端 `AcpSession.close()` 只发 cancel 从不发 `session/close`，于是每个 attempt 永久留一个 `_Session`，`connection` 引用着已关闭的 ASGI 对象 | **已修**：一轮结束 `_release()` 清 `connection`（保留轻量的 chat_id）；`closing` 时顺手弹出。配套改了 `bridge._Proxy._call`：**每个 `prompt` 重新把 session 归属到发起它的连接**，否则释放之后下一轮的事件没人收（`test_a_second_turn_on_one_session_still_reaches_its_client` 钉这条） |
+| 10 | 建议 | `bridge.py` | 自建 `AsyncClient`/子进程没挂 shutdown，`main` 退出只留下未关闭的连接池 | **已修**：`_close_with_the_server` 把 `backend.close()` 组合在 `create_asgi_app` 已有的 lifespan 外层（Starlette 只跑一个 lifespan，所以是包一层而不是注册第二个） |
+| 11 | 一般 | `_stop` | 读超时 `None`，取消时先在 `_stop` 里 await 全量列表再发 stop，全程无界；harness 的 5s 一到先放弃，桥里那个任务还挂着 | **已修，而且真跑才暴露出比原报告更硬的一条**：不止要超时——**stop 本身会被取消连带取消**。真实作业的桥日志里只剩 `httpcore.connection: connect_tcp.failed exception=CancelledError()`，然后什么也没发生，而 console 那边还在写。改成"独立任务 + `asyncio.shield`"，并把它放进 `_stopping` 字典持有引用。修后同一路径实测：`POST /api/console/chat/stop?chat_id=<session_id>` → 200 → `console run stopped` |
+| 12 | 一般 | `_stream_turn` | 整轮没有任何 idle/deadline，唯一的边界在 harness 的 `wait_for`；桥分不清"慢"和"死" | **已修**：`_read_events` 用 `asyncio.wait_for(anext(events), idle_timeout)`，默认 **300s**（不是检视者举例的 120s：真实一轮里思考与工具调用之间的最长间隙没超过几十秒，但不想因为一次慢工具把 120s 用成门槛），超时抛 `console_stalled`；构造参数可调，用例用 0.2s |
+| 13 | 一般 | `_stop` 日志 | 不查状态码、不看 `{"stopped": false}`，一律 `info "console run stopped"` | **已修**：`raise_for_status()`，读 `stopped`；true → info，false/4xx → warning，各带 session id（用例 `test_a_stop_the_console_did_not_perform_is_logged_as_such`） |
+| 14 | 一般 | `_chat_id` | 失败只打 `debug`，而它失败就等于"取消不会发生" | **已修**：warning + session_id + 异常；顺带把该路径从取消路径上摘掉（见 #2），现在它只服务改名 |
+| 15 | 建议 | `_decode` | 跳过畸形 SSE 时打了 payload 前 120 字符——那是对话内容 | **已修**：只记 `bytes=<len>`；`_apply` 的跳过日志也只记 `object`/`type`/异常类型 |
+| 16 | 建议 | `prompt` 末尾 | 一轮开始/结束没有 info，report 里 transcript 为空时对不上是哪次 attempt | **已修**，且**踩了一次坑**：第一版只写 `extra={...}`，而桥的 logging 格式是 `%(message)s`，实测那行只打出 `console turn finished`，一个数字都没有。改成把 `session=/stop_reason=/updates=/skipped=/tokens=` 写进消息本体（`extra` 保留给结构化消费方）。`reverse_round12` 的 `SUMMARY_HIDDEN` 钉这条 |
+| 17 | 一般 | 文本去重 | 去重键是 payload 的 `msg_id` 字符串，而收尾的全文行 `msg_id` 是 `null` → 键变成 `""`，同一段话被发两次（测试夹具正是这个形状） | **已修**：`_Turn.resolve_message()` —— 空 `msg_id` 沿用"当前 message"，`streamed` 按 message 记。真实作业实测：我们收到的 726 字符与 console 存下的 858 字符做 `difflib` 对齐，**只有 console 侧的两处 insert**（首句 57 + QwenPaw 自己追加的 `⟦ … ⟧` 收尾注解 132），零 delete/replace——即没有重复也没有丢 |
+| 18 | 建议 | reasoning 判定 | 依赖 `msg_id` 命中 `message_types`；最终行 `msg_id` 为 null 或 `message` 事件晚于首个 content 时，思考被当成正文 | **已修**（同一处 `resolve_message`）。**留下的限制**：`message` 事件晚于首个 content 到达时，那几块已经按"正文"发出去了，事后无法回收——真机没出现过，写进 `_Turn` 的 docstring 而不是假装解决 |
+| 19 | 建议 | 非 text/data 块 | `refusal` 被压成 `[refusal]` 标记，语义丢失 | **已修**：`refusal` 走正文（有 `text` 就用它的字，没有才 `[refusal]`）。图片/文件/音频仍是 `[<type>]` 占位 + `debug` 里带 msg id——**不改**：transcript 会被 judge 读，往里塞内部 msg id 是拿可读性换一个没人会用的线索 |
+| 20 | 建议 | `_tool` | 完成态工具行必须同时满足"非 delta + `status == completed`"：少一个字段、字段顺序不同、完成行回显 arguments，工具调用就静默消失 | **已修**：以 `call_id` 为单位做 upsert——见 `name` 就发 start（只在 `arguments` 非空 / 无 output / 非 delta 时才发，免得公告一次空参数）、见 `output` 就发 progress，`delta`/`status` 都不再是存在条件（`test_a_tool_call_survives_a_console_that_omits_delta_and_status`） |
+| — | 并发节 | `route`/`running`/`close_session` | 同一 session 两条连接会互抢归属且只在 debug 里留一句；`running` 是布尔量，第二个 `prompt` 的失败路径会把第一个的运行状态抹掉；`close_session` 会在跑的时候把 state `pop` 掉，之后每次 `_emit` 都查不到 owner | **已修**：`route` 换主时 warning；`prompt` 发现 `running` 直接 `console_session_busy`（console 那边是 409，这里说清是自己）；`close_session` 在跑时置 `closing` 交给该轮的 `finally` 回收 |
+
+### 用例有效性（本轮 +17，6 → 23）
+
+| 用例 | 钉的是什么 | 对应发现 |
+|---|---|---|
+| `test_a_turn_that_says_nothing_is_a_failed_attempt` | 零事件的 `completed` 不是成功 | #4 |
+| `test_a_stream_error_is_a_failed_attempt_not_an_empty_answer` | `data: {"error": …}` | #4 |
+| `test_a_200_that_is_not_an_event_stream_is_a_failed_attempt` | 200 + `application/json` | #4 |
+| `test_a_failed_run_is_not_reported_as_a_finished_turn` | `status: failed` | #8 |
+| `test_the_answer_is_sent_once_even_when_the_closing_row_names_no_message` | 同一段话只发一次 | #17 |
+| `test_a_tool_call_survives_a_console_that_omits_delta_and_status` | 少字段不吃掉工具调用 | #20 |
+| `test_a_refusal_reaches_the_transcript_as_the_words_it_was` | 拒答的字要留下 | #19 |
+| `test_a_second_turn_on_one_session_still_reaches_its_client` | 释放连接后下一轮还能收到事件（bridge 重归属） | #9 |
+| `test_a_finished_turn_lets_go_of_the_client_connection` | 一轮结束就放掉连接 | #9 |
+| `test_a_cancelled_turn_stops_the_console_run` | 取消按 session id 发、且不查列表 | #2 |
+| `test_a_client_that_stops_reading_stops_the_console_run` | 写失败要停运行并失败该轮 | #6 |
+| `test_a_stop_the_console_did_not_perform_is_logged_as_such` | `stopped: false` 不说谎 | #13 |
+| `test_a_console_that_goes_quiet_fails_the_turn_instead_of_hanging` | idle 超时 | #12 |
+| `test_a_cancel_that_loses_its_client_still_stops_the_console_run` | shield：客户端走了 stop 也要发出去 | #11 |
+| `test_two_callers_asking_to_stop_share_one_request` | 一次取消只发一次 stop | 真机跟进 |
+| `test_the_turn_summary_is_readable_in_a_plain_log_line` | 摘要数字在消息里，不在 `extra` | #16 |
+| `test_a_closed_agent_does_not_open_another_connection` | 关闭后不偷偷新建客户端 | #7 |
+| `test_a_busy_session_is_told_so_instead_of_racing_itself` | 同 session 并发 prompt | 并发节 |
+
+### 反向验证
+
+`reverse_checks/reverse_round12.py`：**15 条变异，15/15 判红、零幸存者**，`finally` 恢复后
+逐文件 sha256 与运行前一致（`restored console_agent.py: ok` / `restored bridge.py: ok`）。
+BASELINE 23 passed。
+
+这一轮**刻意选了改源码而不是内存变异**：15 条里有 9 条是"删掉一个守卫""改一个去重键"，
+用属性重绑要么做不到、要么得把整个方法抄一遍（抄一遍就是在测抄的那份）。代价是运行期间
+源码被改，所以脚本头部写明了"不要与独立检视并行跑"。
+
+按 README 的第三类约束记两条锚点失效（都没有被当成判红糊过去）：
+
+1. **`STOP_VIA_LIST`**：`_stop` 拆成 `_stop` + `_request_stop` 之后原锚点（`if not session_id:
+   return` 紧跟 `import httpx`）为 0 命中 → 脚本报 `SKIP` 并计入幸存者，按新结构改到
+   `_request_stop` 头部后判红。
+2. **`NO_SHIELD`**：`await asyncio.shield(task)` 因 stop 去重改名成 `pending` 而失效 → `SKIP`
+   → 改锚点后判红。这正是 README 说的"内存/文本变异没有类型系统兜底，锚点失效是静默的"。
+
+### 真实端到端（不是用例）
+
+三条真实作业，全部走服务（`http://127.0.0.1:8471`）→ 桥（`--console http://127.0.0.1:8088
+--agent pawbench_eval --port 8474`）→ 真 console：
+
+| 作业 | 结果 | 观测到的东西 |
+|---|---|---|
+| `job-b228b5e26a88ee03`（修 #4/#17 前一轮的代码，作为对照） | finished，`overall 1.0`，`session_id=1795405812343-9hwkro2` | `chats.json` 一行、名字 `T097_pinbench_eli5_model_summary · job-b228b5e26a88ee03（第 1 次）`、历史文件 `default_<sid>.json`；transcript 38 事件、`damaged_events: 0`、工具调用带 `args` 与结果 |
+| `job-8e4188770f0b33e7`（最终代码） | finished | 日志：`console turn finished: session=1795406767628-ttlezt6 stop_reason=end_turn updates=234 skipped=0 tokens=86285`；每轮只有 1 次 `GET /api/chats`（改名前），取消时 0 次 |
+| `job-e62c0e23c9731ba8` / `job-f29eeff1746dba3d` / `job-098a5d91c37ebb27`（取消路径） | canceled | 前两次暴露"stop 被连带取消"（`connect_tcp.failed CancelledError`）与"一次取消发两次 stop"；最后一次是修完的形状：**一次** `POST /console/chat/stop?chat_id=<session_id>` → 200 → `console run stopped` |
+
+另外核对了两件报告里读不出来的事：① 我们的 transcript 与 console 存下的文本做 `difflib`
+比对，差异只有 console 侧两处 insert（见 #17），说明"不发两次"没有靠丢字换来；②
+`GET /v1/jobs/{id}/transcript` 的 `transcript_state: ok`、`damaged_events: 0`。
+
+测试期间在 `pawbench_eval` 的会话列表里产生的 6 个临时会话（取消/复现用）已用
+`POST /api/chats/batch-delete` 清掉，留下 3 个真实作业的会话（按 `task · job（第 n 次）`
+命名）供人工核对。
+
+### 复检
+
+- `tests/cpd` 全量 **695 passed**（678 → 695，本轮 +17；`bridge.py` 的路由改动没有影响
+  stdio 门的三条既有用例——第一次跑时 `AttributeError: 'ClientSideConnection' object has no
+  attribute 'route'` 就是它抓到的：路由必须发给**桥的后端**，不是被解析出来的子进程）
+- `py_compile` 通过（该 venv 无 ruff）
+- 反向验证 15/15 判红、零幸存者，恢复后 sha256 一致
+- H3：`git diff --name-only main -- pawbench tests data run_bench.py pyproject.toml
+  requirements.txt` 过滤 `cpd/` 后仍为空
+
+### 登记遗留（本轮新增，责任人：anderson）
+
+| # | 位置 | 发现 | 期限／处理 |
+|---|---|---|---|
+| L43 | `console_agent.py` 的 `client`（`httpx.Limits`） | 池上限声明了、`PoolTimeout` 也单独识别了，但**没有**显式的并发闸门（`Semaphore`）：一次压测把 `max_concurrent_jobs` 调到 20 以上时，超出 32 条连接的 attempt 会等 30s 再收到 `console_capacity` | **不预防性加闸**：服务侧 `queue` 已经是并发闸（默认 4），桥里再加一层会造出第二个上限，而阻塞式等待没有任何反馈。真要跑 32 路以上，先定"桥的容量是多少、超了怎么退避"，与 L30 的上界同批 |
+| L44 | `console_agent.py` `_Turn.noted` / `message_types` | 一轮之内按 message 累积，不回收。一轮的消息数由 console 决定，理论上无上界 | 不单独修：`_Turn` 随轮次结束一起回收，单轮上万条 message 的对话不是评测形态。若将来出现长跑 agent，再按"每条 message 只留类型"收窄 |

@@ -51,6 +51,7 @@ cd /Users/anderson/Desktop/ClawParterner/CPDPawBench
 | `probe_grader_nest.py` | 第十四批：留下的 wrapper 会不会嵌套放大（只读） | 3 轮重叠 + 1 次无关调用 | 3 轮后一次 `echo` 打出 **3 份** wrapper 块，marker 出现 **6** 次（3 cmd + 3 stdout）；层数只增不减 | `test_` §4.22、`review_` L39 |
 | `unlock_plugin.py` | 第十四批：`test_grading.py` 的三条用例是否真能判红（**内存变异**，源码零写入，检视期间可跑） | 1 | `PYTHONPATH=/tmp … -m pytest tests/cpd/acp_remote_eval/test_grading.py -q -p unlock_plugin` → **1 failed, 2 passed**，红在 `assert 2 == 1`（peak）；不挂插件 → **3 passed** | `test_` §4.22 |
 | `reverse_round11.py` | 第十五批：judge 通道 12 条新用例是否真能判红（**内存变异**，7 条，源码零写入，检视期间可跑） | 7 | BASELINE **15 passed** → 首跑 **5/7**、2 条幸存者（`BACKOFF_CAP` 锚点错：`_delay` 是方法不是模块全局；`FENCE_LOST` 用例自指：断言等于自己按值 import 的常量）→ 两处修掉后 **7/7 判红、零幸存者** | `test_` §4.23 |
+| `reverse_round12.py` | 第十九批：console 门（`console_agent.py`）的 20 条发现，见 `review_` 第十二轮。**改源码**（15 条里有 9 条是"删一个守卫/改一个去重键"，属性重绑表达不出来），`finally` 逐字节还原 + sha256 复核 | 15 | BASELINE **23 passed** → **15/15 判红、零幸存者**；两次锚点失效各报 `SKIP` 并计入幸存者（`STOP_VIA_LIST` 因 `_stop` 拆出 `_request_stop`、`NO_SHIELD` 因 `task` 改名 `pending`），改锚点后重跑 | `review_` 第十二轮、`test_` §4.30 |
 | `reverse_plugin.py` | M4 插件（skill 侧）：`test_plugin.py` 的 7 条宿主契约用例（**文件级改写** + 逐字节还原，改的是 `plugins/**` 不是 `pawbench/**`） | 7 | BASELINE **7 passed** → **7/7 判红、零幸存者**，`finally` 还原后 `diff -r` 与运行前备份一致。首版还原用 `mkdir(exist_ok=True)`，本机 shim 对已存在目录抛 `EEXIST`、还原中断删掉插件里 6 个文件（已按原文重建）；现改为"只为缺失目录 mkdir" + 逐文件 sha256 复核。变异 `DEPS_MOVED` 改同目录改名（`backend/` 那半只留正向断言，删新目录在本机报 `EISDIR`） | `test_` §4.28 |
 
 表里"最近一次实测"是这批 diff 出门前的数字，不是永久事实——脚本可重跑，结论要以重跑
