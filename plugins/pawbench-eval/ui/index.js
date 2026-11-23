@@ -641,10 +641,10 @@ var api = {
   submit: (body) => call("POST", "/v1/jobs", body),
   reorder: (jobId, target) => call("PATCH", `/v1/jobs/${q(jobId)}`, target),
   cancel: (jobId, reason) => call("POST", `/v1/jobs/${q(jobId)}/cancel`, { reason }),
-  detail: (jobId, sensitivity) => call("GET", `/v1/jobs/${q(jobId)}/detail?sensitivity=${sensitivity}`),
-  taskDetail: (jobId, taskId, sensitivity, attempt) => call(
+  detail: (jobId) => call("GET", `/v1/jobs/${q(jobId)}/detail`),
+  taskDetail: (jobId, taskId, attempt) => call(
     "GET",
-    `/v1/jobs/${q(jobId)}/tasks/${q(taskId)}/detail?sensitivity=${sensitivity}&attempt=${attempt}`
+    `/v1/jobs/${q(jobId)}/tasks/${q(taskId)}/detail?attempt=${attempt}`
   ),
   results: (jobId) => call("GET", `/v1/jobs/${q(jobId)}/results`),
   transcript: (jobId, taskId, attempt, cursor) => call(
@@ -664,10 +664,7 @@ var api = {
   ),
   /** Where a download goes, so the proxy can add the token on the way out. */
   fileUrl: (jobId, taskId, attempt, kind, path) => `/v1/jobs/${jobId}/tasks/${taskId}/attempts/${attempt}/${kind}?path=${q(path)}`,
-  report: (jobId, format, sensitivity) => call(
-    "GET",
-    `/v1/jobs/${q(jobId)}/report?format=${format}&sensitivity=${sensitivity}`
-  ),
+  report: (jobId, format) => call("GET", `/v1/jobs/${q(jobId)}/report?format=${format}`),
   datasets: () => call("GET", "/v1/datasets"),
   categories: () => call("GET", "/v1/dataset-categories"),
   resolve: (selector) => call("POST", "/v1/datasets/resolve", { selector }),
@@ -1890,7 +1887,7 @@ var FORMATS = [
   { value: "md", label: "Markdown", hint: "一页读完，适合贴进 issue 或 wiki" },
   { value: "html", label: "HTML", hint: "同内容带样式，适合发给不装工具的人" },
   { value: "json", label: "JSON", hint: "原始字段，适合二次处理" },
-  { value: "zip", label: "ZIP", hint: "报告 + 产物原文件", fullOnly: true }
+  { value: "zip", label: "ZIP", hint: "报告 + 产物原文件" }
 ];
 function isBad(task) {
   return task.status !== "finished" || Boolean(task.failure_reason);
@@ -1915,7 +1912,7 @@ function ReportModule(props) {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    api.detail(props.jobId, props.sensitivity).then((next) => {
+    api.detail(props.jobId).then((next) => {
       if (!alive) return;
       setDetail(next);
       setError(null);
@@ -1928,7 +1925,7 @@ function ReportModule(props) {
     return () => {
       alive = false;
     };
-  }, [props.jobId, props.sensitivity]);
+  }, [props.jobId]);
   const tasks = detail?.tasks ?? [];
   const shown = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -1943,7 +1940,7 @@ function ReportModule(props) {
   async function generate() {
     setExporting(true);
     try {
-      const link = await api.report(props.jobId, format, props.sensitivity);
+      const link = await api.report(props.jobId, format);
       setLastExport({ filename: link.filename, size: link.size, url: link.url });
       window.open(link.url, "_blank", "noopener");
     } catch (err) {
@@ -1977,17 +1974,7 @@ function ReportModule(props) {
           label: detail ? jobStatus(detail.status).label : "读取中"
         }
       ), /* @__PURE__ */ __h("span", { className: "pbe-meta__sep" }, "·"), /* @__PURE__ */ __h(CopyId, { value: linkFor, label: "报告链接", keep: 30 }))),
-      actions: /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h(Button, { onClick: props.onBack }, "返回列表"), /* @__PURE__ */ __h(
-        Segmented,
-        {
-          value: props.sensitivity,
-          onChange: (value) => props.onSensitivity(value),
-          options: [
-            { value: "shared", label: "shared" },
-            { value: "full", label: "完整版" }
-          ]
-        }
-      ))
+      actions: /* @__PURE__ */ __h(Button, { onClick: props.onBack }, "返回列表")
     }
   ), error ? /* @__PURE__ */ __h(
     Alert,
@@ -2101,10 +2088,7 @@ function ReportModule(props) {
               onChange: (event) => setFormat(event.target.value),
               style: { display: "flex", flexDirection: "column", gap: "var(--spacer-12)" }
             },
-            FORMATS.map((item) => {
-              const disabled = Boolean(item.fullOnly) && props.sensitivity !== "full";
-              return /* @__PURE__ */ __h(Radio, { key: item.value, value: item.value, disabled }, /* @__PURE__ */ __h("span", null, item.label), /* @__PURE__ */ __h("span", { className: "pbe-cell-sub", style: { marginLeft: 8 } }, disabled ? `${item.hint}（需要完整版）` : item.hint));
-            })
+            FORMATS.map((item) => /* @__PURE__ */ __h(Radio, { key: item.value, value: item.value }, /* @__PURE__ */ __h("span", null, item.label), /* @__PURE__ */ __h("span", { className: "pbe-cell-sub", style: { marginLeft: 8 } }, item.hint)))
           ), /* @__PURE__ */ __h("div", { style: { marginTop: "var(--spacer-20)", display: "flex", gap: "var(--spacer-8)" } }, /* @__PURE__ */ __h(Button, { type: "primary", loading: exporting, onClick: generate }, "生成并打开"), /* @__PURE__ */ __h(Tooltip, { title: "submissions/*.json 的形状，排行榜直接吃得下" }, /* @__PURE__ */ __h(Button, { onClick: () => void saveSubmissions(props.jobId) }, "另存 submissions JSON")))), /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "刚刚生成的"), lastExport ? /* @__PURE__ */ __h("div", { className: "pbe-facts" }, /* @__PURE__ */ __h(Fact, { label: "文件", value: /* @__PURE__ */ __h("span", { className: "pbe-mono" }, lastExport.filename) }), /* @__PURE__ */ __h(Fact, { label: "大小", value: bytes(lastExport.size) }), /* @__PURE__ */ __h(
             Fact,
             {
@@ -2121,25 +2105,17 @@ function ReportModule(props) {
                   type: "link",
                   style: { padding: 0 },
                   onClick: () => {
-                    void downloadToFile(props.jobId, format, props.sensitivity, lastExport.filename);
+                    void downloadToFile(props.jobId, lastExport.filename);
                   }
                 },
                 "通过代理下载"
               )
             }
-          )) : /* @__PURE__ */ __h(EmptyHint, null, "还没有生成。选一种格式，点左边「生成并打开」。"), props.sensitivity !== "full" ? /* @__PURE__ */ __h("div", { className: "pbe-cell-sub", style: { marginTop: "var(--spacer-12)" } }, "当前是 shared 档：判分依据、工作目录、产物下载链接不在报告里。切到「完整版」再导出。") : null))
+          )) : /* @__PURE__ */ __h(EmptyHint, null, "还没有生成。选一种格式，点左边「生成并打开」。")))
         }
       ]
     }
-  ), openTask ? /* @__PURE__ */ __h(
-    TaskDialog,
-    {
-      jobId: props.jobId,
-      task: openTask,
-      sensitivity: props.sensitivity,
-      onClose: () => setOpenTask(null)
-    }
-  ) : null);
+  ), openTask ? /* @__PURE__ */ __h(TaskDialog, { jobId: props.jobId, task: openTask, onClose: () => setOpenTask(null) }) : null);
 }
 async function saveSubmissions(jobId) {
   const payload = await api.results(jobId);
@@ -2148,7 +2124,7 @@ async function saveSubmissions(jobId) {
     `${jobId}.json`
   );
 }
-async function downloadToFile(jobId, format, sensitivity, filename) {
+async function downloadToFile(jobId, filename) {
   await download(`/v1/reports/${jobId}/${encodeURIComponent(filename)}`, filename);
 }
 function Cell(props) {
@@ -2216,7 +2192,7 @@ function TaskDialog(props) {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    api.taskDetail(props.jobId, props.task.task_id, props.sensitivity, props.task.attempt).then((next) => {
+    api.taskDetail(props.jobId, props.task.task_id, props.task.attempt).then((next) => {
       if (!alive) return;
       setDetail(next);
       setPage(next.transcript);
@@ -2231,7 +2207,7 @@ function TaskDialog(props) {
     return () => {
       alive = false;
     };
-  }, [props.jobId, props.task.task_id, props.task.attempt, props.sensitivity]);
+  }, [props.jobId, props.task.task_id, props.task.attempt]);
   async function goPage(next) {
     setLoading(true);
     try {
@@ -2296,10 +2272,10 @@ function TaskDialog(props) {
         path: artifact.path,
         size: artifact.size,
         digest: artifact.sha256,
-        onOpen: props.sensitivity === "full" ? () => setPreview({ kind: "artifacts", path: artifact.path, canDownload: true }) : void 0
+        onOpen: () => setPreview({ kind: "artifacts", path: artifact.path, canDownload: true })
       }
     ))) : /* @__PURE__ */ __h(EmptyHint, null, "这次没有产物"),
-    detail.rubric_excerpt || judgeText ? /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h("div", { style: { height: "var(--spacer-20)" } }), /* @__PURE__ */ __h(SectionTitle, null, "评分依据（完整版）"), detail.rubric_excerpt ? /* @__PURE__ */ __h("pre", { className: "pbe-block" }, detail.rubric_excerpt) : null, judgeText ? /* @__PURE__ */ __h("pre", { className: "pbe-block", style: { marginTop: "var(--spacer-8)" } }, judgeText) : null) : null,
+    detail.rubric_excerpt || judgeText ? /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h("div", { style: { height: "var(--spacer-20)" } }), /* @__PURE__ */ __h(SectionTitle, null, "评分依据"), detail.rubric_excerpt ? /* @__PURE__ */ __h("pre", { className: "pbe-block" }, detail.rubric_excerpt) : null, judgeText ? /* @__PURE__ */ __h("pre", { className: "pbe-block", style: { marginTop: "var(--spacer-8)" } }, judgeText) : null) : null,
     /* @__PURE__ */ __h("div", { style: { height: "var(--spacer-20)" } }),
     /* @__PURE__ */ __h(SectionTitle, null, "轨迹"),
     /* @__PURE__ */ __h("div", { className: "pbe-toolbar" }, /* @__PURE__ */ __h("span", { className: "pbe-toolbar__label" }, page ? `${page.cursor + 1}–${page.cursor + page.events.length} / ${page.total_events} 步` : "读取中", page && page.damaged_events ? ` · ${page.damaged_events} 条损坏` : ""), /* @__PURE__ */ __h("div", { className: "pbe-toolbar__right" }, /* @__PURE__ */ __h(Button, { size: "small", disabled: !page || page.cursor === 0 || loading, onClick: () => goPage(0) }, "回到开头"), /* @__PURE__ */ __h(Button, { size: "small", disabled: !page || !page.next_cursor || loading, onClick: () => page && page.next_cursor !== null && goPage(page.next_cursor) }, "下一页"))),
@@ -2448,17 +2424,7 @@ function SettingsModule(props) {
       label: "可达",
       value: probe.reachable ? "是" : "否"
     }
-  ), /* @__PURE__ */ __h(Fact, { label: "被认可", value: probe.authorized ? "是" : "否" }), /* @__PURE__ */ __h(Fact, { label: "说明", value: String(probe.detail || "—") }), /* @__PURE__ */ __h(Fact, { label: "配置来源", value: SOURCE_TEXT[config?.source ?? "none"] ?? config?.source ?? "—" })) : /* @__PURE__ */ __h("div", { className: "pbe-facts" }, /* @__PURE__ */ __h(Fact, { label: "配置来源", value: SOURCE_TEXT[config?.source ?? "none"] ?? config?.source ?? "—" }), /* @__PURE__ */ __h(Fact, { label: "地址", value: config?.base_url || "还没填" }), /* @__PURE__ */ __h(Fact, { label: "token", value: config?.has_token ? `已保存 ${config.token_hint}` : "还没有" }), /* @__PURE__ */ __h(Fact, { label: "身份", value: config?.subject || "还没学到" })), /* @__PURE__ */ __h("div", { className: "pbe-cell-sub", style: { marginTop: "var(--spacer-16)" } }, "探测会打服务的 /healthz：先看能不能连上，再看 token 认不认，最后报服务自己的版本。")), /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "报告默认值"), /* @__PURE__ */ __h(Fieldset, { title: "" }, /* @__PURE__ */ __h(Field, { label: "档位", hint: "shared 给任何人看；完整版带判分依据与产物" }, /* @__PURE__ */ __h(
-    Segmented,
-    {
-      value: props.sensitivity,
-      onChange: (value) => props.onSensitivity(value),
-      options: [
-        { value: "shared", label: "shared" },
-        { value: "full", label: "完整版" }
-      ]
-    }
-  )), /* @__PURE__ */ __h(Field, { label: "导出格式" }, /* @__PURE__ */ __h(
+  ), /* @__PURE__ */ __h(Fact, { label: "被认可", value: probe.authorized ? "是" : "否" }), /* @__PURE__ */ __h(Fact, { label: "说明", value: String(probe.detail || "—") }), /* @__PURE__ */ __h(Fact, { label: "配置来源", value: SOURCE_TEXT[config?.source ?? "none"] ?? config?.source ?? "—" })) : /* @__PURE__ */ __h("div", { className: "pbe-facts" }, /* @__PURE__ */ __h(Fact, { label: "配置来源", value: SOURCE_TEXT[config?.source ?? "none"] ?? config?.source ?? "—" }), /* @__PURE__ */ __h(Fact, { label: "地址", value: config?.base_url || "还没填" }), /* @__PURE__ */ __h(Fact, { label: "token", value: config?.has_token ? `已保存 ${config.token_hint}` : "还没有" }), /* @__PURE__ */ __h(Fact, { label: "身份", value: config?.subject || "还没学到" })), /* @__PURE__ */ __h("div", { className: "pbe-cell-sub", style: { marginTop: "var(--spacer-16)" } }, "探测会打服务的 /healthz：先看能不能连上，再看 token 认不认，最后报服务自己的版本。")), /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "报告默认值"), /* @__PURE__ */ __h(Fieldset, { title: "" }, /* @__PURE__ */ __h(Field, { label: "导出格式" }, /* @__PURE__ */ __h(
     Segmented,
     {
       value: props.format,
@@ -2474,7 +2440,6 @@ function SettingsModule(props) {
 }
 
 // src/shell.tsx
-var SENSITIVITY_KEY = "pawbench-eval.sensitivity";
 var FORMAT_KEY = "pawbench-eval.format";
 function readStored(key, allowed, fallback) {
   try {
@@ -2502,9 +2467,6 @@ function Shell() {
   const [config, setConfig] = useState(null);
   const [bootError, setBootError] = useState("");
   const [newOpen, setNewOpen] = useState(false);
-  const [sensitivity, setSensitivity] = useState(
-    () => readStored(SENSITIVITY_KEY, ["shared", "full"], "shared")
-  );
   const [format, setFormat] = useState(
     () => readStored(FORMAT_KEY, ["md", "html", "json", "zip"], "md")
   );
@@ -2612,18 +2574,7 @@ function Shell() {
       description: /* @__PURE__ */ __h(__Fragment, null, jobsError.message, /* @__PURE__ */ __h("br", null), "去看「配置」里的服务地址与 token；也可以点左边连接卡重新探测。"),
       style: { marginBottom: "var(--spacer-16)" }
     }
-  ) : null, jobId ? /* @__PURE__ */ __h(
-    ReportModule,
-    {
-      jobId,
-      sensitivity,
-      onSensitivity: (value) => {
-        setSensitivity(value);
-        store(SENSITIVITY_KEY, value);
-      },
-      onBack: backToList
-    }
-  ) : view === "jobs" ? /* @__PURE__ */ __h(
+  ) : null, jobId ? /* @__PURE__ */ __h(ReportModule, { jobId, onBack: backToList }) : view === "jobs" ? /* @__PURE__ */ __h(
     JobsModule,
     {
       jobs,
@@ -2637,15 +2588,10 @@ function Shell() {
     SettingsModule,
     {
       config,
-      sensitivity,
       format,
       onSaved: (next) => {
         setConfig(next);
         void refreshJobs();
-      },
-      onSensitivity: (value) => {
-        setSensitivity(value);
-        store(SENSITIVITY_KEY, value);
       },
       onFormat: (value) => {
         setFormat(value);

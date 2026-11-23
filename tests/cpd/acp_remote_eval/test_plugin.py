@@ -64,7 +64,7 @@ DASHBOARD_ENDPOINTS = [
     ("GET", "/v1/jobs/job-x", "/v1/jobs/"),
     ("PATCH", "/v1/jobs/job-x", "/v1/jobs/"),
     ("POST", "/v1/jobs/job-x/cancel", "/cancel"),
-    ("GET", "/v1/jobs/job-x/detail", "/detail?sensitivity="),
+    ("GET", "/v1/jobs/job-x/detail", "/detail"),
     ("GET", "/v1/jobs/job-x/tasks/t1/detail", "/tasks/"),
     ("GET", "/v1/jobs/job-x/results", "/results"),
     ("GET", "/v1/jobs/job-x/transcript", "/transcript?task_id="),

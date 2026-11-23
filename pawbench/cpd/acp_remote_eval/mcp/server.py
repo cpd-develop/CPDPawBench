@@ -212,18 +212,15 @@ def create_mcp(control: ControlPlane, public_base_url: str, log_level: str) -> F
         return await asyncio.to_thread(control.reports.results, job_id)
 
     @server.tool()
-    async def pawbench_get_job_detail(
-        job_id: str, sensitivity: str = "shared",
-    ) -> dict[str, Any]:
-        return await asyncio.to_thread(control.reports.job_detail, job_id, sensitivity)
+    async def pawbench_get_job_detail(job_id: str) -> dict[str, Any]:
+        return await asyncio.to_thread(control.reports.job_detail, job_id)
 
     @server.tool()
     async def pawbench_get_task_detail(
-        job_id: str, task_id: str, sensitivity: str = "shared",
-        attempt: int | None = None,
+        job_id: str, task_id: str, attempt: int | None = None,
     ) -> dict[str, Any]:
         return await asyncio.to_thread(
-            control.reports.task_detail, job_id, task_id, sensitivity, attempt
+            control.reports.task_detail, job_id, task_id, attempt
         )
 
     @server.tool()
@@ -238,10 +235,10 @@ def create_mcp(control: ControlPlane, public_base_url: str, log_level: str) -> F
 
     @server.tool()
     async def pawbench_get_report(
-        job_id: str, format: str = "json", sensitivity: str = "shared",
+        job_id: str, format: str = "json",
     ) -> dict[str, Any]:
         return await asyncio.to_thread(
-            control.reports.report, job_id, fmt=format, sensitivity=sensitivity
+            control.reports.report, job_id, fmt=format
         )
 
     return server

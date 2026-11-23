@@ -34,7 +34,7 @@ QwenPaw 控制台 · 看板页      评测 / 数据集 / 配置  三个模块，
 |---|---|
 | **评测** | 看列表、看分数、点开一份报告；右上「＋ 新建评测」弹出提交表单 |
 | **数据集** | 切内置视图、上传任务包、管理分类 |
-| **配置** | 服务地址与 token、探活、报告默认档位 |
+| **配置** | 服务地址与 token、探活、导出格式默认值 |
 
 上一版把提交表单、队列、结果、数据集纵向堆在同一页，读分数要先滚过一张表单。现在提交是
 一个弹窗，报告是一整页——因为它要装下题干、逐题判分和轨迹。
@@ -515,8 +515,7 @@ chmod +x "$VENV/bin/qwenpaw-acp-legacy"
 - **这次执行** —— 判分方式、耗时、写回数（协议/带外）、自报模型、解析自、`trace_id`、
   `session_id`，两个 id 都能一键复制
 - **判据逐项** —— 哪条过了、哪条没过，右侧是这一项的分值
-- **产物** —— 文件清单、大小、sha256 前 12 位；**完整版点一行即可预览**，也能下载。
-  shared 档只列清单、不可点
+- **产物** —— 文件清单、大小、sha256 前 12 位；**点一行就预览**，也能下载
 - **轨迹时间线** —— 每一步的时间、类型（调用 / 结果 / 输出 / 计划 / 用量…）、工具名与
   参数键。分页读，长会话不会一次糊满屏幕
 
@@ -538,7 +537,7 @@ chmod +x "$VENV/bin/qwenpaw-acp-legacy"
 
 ### 7.3 trace_id 与 session_id
 
-这两个 id 是**报告通往日志的入口**，所以它们放在 shared 档，不是完整版特权：
+这两个 id 是**报告通往日志的入口**，所以它们就印在单题里，不用另开什么视图：
 
 | id | 是谁的 | 拿它做什么 |
 |---|---|---|
@@ -556,23 +555,30 @@ agent 只有声明了 `loadSession` 能力才接得住这个 id。接不住（�
 一次尝试一个 `trace_id`，重试会换新的——这正是它有用的地方：**两次重试的日志不会混在
 一起**。升级前跑的老作业这两个字段是空的，报告里显示 `—`。
 
-### 7.4 档位
+### 7.4 只有一个视图
 
-Tab 栏右侧的 `shared / 完整版` 决定你看到哪一档：
+早先有两档：`shared` 是能转给别人的那份，`完整版` 多出判据全文、判分备注和产物本体。
+现在**只有一份**——页面、接口、报告文件都以完整内容为准，没有开关，也没有第二种形状。
 
-| | shared（默认，可对外） | 完整版（内部） |
-|---|---|---|
-| 分数、状态、逐题表 | ✓ | ✓ |
-| 题干、trace_id、session_id | ✓ | ✓ |
-| 附件清单 + 附件预览/下载 | ✓ | ✓ |
-| 判据逐项 | ✓ | ✓ |
-| 判据全文 / 期望行为 / 判分备注 | — | ✓ |
-| 产物清单 | ✓ | ✓ |
-| 产物预览 / 产物下载 | — | ✓ |
-| workspace / transcript 路径 | — | ✓ |
-| 报告 zip | — | ✓ |
+理由是两档各自都要决定一次"这个字段给不给"，五条读路由就有五次决定的机会，而真正被要
+求的永远是完整的那份。边界因此上移一层：**能不能读到这场评测，由白名单 token 决定**。
 
-**完整版含判据与他人产物，对外只发 shared。** 切到完整版时页面顶部有常驻提醒，不是靠人记。
+| 内容 | 有 |
+|---|---|
+| 分数、状态、逐题表 | ✓ |
+| 题干、附件清单 + 预览/下载 | ✓ |
+| `trace_id`、`session_id` | ✓ |
+| 判据逐项、判据全文、期望行为、判分备注 | ✓ |
+| 产物清单 + 预览/下载 | ✓ |
+| workspace / transcript 路径 | ✓ |
+| 报告四种格式（含 zip） | ✓ |
+
+唯一永远不出现的是**判分代码本体**（`automated_checks`、rubric 原文里的判分实现）——
+那是答案钥匙，不属于任何视图，也不属于任何权限。
+
+接口层面同步收掉了 `sensitivity` 参数：`/detail`、`/tasks/{task}/detail`、`/report` 都不再
+认它。老脚本仍然带着 `?sensitivity=shared` 也能跑（多余参数被忽略），拿到的是完整内容——
+所以升级后第一件事是别再按"我拿的是裁剪版"去理解返回结果。
 
 ---
 
@@ -580,12 +586,12 @@ Tab 栏右侧的 `shared / 完整版` 决定你看到哪一档：
 
 报告页第三个 Tab。选格式，点 **生成**，拿到签名链接后点 **下载**。
 
-| 格式 | 用途 | 档位 |
-|---|---|---|
-| `md` | 粘进周报、MR 描述 | shared / 完整版 |
-| `json` | 二次处理、进自己的看板 | shared / 完整版 |
-| `html` | 直接发给人看，自带排版 | shared / 完整版 |
-| `zip` | 连产物一起归档 | **仅完整版** |
+| 格式 | 用途 |
+|---|---|
+| `md` | 粘进周报、MR 描述 |
+| `json` | 二次处理、进自己的看板 |
+| `html` | 直接发给人看，自带排版 |
+| `zip` | 连产物一起归档 |
 
 报告文件里有什么：
 
@@ -599,9 +605,8 @@ Tab 栏右侧的 `shared / 完整版` 决定你看到哪一档：
 
 两条规则：
 
-- **zip 只有完整版有。** 切回 shared 时格式会自动退回 `md`，不会让你点了才报错。硬发
-  shared+zip 会被拒（`sensitivity_format_mismatch`，告诉你需要哪个档位）；格式本身写错
-  才是 `report_format_unsupported`。
+- **格式名写错会明确报错**（`report_format_unsupported`，告诉你只有 `md`/`json`/`html`/`zip`），
+  不会悄悄给你换一种。
 - 签名链接**有时效**（`exchange.asset_url_ttl_seconds`，默认 3600 秒 = 1 小时）。
   过期重新生成一次，不要转发旧链接。
 
@@ -704,8 +709,8 @@ python -m pawbench.cpd.acp_remote_eval.cli submit \
 | `submit` | 提交；`--watch` 跟到终态 |
 | `status <job>` | 队列视角；`--json` 输出原样载荷 |
 | `watch <job>` | 轮询到不动为止；`--interval` / `--timeout` |
-| `detail <job>` | 评测视角；`--tier shared\|full`、`--out <file>` |
-| `report <job>` | 生成并下载；`--format md\|json\|html\|zip`、`--tier` |
+| `detail <job>` | 评测视角；`--out <file>` |
+| `report <job>` | 生成并下载；`--format md\|json\|html\|zip`、`--out <file>` |
 | `cancel <job>` | 取消，含运行中 |
 
 退出码（适合写进 CI）：
@@ -756,7 +761,6 @@ python -m pawbench.cpd.acp_remote_eval.cli submit \
 | `not_job_owner` | 这行不是你提交的 | 只有提交者或管理员能动 |
 | `job_changing` | 取消时作业还在反复变状态 | 刷新确认它当前状态，别重复点 |
 | `dataset_referenced` | 数据集被作业引用过 | 改名复用，别删 |
-| `sensitivity_format_mismatch` | 档位与格式不能并存（如 shared 要 zip） | 切完整版，或换 md |
 | `report_format_unsupported` | 格式名写错了（只有 md/json/html/zip） | 改格式 |
 | `package_unsafe_path` | zip 里有越界路径/符号链接 | 重新打包 |
 | `package_invalid` | 包结构或题目元信息不合格 | 看逐项报错，对着 §9.3 改 |
@@ -822,10 +826,10 @@ python -m pawbench.cpd.acp_remote_eval.cli submit \
 | `GET /v1/jobs/{id}` | 单个作业的队列视角 |
 | `PATCH /v1/jobs/{id}` | 调序（`before_id` / `after_id` / `queue_pos` 三选一） |
 | `POST /v1/jobs/{id}/cancel` | 取消 |
-| `GET /v1/jobs/{id}/detail?sensitivity=` | 详情，`shared` 或 `full` |
+| `GET /v1/jobs/{id}/detail` | 详情（完整内容） |
 | `GET /v1/jobs/{id}/tasks/{task}/detail` | 单题详情 |
 | `GET /v1/jobs/{id}/results` | 切片结果 |
-| `GET /v1/jobs/{id}/report?format=&sensitivity=` | 报告**签名链接**（不是字节） |
+| `GET /v1/jobs/{id}/report?format=` | 报告**签名链接**（不是字节） |
 | `GET /v1/jobs/{id}/transcript?task_id=&attempt=&cursor=` | 轨迹分页 |
 | `GET/POST /v1/datasets`、`PUT/DELETE /v1/datasets/{id}` | 数据集 |
 | `POST /v1/datasets/resolve` | 解析选择器，不落库 |

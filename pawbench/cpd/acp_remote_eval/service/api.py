@@ -172,12 +172,6 @@ _CONTROL_STATUS: dict[str, int] = {
     # two routes spell their kind themselves -- mapped anyway so that a
     # mislabelled call reads like the other shape refusals instead of a bug.
     "preview_kind_unsupported": 400,
-    "sensitivity_unknown": 400,
-    # A zip bundles other people's result files, so it is only rendered at the
-    # tier that is not forwarded.  400 and not 403: both tiers are open to every
-    # whitelisted caller, so a 403 would tell the reader to go ask for a scope
-    # that does not exist (design section 4.1, constraint 2).
-    "sensitivity_format_mismatch": 400,
     # 403: someone else's job.
     "not_job_owner": 403,
     # Creation is open to every whitelisted subject; changing and deleting are
@@ -462,9 +456,9 @@ def _add_control_routes(app: FastAPI, control: ControlPlane) -> None:
     def authenticate(request: Request, scope: str = SCOPE_SUBMIT) -> Principal:
         """The one gate the whole control plane passes through (design section 6).
 
-        Reads ask for ``submit`` too, not for a read scope: both detail tiers
-        are open to every whitelisted subject, so reading needs nothing beyond
-        being on the list, and ``submit`` is the scope every entry carries.  An
+        Reads ask for ``submit`` too, not for a read scope: every view is open
+        to every whitelisted subject, so reading needs nothing beyond being on
+        the list, and ``submit`` is the scope every entry carries.  An
         allowlist that has gone missing answers the same way -- empty list,
         every call 401 -- which is the point of keeping the file out of the
         request path.
@@ -784,21 +778,19 @@ def _add_control_routes(app: FastAPI, control: ControlPlane) -> None:
 
     @app.get("/v1/jobs/{job_id}/detail")
     async def job_detail(job_id: str, request: Request) -> JSONResponse:
-        """The evaluation view of one job, at the tier the caller asked for.
+        """The evaluation view of one job.
 
         Distinct from ``GET /v1/jobs/{id}``, which is the *queue* view: state,
-        position and why a task did not move.  This one is what a reader forwards
-        -- config, sources, scores per slice, and per task the breakdown and the
-        artifact list.  Which fields survive is decided inside
+        position and why a task did not move.  This one is what a reader reads:
+        config, sources, scores per slice, and per task the breakdown, the
+        grading reasoning and the files.  (A task's timeline is a second
+        request -- ``.../tasks/{task_id}/detail`` -- because it is paged.)
+        What the document contains is decided inside
         :meth:`.reports.Reports.job_detail`, never here.
         """
         authenticate(request)
         return JSONResponse(
-            content=await asyncio.to_thread(
-                control.reports.job_detail,
-                job_id,
-                request.query_params.get("sensitivity"),
-            )
+            content=await asyncio.to_thread(control.reports.job_detail, job_id)
         )
 
     @app.get("/v1/jobs/{job_id}/tasks/{task_id}/detail")
@@ -811,7 +803,6 @@ def _add_control_routes(app: FastAPI, control: ControlPlane) -> None:
                 control.reports.task_detail,
                 job_id,
                 task_id,
-                query.get("sensitivity"),
                 _attempt_of(query.get("attempt")),
             )
         )
@@ -837,7 +828,6 @@ def _add_control_routes(app: FastAPI, control: ControlPlane) -> None:
                 control.reports.report,
                 job_id,
                 fmt=query.get("format"),
-                sensitivity=query.get("sensitivity"),
             )
         )
 
@@ -870,8 +860,8 @@ def _add_control_routes(app: FastAPI, control: ControlPlane) -> None:
     ) -> FileResponse:
         """One result file back out, to a caller with a whitelist token.
 
-        The full tier's download list points here rather than at a presigned
-        link on purpose: an artifact is the subject's own output, and a link that
+        The download list points here rather than at a presigned link on
+        purpose: an artifact is the subject's own output, and a link that
         carries its access in the URL would outlive the run it came from and
         stay valid whoever it got forwarded to.
         """
@@ -907,10 +897,9 @@ def _add_control_routes(app: FastAPI, control: ControlPlane) -> None:
         """One of the files the task handed the agent, as it was handed over.
 
         Same door as an artifact and for the same reason: an attachment is part
-        of the question, the shared tier already prints the prompt, and a reader
-        arguing with an answer about a spreadsheet has to be able to open it.
-        Only a path the task *declares* is reachable -- see
-        :meth:`Reports.attachment_file`.
+        of the question, and a reader arguing with an answer about a spreadsheet
+        has to be able to open it.  Only a path the task *declares* is
+        reachable -- see :meth:`Reports.attachment_file`.
         """
         authenticate(request)
         try:

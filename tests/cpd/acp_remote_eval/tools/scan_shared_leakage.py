@@ -36,9 +36,9 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
-#: Field names that exist only on the grading side. A ``shared`` document that
-#: carries one of these has been trimmed in the wrong place.
-SHARED_ONLY_FIELDS = frozenset(
+#: Field names that exist only on the grading side.  A document that goes to the
+#: leaderboard and carries one of these has been trimmed in the wrong place.
+GRADING_SIDE_FIELDS = frozenset(
     {
         "rubric_excerpt",
         "expected_behavior",
@@ -50,12 +50,12 @@ SHARED_ONLY_FIELDS = frozenset(
     }
 )
 
-#: The answer key. No tier publishes it -- ``full`` is internal, and an answer
-#: sheet is the one thing a forwarded document can never be.  ``judge_prompt`` is
-#: on this list rather than the ``shared``-only one because the prompt embeds the
-#: rubric: nothing the grader assembles at scoring time belongs in a document at
-#: all, and the field does not exist today, which is exactly when a list stops
-#: being checked unless it is written down now.
+#: The answer key.  No document publishes it -- not one that leaves the service
+#: and not one that stays -- because an answer sheet is the one thing a report
+#: can never be.  ``judge_prompt`` is on this list rather than the grading-side
+#: one because the prompt embeds the rubric: nothing the grader assembles at
+#: scoring time belongs in a document at all, and the field does not exist today,
+#: which is exactly when a list stops being checked unless it is written down now.
 ANSWER_KEY_FIELDS = frozenset(
     {
         "automated_checks",
@@ -69,7 +69,7 @@ ANSWER_KEY_FIELDS = frozenset(
 
 #: Headings, and only these two shapes.  A heading that merely *mentions* the word
 #: ``rubric`` is a task prompt -- "How to write a rubric for the essay" is a real
-#: prompt, prompts are echoed into ``shared`` reports and into the manifest, and a
+#: prompt, prompts are echoed into reports and into the manifest, and a
 #: check that cries wolf gets ignored the second time it fires on a real run.  So a
 #: heading counts when it names a grading-side section, or when the heading *is*
 #: the section name.
@@ -94,10 +94,13 @@ _MARKERS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("tag", re.compile(r"<\s*(judge_prompt|rubric|grading_code|automated_checks)\b", re.I)),
 )
 
-#: Documents that leave this service: the ``shared`` tier, every rendered report
-#: file, and the manifest the evaluated agent reads.
+#: Documents that leave the service for someone else's eyes: a results payload
+#: bound for the leaderboard, the manifest the evaluated agent reads.  The whole
+#: grading-side vocabulary is banned here.
 FORWARDABLE = "forwardable"
-#: The ``full`` tier: still ours, so the answer key stays out of it too.
+#: Documents that stay ours: the detail payload, every rendered report file.
+#: Only the answer key is banned -- a rubric excerpt belongs in a report, and a
+#: score with no reasoning behind it cannot be argued with.
 INTERNAL = "internal"
 
 #: A report body is tens of kilobytes; anything past this is the tool being
@@ -114,20 +117,20 @@ MAX_DOCUMENTS = 500
 DOCUMENT_SUFFIXES = frozenset({".json", ".jsonl", ".md", ".html", ".txt"})
 
 
-def banned_fields(tier: str = FORWARDABLE) -> frozenset[str]:
-    """Field names a document at ``tier`` may not carry."""
-    if tier == INTERNAL:
+def banned_fields(profile: str = FORWARDABLE) -> frozenset[str]:
+    """Field names a document of this profile may not carry."""
+    if profile == INTERNAL:
         return ANSWER_KEY_FIELDS
-    if tier == FORWARDABLE:
-        return SHARED_ONLY_FIELDS | ANSWER_KEY_FIELDS
-    raise ValueError(f"unknown sensitivity tier {tier!r}")
+    if profile == FORWARDABLE:
+        return GRADING_SIDE_FIELDS | ANSWER_KEY_FIELDS
+    raise ValueError(f"unknown scan profile {profile!r}")
 
 
 def _line_of(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
-def _field_findings(tier: str, text: str) -> list[str]:
+def _field_findings(profile: str, text: str) -> list[str]:
     """Banned field names, each with the line it sits on.
 
     The line number is the whole point.  A finding that quoted what it matched
@@ -135,7 +138,7 @@ def _field_findings(tier: str, text: str) -> list[str]:
     whoever ran the check.
     """
     found: list[str] = []
-    for name in sorted(banned_fields(tier)):
+    for name in sorted(banned_fields(profile)):
         match = re.search(rf'["\']?{re.escape(name)}["\']?\s*[:=]', text)
         if match is not None:
             found.append(f"field {name} (line {_line_of(text, match.start())})")
@@ -152,15 +155,15 @@ def _marker_findings(text: str) -> list[str]:
     return found
 
 
-def find_in_text(text: str, tier: str = FORWARDABLE) -> list[str]:
+def find_in_text(text: str, profile: str = FORWARDABLE) -> list[str]:
     """Findings in one serialized body: field names first, then label shapes.
 
     The text is searched as text rather than parsed as JSON because the two
     report formats with no JSON shape at all -- ``md`` and ``html`` -- are the
     ones a person forwards, and a trimmed payload can still render a heading.
     """
-    findings = _field_findings(tier, text)
-    if tier == FORWARDABLE:
+    findings = _field_findings(profile, text)
+    if profile == FORWARDABLE:
         findings += _marker_findings(text)
     return findings
 
@@ -179,7 +182,7 @@ def _paths_of(payload: Any, prefix: str = "") -> dict[str, str]:
     return found
 
 
-def banned_keys(payload: Any, tier: str = FORWARDABLE) -> list[str]:
+def banned_keys(payload: Any, profile: str = FORWARDABLE) -> list[str]:
     """Banned field names still in memory, each with the JSON path it sits at.
 
     A path rather than a line: a payload has no lines until it is written, and a
@@ -188,11 +191,11 @@ def banned_keys(payload: Any, tier: str = FORWARDABLE) -> list[str]:
     paths = _paths_of(payload)
     return [
         f"key {name} (at {paths[name]})"
-        for name in sorted(banned_fields(tier) & paths.keys())
+        for name in sorted(banned_fields(profile) & paths.keys())
     ]
 
 
-def find_in_payload(payload: Any, tier: str = FORWARDABLE) -> list[str]:
+def find_in_payload(payload: Any, profile: str = FORWARDABLE) -> list[str]:
     """Findings for a document still in memory: the keys, then the shapes in text.
 
     Both halves are needed. A rubric moved under a key that is not on the list is
@@ -202,10 +205,10 @@ def find_in_payload(payload: Any, tier: str = FORWARDABLE) -> list[str]:
     # Indented so a line number points somewhere a reader can jump to; a
     # one-line dump would make every finding "line 1".
     text = json.dumps(payload, ensure_ascii=False, default=str, indent=1)
-    return sorted(set(banned_keys(payload, tier)) | set(find_in_text(text, tier)))
+    return sorted(set(banned_keys(payload, profile)) | set(find_in_text(text, profile)))
 
 
-def scan_file(path: Path, tier: str = FORWARDABLE) -> list[str]:
+def scan_file(path: Path, profile: str = FORWARDABLE) -> list[str]:
     """Scan one document as it was written out.
 
     A ``.json`` capture that will not parse is scanned as text rather than
@@ -232,15 +235,15 @@ def scan_file(path: Path, tier: str = FORWARDABLE) -> list[str]:
         except ValueError:
             parsed = None
         if parsed is not None:
-            return sorted(set(banned_keys(parsed, tier)) | set(find_in_text(text, tier)))
-    return find_in_text(text, tier)
+            return sorted(set(banned_keys(parsed, profile)) | set(find_in_text(text, profile)))
+    return find_in_text(text, profile)
 
 
-def scan_paths(paths: Iterable[Path], tier: str = FORWARDABLE) -> list[str]:
+def scan_paths(paths: Iterable[Path], profile: str = FORWARDABLE) -> list[str]:
     """Every finding, prefixed by the file it came from."""
     findings: list[str] = []
     for path in paths:
-        for finding in scan_file(path, tier):
+        for finding in scan_file(path, profile):
             findings.append(f"{path}: {finding}")
     return findings
 
@@ -258,7 +261,7 @@ def documents_in(root: Path) -> Sequence[Path]:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("path", nargs="+", type=Path, help="a document, or a directory of them")
-    parser.add_argument("--tier", choices=(FORWARDABLE, INTERNAL), default=FORWARDABLE)
+    parser.add_argument("--profile", choices=(FORWARDABLE, INTERNAL), default=FORWARDABLE)
     args = parser.parse_args(argv)
 
     missing = [str(root) for root in args.path if not root.exists()]
@@ -279,10 +282,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"nothing was scanned: no {suffixes} file under {roots}", file=sys.stderr)
         return 2
 
-    findings = scan_paths(targets, args.tier)
+    findings = scan_paths(targets, args.profile)
     for line in findings:
         print(line, file=sys.stderr)
-    print(f"{len(targets)} document(s) scanned at {args.tier} tier, {len(findings)} finding(s).")
+    print(f"{len(targets)} document(s) scanned as {args.profile}, {len(findings)} finding(s).")
     return 1 if findings else 0
 
 

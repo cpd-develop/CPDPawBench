@@ -542,3 +542,26 @@ M4 单独做了反向验证：临时移除 `finally` 里的 try/except 后跑 `t
 - 第十四／十五批没有等它，而是另起第十轮单独送检（范围不重叠，避免重复劳动）。
 - 若 `reviewer-pair12-13b` 之后返回结论，按第九轮回填；若确认已死，重发一次。
   **两种情况都要在 commit 之前有结论**，这是规则的硬门槛，不是可以默认跳过的步骤。
+
+## 第十一轮：撤掉 `shared` 档，只留一个视图（2026-11-23）
+
+- 检视者：独立 subagent（`reviewer-tier-removal`）　检视时间：2026-11-23 11:05
+- 检视范围：工作区未提交 diff，1979 行；18 个改动文件（生成产物 `ui/index.js` 与无关的
+  `local_eval_report.md` 已排除在送检范围外）
+- 提供的材料：diff、18 个改动文件路径、4 份规范（另外三份规则文件）；**未提供作者方案说明**
+
+| # | 严重度 | 位置 | 发现 | 处理 |
+|---|---|---|---|---|
+| 1 | 一般 | `tests/.../test_reports.py:484`、`tools/scan_shared_leakage.py:166` | `md`／`html` 落盘报告被按 `internal` 扫描，而 heading／label／tag 三组形态正则只在 `forwardable` 下跑。改前这两种格式在 `shared` 档是按 `forwardable` 扫过的——正好是"会被贴进 issue、被转发"的两种 | 已修：`md`／`html` 改回 `forwardable`，`json`（带 rubric excerpt）保持 `internal`；同时把 rubric 用例对 md 的断言从「`polite` 不在」扩成同一份词表的 `find_in_text(md, FORWARDABLE) == []`，两个断言并存 |
+| 2 | 建议 | `service/reports.py:640-643` | 四个判分侧字段改为无条件 `row[...]`，而同函数的 `trace_id`／`session_id` 用 `_optional()`，怀疑旧库行会 `KeyError` 把轮询详情打成 500 | 不改：`store.py` 的 `CREATE TABLE` 与 reconcile 列清单都含这四列（113/125-128/204-216），打开库即补齐，`_optional` 是为更早的发行版本留的余量。四个字段与相邻十余个字段读法一致，只对这四个做例外反而是不一致 |
+| 3 | 建议 | `reverse_checks/probe_round7.py:160,163` | 探针仍以 `sensitivity=`／第二位置参数调 `report()`、`job_detail()`，一跑就 `TypeError` | 已修：改成新签名（探针本身数的是"渲染一次读了几次库"，与档位无关） |
+| 4 | 建议 | `reverse_checks/reverse_round9.py:45-67` | 三个变异片段内嵌旧日志行（含 `sensitivity` 字段），改动后 needle 找不到 → 被记成 survivor，产出假的存活清单 | 遗留：该变异体（"日志行里去掉 sensitivity"）随档位一起失效，改 needle 等于改写那一轮的记录。责任人 anderson，下次重跑反向验证前按当前日志行重写 |
+| 5 | 建议 | `api.ts:114`、`report.tsx:601`、`test_reports.py:19,1502`、`service/api.py:786` | 注释仍写 "Full tier only"／"full tier"／"shared tier"；`job_detail` 的 docstring 说文档含 timeline，实际时间线在 `task_detail` 里分页给 | 已修：五处措辞按现在的单视图改写；`job_detail` 的 docstring 明确"时间线是第二个请求" |
+| 6 | 建议 | `service/reports.py:379-391`、`1212` | zip 渲染在锁外进行，同一指纹的并发请求各建一份最大 64 MB 的 `BytesIO`；落盘后的 sha256 又在全局锁内算。撤掉档位后 zip 人人可点，放大倍数上升 | 遗留：既有实现（本轮未改这段），单用户看板 + 导出面板一次只发一个请求，实测无并发形态。责任人 anderson，M3 前若做并发压测，按指纹加 single-flight 再改 |
+
+复检：第 1 项修复后 `test_reports.py` 58 项通过（`md`／`html` 在更严的 `forwardable` 下零发现，
+说明加严没有把正常渲染判成泄露）；第 3、5 项为文案与调用签名，`tsc --noEmit` 干净、全量
+`tests/cpd` **672 passed**（本轮 `reverse_checks/` 不在 CI 内）。第 2 项按"不改"结论登记，
+理由见上表，未做代码变更。
+
+遗留：上表第 4、6 项；另有第七轮遗留的第九轮检视状态未回填，与本轮无关。

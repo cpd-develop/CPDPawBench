@@ -326,8 +326,8 @@ class JobService:
     def get(self, job_id: str) -> dict[str, Any]:
         """One job with the rows the runner writes: state, score, and why not.
 
-        This is ``GET /v1/jobs/{id}``.  The richer two-tier view is
-        ``reports.build_job_detail``, which every read surface shares; this
+        This is ``GET /v1/jobs/{id}``.  The rich view is
+        ``reports.Reports.job_detail``, which every read surface shares; this
         stays the queue view -- the one place a submitter checks whether their
         job is moving.
         """

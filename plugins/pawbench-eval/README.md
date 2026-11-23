@@ -66,11 +66,10 @@ times; stacking them on one page meant scrolling past a form to read a score.
   the service's zone on separate lines — the seven-hour mistake this exists to
   prevent.
 - **报告 (report)** — a full page, not a modal, because it now carries the task
-  text.  Header: purpose, status, copyable job id, product, submitter, and the
-  `shared / 完整版` switch (on the tab bar, clear of the host's floating control
-  in the top-right corner).  Tabs: **总览** (score dial, slices, sources,
-  fingerprint), **题目** (searchable/filterable task table → one task's prompt,
-  criteria, artifacts and timeline), **导出** (report formats and download).
+  text.  Header: purpose, status, copyable job id, product, submitter.  Tabs:
+  **总览** (score dial, slices, sources, fingerprint), **题目**
+  (searchable/filterable task table → one task's prompt, criteria, artifacts and
+  timeline), **导出** (report formats and download).
 - **数据集 (datasets)** — list, new builtin view, custom package upload, category
   management.  A delete button appears only on rows you own.
 - **配置 (settings)** — service address, token, identity, probe result, and the
@@ -97,10 +96,11 @@ grep — it is just not the one we chose.  Asking the agent to adopt our id is w
 makes "open this session in your console" a working instruction rather than a
 translation exercise.
 
-Both live in the **shared** tier, not behind `完整版`: the report is the document
-a submitter forwards to the team that owns the agent.  A retry gets a new
-`trace_id`, which is the point — two attempts of the same task never share log
-lines.  Rows written before the columns existed read as `—`.
+Both are printed next to the score rather than tucked behind a switch: the
+report is the document a reader uses to tell whoever owns the agent which run it
+was, and an id you have to change a setting to see is an id that goes unchecked.
+A retry gets a new `trace_id`, which is the point — two attempts of the same task
+never share log lines.  Rows written before the columns existed read as `—`.
 
 The task's own prompt is in the report for the same reason: a reader who cannot
 see the question cannot argue with the answer, and sending them to another

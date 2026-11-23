@@ -13,7 +13,7 @@
  */
 
 import { Alert, Button, Input, Segmented } from "../host/antd";
-import { api, ConnectionConfig, ProbeResult, ReportFormat, Sensitivity } from "../api";
+import { api, ConnectionConfig, ProbeResult, ReportFormat } from "../api";
 import { describeError } from "../host/sdk";
 import { useEffect, useState } from "../host/react";
 import { useFeedback } from "../ui/feedback";
@@ -28,9 +28,7 @@ const SOURCE_TEXT: Record<string, string> = {
 export function SettingsModule(props: {
   config: ConnectionConfig | null;
   onSaved: (config: ConnectionConfig) => void;
-  onSensitivity: (value: Sensitivity) => void;
   onFormat: (value: ReportFormat) => void;
-  sensitivity: Sensitivity;
   format: ReportFormat;
 }): unknown {
   const feedback = useFeedback();
@@ -166,16 +164,6 @@ export function SettingsModule(props: {
         <Panel>
           <SectionTitle>报告默认值</SectionTitle>
           <Fieldset title="">
-            <Field label="档位" hint="shared 给任何人看；完整版带判分依据与产物">
-              <Segmented
-                value={props.sensitivity}
-                onChange={(value: any) => props.onSensitivity(value as Sensitivity)}
-                options={[
-                  { value: "shared", label: "shared" },
-                  { value: "full", label: "完整版" },
-                ]}
-              />
-            </Field>
             <Field label="导出格式">
               <Segmented
                 value={props.format}

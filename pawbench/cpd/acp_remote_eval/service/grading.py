@@ -451,9 +451,10 @@ def _judge_prompt(task: Any, execution_result: Mapping[str, Any]) -> str:
 def _judge_notes(grade: GradeResult) -> dict[str, Any]:
     """The judge's per-criterion numbers and its prose, kept together.
 
-    They go in the ``full``-tier column rather than ``automated_breakdown``,
-    which the ``shared`` tier publishes: the criterion names are rubric wording,
-    and the shared report is the one a submitter forwards to the team under test.
+    They go in their own column rather than in ``automated_breakdown``: the
+    criterion names are rubric wording, and a checklist that mixed an
+    answer-key label into a score table would be harder to read than two
+    columns, one of which a reader has to ask for.
     """
     return {"scores": dict(grade.breakdown), "notes": grade.notes}
 

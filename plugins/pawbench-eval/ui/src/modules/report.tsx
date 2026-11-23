@@ -10,8 +10,9 @@
  * The two ids on every task are the other half of that argument.  A score
  * nobody can trace back to a run is a number, not a measurement, so
  * ``trace_id`` (ours, 16 hex per attempt) and ``session_id`` (the agent's own
- * handle) sit in the shared tier rather than behind 完整版 — the person who
- * forwards this document is usually forwarding it to whoever owns the agent.
+ * handle) are printed next to the score rather than tucked away -- the person
+ * reading this is usually reading it to tell whoever owns the agent which run
+ * it was.
  */
 
 import {
@@ -26,7 +27,7 @@ import {
   Tabs,
   Tooltip,
 } from "../host/antd";
-import { api, JobDetail, ReportFormat, Sensitivity, TaskEntry, TranscriptEvent, TranscriptPage } from "../api";
+import { api, JobDetail, ReportFormat, TaskEntry, TranscriptEvent, TranscriptPage } from "../api";
 import { describeError, download, saveBlob } from "../host/sdk";
 import { useEffect, useMemo, useState } from "../host/react";
 import { useFeedback } from "../ui/feedback";
@@ -51,11 +52,11 @@ import {
 
 type TaskFilter = "all" | "bad" | "low" | "unscored";
 
-const FORMATS: { value: ReportFormat; label: string; hint: string; fullOnly?: boolean }[] = [
+const FORMATS: { value: ReportFormat; label: string; hint: string }[] = [
   { value: "md", label: "Markdown", hint: "一页读完，适合贴进 issue 或 wiki" },
   { value: "html", label: "HTML", hint: "同内容带样式，适合发给不装工具的人" },
   { value: "json", label: "JSON", hint: "原始字段，适合二次处理" },
-  { value: "zip", label: "ZIP", hint: "报告 + 产物原文件", fullOnly: true },
+  { value: "zip", label: "ZIP", hint: "报告 + 产物原文件" },
 ];
 
 function isBad(task: TaskEntry): boolean {
@@ -66,12 +67,7 @@ function lowScore(task: TaskEntry): boolean {
   return typeof task.score === "number" && task.score < 0.8;
 }
 
-export function ReportModule(props: {
-  jobId: string;
-  sensitivity: Sensitivity;
-  onSensitivity: (value: Sensitivity) => void;
-  onBack: () => void;
-}): unknown {
+export function ReportModule(props: { jobId: string; onBack: () => void }): unknown {
   const feedback = useFeedback();
   const [detail, setDetail] = useState<JobDetail | null>(null);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
@@ -90,7 +86,7 @@ export function ReportModule(props: {
     let alive = true;
     setLoading(true);
     api
-      .detail(props.jobId, props.sensitivity)
+      .detail(props.jobId)
       .then((next) => {
         if (!alive) return;
         setDetail(next);
@@ -106,7 +102,7 @@ export function ReportModule(props: {
     return () => {
       alive = false;
     };
-  }, [props.jobId, props.sensitivity]);
+  }, [props.jobId]);
 
   const tasks = detail?.tasks ?? [];
 
@@ -127,7 +123,7 @@ export function ReportModule(props: {
   async function generate(): Promise<void> {
     setExporting(true);
     try {
-      const link = await api.report(props.jobId, format, props.sensitivity);
+      const link = await api.report(props.jobId, format);
       setLastExport({ filename: link.filename, size: link.size, url: link.url });
       // The service hands back a presigned URL; the bytes never pass through
       // the request that rendered them.
@@ -179,19 +175,7 @@ export function ReportModule(props: {
             </span>
           </>
         }
-        actions={
-          <>
-            <Button onClick={props.onBack}>返回列表</Button>
-            <Segmented
-              value={props.sensitivity}
-              onChange={(value: any) => props.onSensitivity(value as Sensitivity)}
-              options={[
-                { value: "shared", label: "shared" },
-                { value: "full", label: "完整版" },
-              ]}
-            />
-          </>
-        }
+        actions={<Button onClick={props.onBack}>返回列表</Button>}
       />
 
       {error ? (
@@ -375,17 +359,14 @@ export function ReportModule(props: {
                     onChange={(event: any) => setFormat(event.target.value)}
                     style={{ display: "flex", flexDirection: "column", gap: "var(--spacer-12)" }}
                   >
-                    {FORMATS.map((item) => {
-                      const disabled = Boolean(item.fullOnly) && props.sensitivity !== "full";
-                      return (
-                        <Radio key={item.value} value={item.value} disabled={disabled}>
-                          <span>{item.label}</span>
-                          <span className="pbe-cell-sub" style={{ marginLeft: 8 }}>
-                            {disabled ? `${item.hint}（需要完整版）` : item.hint}
-                          </span>
-                        </Radio>
-                      );
-                    })}
+                    {FORMATS.map((item) => (
+                      <Radio key={item.value} value={item.value}>
+                        <span>{item.label}</span>
+                        <span className="pbe-cell-sub" style={{ marginLeft: 8 }}>
+                          {item.hint}
+                        </span>
+                      </Radio>
+                    ))}
                   </Radio.Group>
                   <div style={{ marginTop: "var(--spacer-20)", display: "flex", gap: "var(--spacer-8)" }}>
                     <Button type="primary" loading={exporting} onClick={generate}>
@@ -420,7 +401,7 @@ export function ReportModule(props: {
                             type="link"
                             style={{ padding: 0 }}
                             onClick={() => {
-                              void downloadToFile(props.jobId, format, props.sensitivity, lastExport.filename);
+                              void downloadToFile(props.jobId, lastExport.filename);
                             }}
                           >
                             通过代理下载
@@ -431,11 +412,6 @@ export function ReportModule(props: {
                   ) : (
                     <EmptyHint>还没有生成。选一种格式，点左边「生成并打开」。</EmptyHint>
                   )}
-                  {props.sensitivity !== "full" ? (
-                    <div className="pbe-cell-sub" style={{ marginTop: "var(--spacer-12)" }}>
-                      当前是 shared 档：判分依据、工作目录、产物下载链接不在报告里。切到「完整版」再导出。
-                    </div>
-                  ) : null}
                 </Panel>
               </div>
             ),
@@ -444,12 +420,7 @@ export function ReportModule(props: {
       />
 
       {openTask ? (
-        <TaskDialog
-          jobId={props.jobId}
-          task={openTask}
-          sensitivity={props.sensitivity}
-          onClose={() => setOpenTask(null)}
-        />
+        <TaskDialog jobId={props.jobId} task={openTask} onClose={() => setOpenTask(null)} />
       ) : null}
     </>
   );
@@ -464,12 +435,7 @@ async function saveSubmissions(jobId: string): Promise<void> {
   );
 }
 
-async function downloadToFile(
-  jobId: string,
-  format: ReportFormat,
-  sensitivity: Sensitivity,
-  filename: string,
-): Promise<void> {
+async function downloadToFile(jobId: string, filename: string): Promise<void> {
   await download(`/v1/reports/${jobId}/${encodeURIComponent(filename)}`, filename);
 }
 
@@ -579,7 +545,6 @@ function taskColumns(): any[] {
 function TaskDialog(props: {
   jobId: string;
   task: TaskEntry;
-  sensitivity: Sensitivity;
   onClose: () => void;
 }): unknown {
   const [page, setPage] = useState<TranscriptPage | null>(null);
@@ -593,7 +558,7 @@ function TaskDialog(props: {
     let alive = true;
     setLoading(true);
     api
-      .taskDetail(props.jobId, props.task.task_id, props.sensitivity, props.task.attempt)
+      .taskDetail(props.jobId, props.task.task_id, props.task.attempt)
       .then((next) => {
         if (!alive) return;
         setDetail(next);
@@ -611,7 +576,7 @@ function TaskDialog(props: {
     return () => {
       alive = false;
     };
-  }, [props.jobId, props.task.task_id, props.task.attempt, props.sensitivity]);
+  }, [props.jobId, props.task.task_id, props.task.attempt]);
 
   async function goPage(next: number): Promise<void> {
     setLoading(true);
@@ -633,8 +598,8 @@ function TaskDialog(props: {
    *
    * A judge task stores a sentence; a rule-based task stores `{}` -- and an
    * empty object rendered into `<pre>` is a React crash, which is exactly how
-   * one automated task at the full tier used to take the whole page down.  An
-   * empty note is no note: the section is skipped rather than printing `{}`.
+   * one automated task used to take the whole page down.  An empty note is no
+   * note: the section is skipped rather than printing `{}`.
    */
   const notes = detail.judge_notes;
   const judgeText =
@@ -729,13 +694,8 @@ function TaskDialog(props: {
               path={artifact.path}
               size={artifact.size}
               digest={artifact.sha256}
-              // The list is in both tiers and the bytes are not: a shared
-              // report names the files the agent wrote and says nothing about
-              // what is in them, which is the same line the download obeys.
-              onOpen={
-                props.sensitivity === "full"
-                  ? () => setPreview({ kind: "artifacts", path: artifact.path, canDownload: true })
-                  : undefined
+              onOpen={() =>
+                setPreview({ kind: "artifacts", path: artifact.path, canDownload: true })
               }
             />
           ))}
@@ -747,7 +707,7 @@ function TaskDialog(props: {
       {detail.rubric_excerpt || judgeText ? (
         <>
           <div style={{ height: "var(--spacer-20)" }} />
-          <SectionTitle>评分依据（完整版）</SectionTitle>
+          <SectionTitle>评分依据</SectionTitle>
           {detail.rubric_excerpt ? <pre className="pbe-block">{detail.rubric_excerpt}</pre> : null}
           {judgeText ? (
             <pre className="pbe-block" style={{ marginTop: "var(--spacer-8)" }}>

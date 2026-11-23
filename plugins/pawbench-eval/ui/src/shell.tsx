@@ -13,7 +13,7 @@
  */
 
 import { Alert, App, ConfigProvider, Tooltip } from "./host/antd";
-import { api, ConnectionConfig, JobItem, ReportFormat, Sensitivity } from "./api";
+import { api, ConnectionConfig, JobItem, ReportFormat } from "./api";
 import { describeError, icons } from "./host/sdk";
 import { useCallback, useEffect, useMemo, useState } from "./host/react";
 import { DesignScope } from "./theme";
@@ -26,7 +26,6 @@ import { StatusPill } from "./ui/primitives";
 
 type View = "jobs" | "datasets" | "settings";
 
-const SENSITIVITY_KEY = "pawbench-eval.sensitivity";
 const FORMAT_KEY = "pawbench-eval.format";
 
 function readStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
@@ -58,9 +57,6 @@ export function Shell(): unknown {
   const [config, setConfig] = useState<ConnectionConfig | null>(null);
   const [bootError, setBootError] = useState<string>("");
   const [newOpen, setNewOpen] = useState(false);
-  const [sensitivity, setSensitivity] = useState<Sensitivity>(() =>
-    readStored(SENSITIVITY_KEY, ["shared", "full"] as const, "shared"),
-  );
   const [format, setFormat] = useState<ReportFormat>(() =>
     readStored(FORMAT_KEY, ["md", "html", "json", "zip"] as const, "md"),
   );
@@ -213,15 +209,7 @@ export function Shell(): unknown {
           ) : null}
 
           {jobId ? (
-            <ReportModule
-              jobId={jobId}
-              sensitivity={sensitivity}
-              onSensitivity={(value) => {
-                setSensitivity(value);
-                store(SENSITIVITY_KEY, value);
-              }}
-              onBack={backToList}
-            />
+            <ReportModule jobId={jobId} onBack={backToList} />
           ) : view === "jobs" ? (
             <JobsModule
               jobs={jobs}
@@ -236,15 +224,10 @@ export function Shell(): unknown {
           ) : (
             <SettingsModule
               config={config}
-              sensitivity={sensitivity}
               format={format}
               onSaved={(next) => {
                 setConfig(next);
                 void refreshJobs();
-              }}
-              onSensitivity={(value) => {
-                setSensitivity(value);
-                store(SENSITIVITY_KEY, value);
               }}
               onFormat={(value) => {
                 setFormat(value);

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""What a reader is shown about a job -- and what each sensitivity tier hides.
+"""What a reader is shown about a job, and what a document of it looks like.
 
 ``test_jobs.py`` and ``test_runner.py`` answer whether a job moved.  This module
 answers the second question, the one a submitter asks the dashboard and then
@@ -11,14 +11,14 @@ a field present at ``full`` *and* absent at ``shared``.  A one-sided test passes
 when somebody widens a tier by accident, and that is the failure mode that
 matters, because ``shared`` is the document a submitter sends to the people
 being evaluated.  The report-file cases cover the lifecycle around it (render
-once per fingerprint, presigned link, zip only where files are not being
-forwarded), and the transcript cases cover the paging that keeps one read from
-becoming the whole stream.
+once per fingerprint, presigned link, a zip that carries the files), and the
+transcript cases cover the paging that keeps one read from becoming the whole
+stream.
 
 Rows are seeded through the real store and uploaded files through the real
-exchange -- token, quarantine, fsync, artifact row -- because the full tier's
-download links point at paths *it* chose; a hand-written ``artifacts`` row would
-test a file layout the service never produces.
+exchange -- token, quarantine, fsync, artifact row -- because the download links
+point at paths *it* chose; a hand-written ``artifacts`` row would test a file
+layout the service never produces.
 """
 
 from __future__ import annotations
@@ -49,8 +49,6 @@ from pawbench.cpd.acp_remote_eval.service.queue import JobQueue, QueueLimits
 from pawbench.cpd.acp_remote_eval.service.reports import (
     DEFAULT_TRANSCRIPT_PAGE,
     MAX_TRANSCRIPT_PAGE,
-    SENSITIVITY_FULL,
-    SENSITIVITY_SHARED,
     ReportError,
     Reports,
 )
@@ -346,71 +344,70 @@ def _artifact_reads(store: Store, monkeypatch: pytest.MonkeyPatch) -> list[tuple
     return calls
 
 
-# ── the two tiers ─────────────────────────────────────────────────────────────
+# ── what the document carries ────────────────────────────────────────────────
 
 
-def test_shared_detail_shows_the_prompt_and_hides_the_rubric(env: Env) -> None:
+def test_detail_shows_what_was_asked_and_what_it_scored(env: Env) -> None:
     score_all(env, {"mail_a": 0.5, "mail_b": 0.75, "chart_c": 1.0})
 
-    shared = task_at(env.reports.job_detail(JOB, SENSITIVITY_SHARED), "mail_a")
-    full = task_at(env.reports.job_detail(JOB, SENSITIVITY_FULL), "mail_a")
+    entry = task_at(env.reports.job_detail(JOB), "mail_a")
 
-    # What the team being evaluated needs in order to act on the result.
-    assert shared["prompt"] == "Write output/result.txt with the answer."
-    assert shared["labels"]["scenario"] == "Office_Productivity/Email"
-    assert shared["score"] == 0.5
-    assert shared["duration_s"] == 240.0
-    assert shared["subject_model_reported"] == "subject-model-1"
-    # What stays behind: the answer-adjacent text and our own paths.  The list is
-    # the scanner's, so the tier this case checks and the case that greps a
-    # captured response body cannot drift apart.  Keys only, and deliberately so:
-    # ``mail_a`` is graded by a checker, so its rubric excerpt is ``None`` here by
-    # design -- the case below reads a judge task and checks the text itself.
-    for field in sorted(leakage_rules().SHARED_ONLY_FIELDS):
-        assert field not in shared, field
-        assert field in full, field
+    # What a reader needs in order to act on the result.
+    assert entry["prompt"] == "Write output/result.txt with the answer."
+    assert entry["labels"]["scenario"] == "Office_Productivity/Email"
+    assert entry["score"] == 0.5
+    assert entry["duration_s"] == 240.0
+    assert entry["subject_model_reported"] == "subject-model-1"
+    # And how that score was reached.  The fields an earlier design held back
+    # for a second, fuller view are simply part of the one view now -- the
+    # scanner's list is used so this case and the leak scan cannot drift apart.
+    # Keys only, and deliberately so: ``mail_a`` is graded by a checker, so its
+    # rubric excerpt is ``None`` here by design -- the case below reads a judge
+    # task and follows the text itself.
+    for field in sorted(leakage_rules().GRADING_SIDE_FIELDS):
+        assert field in entry, field
 
 
-def test_the_rubric_text_only_ever_reaches_the_full_tier(env: Env) -> None:
+def test_the_rubric_text_reaches_the_document_and_the_export(env: Env) -> None:
     """K2's headline field followed as text, not as a key name.
 
     A key-presence check passes on a task whose rubric is ``None`` -- and every
     task in this catalogue except ``mail_b`` is graded by a checker, so that is
     the usual case here.  This is the one place the answer text itself is
-    followed, and it is checked in both directions: a shared document that does
-    not carry it, and the same renderer at the same format on the full tier that
-    does.  Without the second half the first half passes for free.
+    followed: in the detail document and in the JSON file rendered from it.
 
-    The markdown renderer is deliberately not asserted on: it never prints the
-    excerpt, so "absent from the md" would prove nothing about the trimming.
+    The markdown renderer is checked in the other direction.  It never printed
+    the excerpt and still does not: a report is a document about a run, not a
+    copy of its marking scheme.
     """
     score_all(env, {"mail_a": 0.5, "mail_b": 0.75, "chart_c": 1.0})
 
-    shared = env.reports.job_detail(JOB, SENSITIVITY_SHARED)
-    full = env.reports.job_detail(JOB, SENSITIVITY_FULL)
-    assert task_at(full, "mail_b")["rubric_excerpt"] == RUBRIC_MAIL_B
+    assert task_at(env.reports.job_detail(JOB), "mail_b")["rubric_excerpt"] == RUBRIC_MAIL_B
 
-    body = json.dumps(shared, ensure_ascii=False)
-    assert RUBRIC_MAIL_B not in body
-    assert "polite" not in body, "a paraphrase into another key is just as loud"
+    link = env.reports.report(JOB, fmt="json")
+    written = env.exchange.report_path(JOB, str(link["filename"])).read_text("utf-8")
+    assert "polite" in written, "the JSON export is the document, so it carries it"
 
-    for sensitivity, expected in ((SENSITIVITY_SHARED, False), (SENSITIVITY_FULL, True)):
-        link = env.reports.report(JOB, fmt="json", sensitivity=sensitivity)
-        written = env.exchange.report_path(JOB, str(link["filename"])).read_text("utf-8")
-        assert ("polite" in written) is expected, sensitivity
+    markdown_link = env.reports.report(JOB, fmt="md")
+    markdown = env.exchange.report_path(
+        JOB, str(markdown_link["filename"])
+    ).read_text("utf-8")
+    assert "polite" not in markdown, "the report is about the run, not its marking scheme"
+    # And the same vocabulary the scanner uses, rather than one hand-picked word:
+    # a report that starts printing a rubric *heading* is the regression here.
+    assert leakage_rules().find_in_text(markdown, leakage_rules().FORWARDABLE) == []
 
 
-def test_full_detail_carries_the_judge_reasoning_and_download_links(env: Env) -> None:
+def test_detail_carries_the_judge_reasoning_and_download_links(env: Env) -> None:
     finish(env, "mail_b", 0.25, judge_notes=["tone"], judge_served_models=["free/router-a"])
     upload(env, "mail_b", "output/result.csv")
 
-    entry = task_at(env.reports.job_detail(JOB, SENSITIVITY_FULL), "mail_b")
-    shared_entry = task_at(env.reports.job_detail(JOB, SENSITIVITY_SHARED), "mail_b")
+    entry = task_at(env.reports.job_detail(JOB), "mail_b")
 
     assert entry["judge_notes"] == ["tone"]
     assert entry["judge_served_models"] == ["free/router-a"]
     assert entry["expected_behavior"] == "A file is written."
-    assert entry["artifacts"] == shared_entry["artifacts"]
+    assert [item["path"] for item in entry["artifacts"]] == ["output/result.csv"]
     assert entry["downloads"] == [
         {
             "path": "output/result.csv",
@@ -438,7 +435,7 @@ def test_job_detail_reads_the_artifact_rows_once_for_a_whole_job(
     upload(env, "mail_b", "output/result.csv")
 
     calls = _artifact_reads(env.store, monkeypatch)
-    detail = env.reports.job_detail(JOB, SENSITIVITY_FULL)
+    detail = env.reports.job_detail(JOB)
 
     assert [call[1] for call in calls] == [None], f"one artifact read per task: {calls}"
     assert task_at(detail, "mail_a")["artifacts"][0]["path"] == "output/plot.png"
@@ -447,54 +444,57 @@ def test_job_detail_reads_the_artifact_rows_once_for_a_whole_job(
     assert task_at(detail, "chart_c")["downloads"] == []
 
     document_reads = len(calls)
-    env.reports.report(JOB, fmt="zip", sensitivity=SENSITIVITY_FULL)
+    env.reports.report(JOB, fmt="zip")
 
     assert calls[document_reads:] == [(JOB, None), (JOB, None)], (
         f"the bundle re-read per task: {calls[document_reads:]}"
     )
 
 
-def test_no_tier_publishes_the_grading_code(env: Env) -> None:
-    """The answer key is not a sensitivity level, so neither document may hold it."""
+def test_the_detail_never_publishes_the_grading_code(env: Env) -> None:
+    """The answer key is not a view option, so the document cannot hold it."""
     score_all(env, {"mail_a": 0.5, "mail_b": 0.75, "chart_c": 1.0})
 
-    for tier in (SENSITIVITY_SHARED, SENSITIVITY_FULL):
-        rendered = json.dumps(env.reports.job_detail(JOB, tier))
+    rendered = json.dumps(env.reports.job_detail(JOB))
 
-        for field in sorted(leakage_rules().ANSWER_KEY_FIELDS):
-            assert field not in rendered, f"{tier} detail published {field}"
+    for field in sorted(leakage_rules().ANSWER_KEY_FIELDS):
+        assert field not in rendered, f"detail published {field}"
 
 
-def test_the_forwardable_documents_pass_the_leakage_scan(env: Env) -> None:
-    """K2: everything a submitter can hand over, run through the scanner's rules.
+def test_the_rendered_documents_pass_the_leakage_scan(env: Env) -> None:
+    """K2: the documents that leave the service, run through the scanner.
 
     The scanner is a command line first -- someone points it at a captured
     response before forwarding it -- so the case scans what that person would
-    scan: the payloads and the rendered files, at both tiers, rather than a
-    re-serialization the service never wrote.
+    scan: the results payload (a submission) and the rendered files, rather than
+    a re-serialization the service never wrote.
+
+    Markdown and HTML are scanned at the stricter profile on purpose: they are
+    the two formats a person pastes into an issue or mails on, so a heading or a
+    ``rubric_excerpt:`` line in either is the regression worth catching.  JSON is
+    the document itself, rubric excerpt included, so only the answer key is
+    banned there.
 
     The two halves prove different things, and only one of them is about this
-    service.  The clean half is the production check -- it goes red when the
-    trimming in ``reports.py`` stops trimming.  The planted half checks the
-    scanner itself still fires: a vocabulary that silently matches nothing would
-    keep the first half green forever, which is the failure mode of every grep
-    based guard.
+    service.  The clean half is the production check -- it goes red when a
+    document starts carrying something it should not.  The planted half checks
+    the scanner itself still fires: a vocabulary that silently matches nothing
+    would keep the first half green forever, which is the failure mode of every
+    grep based guard.
     """
     score_all(env, {"mail_a": 0.5, "mail_b": 0.75, "chart_c": 1.0})
     rules = leakage_rules()
 
     payloads = {
-        "shared detail": (rules.FORWARDABLE, env.reports.job_detail(JOB, SENSITIVITY_SHARED)),
         "results": (rules.FORWARDABLE, env.reports.results(JOB)),
-        "full detail": (rules.INTERNAL, env.reports.job_detail(JOB, SENSITIVITY_FULL)),
+        "detail": (rules.INTERNAL, env.reports.job_detail(JOB)),
     }
+    profiles = {"md": rules.FORWARDABLE, "html": rules.FORWARDABLE, "json": rules.INTERNAL}
     bodies: dict[str, tuple[str, str]] = {}
-    for sensitivity in (SENSITIVITY_SHARED, SENSITIVITY_FULL):
-        tier = rules.FORWARDABLE if sensitivity == SENSITIVITY_SHARED else rules.INTERNAL
-        for fmt in ("md", "html", "json"):
-            link = env.reports.report(JOB, fmt=fmt, sensitivity=sensitivity)
-            path = env.exchange.report_path(JOB, str(link["filename"]))
-            bodies[f"{fmt} report @ {sensitivity}"] = (tier, path.read_text(encoding="utf-8"))
+    for fmt, profile in profiles.items():
+        link = env.reports.report(JOB, fmt=fmt)
+        path = env.exchange.report_path(JOB, str(link["filename"]))
+        bodies[f"{fmt} report"] = (profile, path.read_text(encoding="utf-8"))
 
     findings = {
         name: rules.find_in_payload(body, tier) for name, (tier, body) in payloads.items()
@@ -556,30 +556,15 @@ def test_a_scan_that_never_ran_does_not_report_a_clean_bill(
     assert "tone" not in captured.err
 
 
-def test_a_misspelled_sensitivity_is_refused_not_defaulted(env: Env) -> None:
-    """Quietly serving ``shared`` to a caller who typed ``fulll`` is the leak.
-
-    The same reason ``FULL`` in caps is accepted: a tier name is a word, and
-    refusing the casing would only teach callers to hard-code lowercase.
-    """
-    with pytest.raises(ReportError) as refused:
-        env.reports.job_detail(JOB, "fulll")
-
-    assert refused.value.code == "sensitivity_unknown"
-    assert sorted(refused.value.details["allowed"]) == ["full", "shared"]
-
-    assert env.reports.job_detail(JOB, "FULL")["sensitivity"] == SENSITIVITY_FULL
-
-
 def test_detail_of_a_job_that_is_not_there_says_so(env: Env) -> None:
     with pytest.raises(ReportError) as refused:
-        env.reports.job_detail("job-nope", SENSITIVITY_SHARED)
+        env.reports.job_detail("job-nope")
 
     assert refused.value.code == "job_not_found"
 
 
 def test_detail_lists_the_snapshots_the_job_ran_from(env: Env) -> None:
-    detail = env.reports.job_detail(JOB, SENSITIVITY_SHARED)
+    detail = env.reports.job_detail(JOB)
 
     assert detail["sources"] == [
         {
@@ -642,7 +627,7 @@ def test_tasks_that_never_scored_stay_out_of_the_mean(env: Env) -> None:
     finish(env, "chart_c", None, status="skipped", failure_reason="deadline")
 
     results = env.reports.results(JOB)
-    detail = env.reports.job_detail(JOB, SENSITIVITY_SHARED)
+    detail = env.reports.job_detail(JOB)
 
     assert results["overall"] == 1.0
     assert results["tasks"] == 1
@@ -683,7 +668,7 @@ def test_results_says_what_the_subjects_claimed_and_where_they_ran(env: Env) -> 
 
 
 def test_a_forwardable_report_drops_the_endpoints_credential(env: Env) -> None:
-    """``shared`` is the tier a submitter sends to the team being evaluated.
+    """A report is the document a submitter sends to the team being evaluated.
 
     An ACP address that carries its key as ``user:token@host`` or as ``?key=``
     passes the endpoint check -- that is exactly how a hosted agent is reached --
@@ -696,7 +681,7 @@ def test_a_forwardable_report_drops_the_endpoints_credential(env: Env) -> None:
         JOB, acp_url=f"http://agent:{secret}@eval.example.com/rpc?key={secret}&v=2"
     )
 
-    detail = env.reports.job_detail(JOB, sensitivity=SENSITIVITY_SHARED)
+    detail = env.reports.job_detail(JOB)
     results = env.reports.results(JOB)
 
     assert detail["acp_url"] == "http://eval.example.com/rpc"
@@ -705,7 +690,7 @@ def test_a_forwardable_report_drops_the_endpoints_credential(env: Env) -> None:
     assert secret not in json.dumps(results)
 
     for fmt in ("md", "json"):
-        link = env.reports.report(JOB, fmt=fmt, sensitivity=SENSITIVITY_SHARED)
+        link = env.reports.report(JOB, fmt=fmt)
         written = env.exchange.report_path(JOB, str(link["filename"])).read_text(
             encoding="utf-8"
         )
@@ -722,8 +707,8 @@ def test_task_detail_defaults_to_the_latest_attempt(env: Env) -> None:
     )
     env.store.update_job_task(JOB, "mail_a", 2, status="finished", score=0.9)
 
-    latest = env.reports.task_detail(JOB, "mail_a", SENSITIVITY_SHARED)
-    first = env.reports.task_detail(JOB, "mail_a", SENSITIVITY_SHARED, attempt=1)
+    latest = env.reports.task_detail(JOB, "mail_a")
+    first = env.reports.task_detail(JOB, "mail_a", 1)
 
     assert (latest["attempt"], latest["score"]) == (2, 0.9)
     assert (first["attempt"], first["score"]) == (1, 0.2)
@@ -734,7 +719,7 @@ def test_an_attempt_that_was_never_recorded_is_not_found(env: Env) -> None:
     finish(env, "mail_a", 0.2)
 
     with pytest.raises(ReportError) as refused:
-        env.reports.task_detail(JOB, "mail_a", SENSITIVITY_SHARED, attempt=7)
+        env.reports.task_detail(JOB, "mail_a", 7)
 
     assert refused.value.code == "task_not_found"
 
@@ -759,7 +744,7 @@ def test_a_dataset_that_disappeared_still_leaves_a_readable_report(
     )
 
     with caplog.at_level(logging.WARNING):
-        detail = env.reports.job_detail(JOB, SENSITIVITY_SHARED)
+        detail = env.reports.job_detail(JOB)
 
     assert [task["score"] for task in detail["tasks"]] == [0.5, 0.5, 0.5]
     # The names come off the log record, not the rendered line: the dataset id is
@@ -1041,10 +1026,12 @@ def test_a_report_is_reused_until_the_numbers_move(env: Env, monkeypatch) -> Non
 
     assert again == first
     assert written == [first["filename"], markdown["filename"], after_change["filename"]]
-    assert markdown["filename"].endswith("-shared.md")
+    assert markdown["filename"].endswith(".md")
     assert after_change["filename"] != first["filename"]
     assert after_change["stale_before"] != first["stale_before"]
-    assert env.reports.report(JOB, sensitivity=SENSITIVITY_FULL)["filename"].endswith("-full.json")
+    # The name carries the format and nothing else: one document per state of
+    # the job, so no two formats can collide and no suffix names a tier.
+    assert env.reports.report(JOB, fmt="zip")["filename"].endswith(".zip")
 
 
 def test_a_rendered_report_is_the_document_the_route_would_serve(env: Env) -> None:
@@ -1146,8 +1133,8 @@ def test_two_requests_for_one_fingerprint_agree_on_the_file_that_landed(
     real_render = reports_mod.Reports._render
     markers = itertools.count()
 
-    def marked_render(self, fmt, payload, job_id, rows, tier):
-        data = real_render(self, fmt, payload, job_id, rows, tier)
+    def marked_render(self, fmt, payload, job_id, rows):
+        data = real_render(self, fmt, payload, job_id, rows)
         return data + f"<!-- render {next(markers)} -->\n".encode()
 
     monkeypatch.setattr(reports_mod.Reports, "_render", marked_render)
@@ -1182,27 +1169,19 @@ def test_two_requests_for_one_fingerprint_agree_on_the_file_that_landed(
     assert landed.count(b"<!-- render") == 1, "one whole document, not two of them"
 
 
-def test_zip_is_refused_at_the_tier_that_gets_forwarded(env: Env) -> None:
-    with pytest.raises(ReportError) as refused:
-        env.reports.report(JOB, fmt="zip", sensitivity=SENSITIVITY_SHARED)
-
-    assert refused.value.code == "sensitivity_format_mismatch"
-    assert refused.value.details["required"] == SENSITIVITY_FULL
-
-
-def test_zip_at_full_bundles_the_detail_document_transcripts_and_files(env: Env) -> None:
+def test_zip_bundles_the_document_transcripts_and_files(env: Env) -> None:
     score_all(env, {"mail_a": 0.5, "mail_b": 0.5, "chart_c": 0.5})
     write_transcript(env, [message_chunk("working")])
     upload(env, "mail_b", "output/result.csv")
 
-    doc = env.reports.report(JOB, fmt="zip", sensitivity=SENSITIVITY_FULL)
+    doc = env.reports.report(JOB, fmt="zip")
     with zipfile.ZipFile(env.exchange.report_path(JOB, doc["filename"])) as archive:
         assert sorted(archive.namelist()) == [
             "artifacts/mail_b-1/output/result.csv",
-            "detail-full.json",
+            "detail.json",
             "transcripts/mail_a-1.jsonl",
         ]
-        assert json.loads(archive.read("detail-full.json"))["sensitivity"] == SENSITIVITY_FULL
+        assert json.loads(archive.read("detail.json"))["job_id"] == JOB
         assert archive.read("artifacts/mail_b-1/output/result.csv") == b"result-bytes"
 
 
@@ -1250,17 +1229,18 @@ def test_a_task_without_attachments_reports_a_list_and_not_a_section(env: Env) -
     assert detail["attachments"] == []
 
 
-def test_the_attachment_list_is_in_the_shared_tier_too(env: Env) -> None:
-    """The attachment *is* part of the question, and shared already prints it.
+def test_task_detail_and_the_job_detail_describe_attachments_the_same_way(env: Env) -> None:
+    """Two routes, one shape: the dialog and the page cannot disagree.
 
-    The bytes are the same door as an artifact download -- token only -- but the
-    list of what was handed over cannot be a full-tier secret: a reader holding
-    a shared report would be reading an answer to a question they cannot see.
+    Both build their entry through ``_task_entry``, and this is what says so --
+    the dialog is opened *from* the page, so a difference between them is a
+    reader seeing two answers to one question.
     """
-    shared = env.reports.task_detail(JOB, "mail_a", SENSITIVITY_SHARED)
-    full = env.reports.task_detail(JOB, "mail_a", SENSITIVITY_FULL)
+    from_job = task_at(env.reports.job_detail(JOB), "mail_a")
+    from_task = env.reports.task_detail(JOB, "mail_a")
 
-    assert shared["attachments"] == full["attachments"]
+    assert from_task["attachments"] == from_job["attachments"]
+    assert from_task["attachments"], "the fixture hands mail_a one file"
 
 
 def test_a_text_attachment_previews_as_the_file_that_was_handed_over(env: Env) -> None:
@@ -1414,25 +1394,24 @@ def auth(tokens: dict[str, str]) -> dict[str, str]:
     return {"Authorization": f"Bearer {tokens['dev-1']}"}
 
 
-def test_zip_at_shared_answers_400_over_http(client: TestClient, tokens: dict[str, str]) -> None:
-    """400, not 403: both tiers are open to every whitelisted subject, so a
-    permission error would tell the reader to request a scope that does not
-    exist (design section 4.1, constraint 2)."""
+def test_zip_is_served_like_any_other_format_over_http(
+    client: TestClient, tokens: dict[str, str], env: Env
+) -> None:
+    """No format is privileged: a bundle is a report, and the token is the gate."""
+    score_all(env, {"mail_a": 0.5, "mail_b": 0.5, "chart_c": 0.5})
+
     response = client.get(
         f"/v1/jobs/{JOB}/report", params={"format": "zip"}, headers=auth(tokens)
     )
 
-    assert response.status_code == 400
-    assert response.json()["error"] == "sensitivity_format_mismatch"
+    assert response.status_code == 200
+    assert response.json()["filename"].endswith(".zip")
 
 
 def test_the_read_routes_answer_their_own_refusals(
     client: TestClient, tokens: dict[str, str]
 ) -> None:
     missing = client.get("/v1/jobs/job-nope/detail", headers=auth(tokens))
-    typo = client.get(
-        f"/v1/jobs/{JOB}/detail", params={"sensitivity": "everything"}, headers=auth(tokens)
-    )
     paging = client.get(
         f"/v1/jobs/{JOB}/transcript",
         params={"task_id": "mail_a", "cursor": "-1"},
@@ -1442,7 +1421,6 @@ def test_the_read_routes_answer_their_own_refusals(
     anonymous = client.get(f"/v1/jobs/{JOB}/results")
 
     assert missing.status_code == 404
-    assert typo.status_code == 400 and typo.json()["error"] == "sensitivity_unknown"
     assert paging.status_code == 400 and paging.json()["error"] == "cursor_invalid"
     assert no_task.status_code == 400 and no_task.json()["error"] == "field_type_invalid"
     assert anonymous.status_code in (401, 403)
@@ -1457,8 +1435,8 @@ def test_detail_routes_over_http_match_the_object_level_ones(
 
     served = client.get(f"/v1/jobs/{JOB}/detail", headers=auth(tokens)).json()
 
-    assert served["sensitivity"] == SENSITIVITY_SHARED
-    assert served["tasks"] == env.reports.job_detail(JOB, SENSITIVITY_SHARED)["tasks"]
+    assert served["tasks"] == env.reports.job_detail(JOB)["tasks"]
+    assert served["score"] == env.reports.job_detail(JOB)["score"]
 
 
 def test_a_signed_report_link_serves_the_file(client: TestClient, env: Env) -> None:
@@ -1469,11 +1447,11 @@ def test_a_signed_report_link_serves_the_file(client: TestClient, env: Env) -> N
     served = client.get(f"{parts.path}?{parts.query}")
     tampered = client.get(f"{parts.path}?{parts.query.replace('sig=', 'sig=x')}")
     broken = client.get(f"{parts.path}?expires=soon&sig=whatever")
-    ghost = urlsplit(env.exchange.report_link(JOB, "report-0000000000000000-shared.json"))
+    ghost = urlsplit(env.exchange.report_link(JOB, "report-0000000000000000.json"))
     absent = client.get(f"{ghost.path}?{ghost.query}")
 
     assert served.status_code == 200
-    assert json.loads(served.content)["sensitivity"] == SENSITIVITY_SHARED
+    assert json.loads(served.content)["job_id"] == JOB
     assert tampered.status_code == 403
     assert broken.status_code == 400
     assert absent.status_code == 404
@@ -1521,8 +1499,8 @@ def test_the_report_carries_the_ids_that_find_the_attempt(env: Env) -> None:
 
     ``trace_id`` is ours and appears in this service's log lines for the
     attempt; ``session_id`` is the agent's own handle.  Both have to reach the
-    reader at the shared tier, because that is the document a submitter
-    forwards to the team that owns the agent.
+    reader on the page and in the export, because that is the document a
+    submitter hands to the team that owns the agent.
     """
     finish(
         env,
@@ -1532,14 +1510,14 @@ def test_the_report_carries_the_ids_that_find_the_attempt(env: Env) -> None:
         session_id="d5b16b29dc0d4a8d95b6f8552e656359",
     )
 
-    shared = task_at(env.reports.job_detail(JOB, SENSITIVITY_SHARED), "mail_a")
+    shared = task_at(env.reports.job_detail(JOB), "mail_a")
     assert shared["trace_id"] == "8cc7763718eb468b"
     assert shared["session_id"] == "d5b16b29dc0d4a8d95b6f8552e656359"
 
     # And in the file, not only in the JSON: the markdown report is the thing
     # that gets pasted into a ticket.
     document = reports_mod._markdown(
-        env.reports.job_detail(JOB, SENSITIVITY_SHARED), env.reports.results(JOB)
+        env.reports.job_detail(JOB), env.reports.results(JOB)
     )
     assert "8cc7763718eb468b" in document
     assert "d5b16b29dc0d4a8d95b6f8552e656359" in document
@@ -1551,7 +1529,7 @@ def test_the_exported_report_states_the_task_before_scoring_it(env: Env) -> None
     score_all(env, {"mail_a": 1.0, "mail_b": 0.5, "chart_c": 0.0})
 
     document = reports_mod._markdown(
-        env.reports.job_detail(JOB, SENSITIVITY_SHARED), env.reports.results(JOB)
+        env.reports.job_detail(JOB), env.reports.results(JOB)
     )
 
     assert "Write output/result.txt with the answer." in document

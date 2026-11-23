@@ -157,10 +157,10 @@ def probe_report_passes(tmp: Path) -> None:
         Reports._bodies = counted_bodies
         ds_mod.DatasetService.tasks_for_run = counted_tasks
         try:
-            reports.report("j-1", fmt="md", sensitivity="shared")
+            reports.report("j-1", fmt="md")
             print("C) one rendered markdown report:", counts)
             counts.update(bodies=0, tasks_for_run=0, job_tasks=0, artifacts=0)
-            reports.job_detail("j-1", "shared")
+            reports.job_detail("j-1")
             print("C) one job_detail (the polled route):", counts)
         finally:
             Reports._bodies = real_bodies

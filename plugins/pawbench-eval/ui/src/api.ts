@@ -12,7 +12,6 @@
 
 import { call, uploadRaw } from "./host/sdk";
 
-export type Sensitivity = "shared" | "full";
 export type ReportFormat = "md" | "html" | "json" | "zip";
 
 export interface Window {
@@ -112,7 +111,6 @@ export interface TaskEntry {
   has_attachments?: boolean;
   attachments?: TaskAttachment[];
   prompt?: string | null;
-  // Full tier only.
   /**
    * What the judge wrote.  A string when a model judged the task, an object
    * when a rule did, and `{}` when it had nothing to add -- so it is typed as
@@ -152,7 +150,6 @@ export interface JobProgress {
 
 export interface JobDetail {
   job_id: string;
-  sensitivity: Sensitivity;
   generated_at: string;
   status: string;
   error: string | null;
@@ -171,7 +168,6 @@ export interface JobDetail {
   score: ScoreSummary | number | null;
   slices?: Record<string, Record<string, number>>;
   tasks: TaskEntry[];
-  full_only: boolean;
 }
 
 export interface TranscriptEvent {
@@ -247,7 +243,6 @@ export interface ProbeResult {
 export interface ReportLink {
   job_id: string;
   format: string;
-  sensitivity: string;
   filename: string;
   sha256: string;
   size: number;
@@ -262,7 +257,6 @@ export interface SubmitBody {
   purpose: string;
   selector: { categories: string[]; datasets: string[] };
   window: Window;
-  sensitivity?: Sensitivity;
 }
 
 const q = encodeURIComponent;
@@ -283,12 +277,11 @@ export const api = {
   cancel: (jobId: string, reason: string) =>
     call<JobItem>("POST", `/v1/jobs/${q(jobId)}/cancel`, { reason }),
 
-  detail: (jobId: string, sensitivity: Sensitivity) =>
-    call<JobDetail>("GET", `/v1/jobs/${q(jobId)}/detail?sensitivity=${sensitivity}`),
-  taskDetail: (jobId: string, taskId: string, sensitivity: Sensitivity, attempt: number) =>
+  detail: (jobId: string) => call<JobDetail>("GET", `/v1/jobs/${q(jobId)}/detail`),
+  taskDetail: (jobId: string, taskId: string, attempt: number) =>
     call<TaskDetail>(
       "GET",
-      `/v1/jobs/${q(jobId)}/tasks/${q(taskId)}/detail?sensitivity=${sensitivity}&attempt=${attempt}`,
+      `/v1/jobs/${q(jobId)}/tasks/${q(taskId)}/detail?attempt=${attempt}`,
     ),
   results: (jobId: string) =>
     call<Record<string, unknown>>("GET", `/v1/jobs/${q(jobId)}/results`),
@@ -325,11 +318,8 @@ export const api = {
     kind: "artifacts" | "attachments",
     path: string,
   ) => `/v1/jobs/${jobId}/tasks/${taskId}/attempts/${attempt}/${kind}?path=${q(path)}`,
-  report: (jobId: string, format: ReportFormat, sensitivity: Sensitivity) =>
-    call<ReportLink>(
-      "GET",
-      `/v1/jobs/${q(jobId)}/report?format=${format}&sensitivity=${sensitivity}`,
-    ),
+  report: (jobId: string, format: ReportFormat) =>
+    call<ReportLink>("GET", `/v1/jobs/${q(jobId)}/report?format=${format}`),
 
   datasets: () => call<DatasetList>("GET", "/v1/datasets"),
   categories: () => call<CategoryList>("GET", "/v1/dataset-categories"),

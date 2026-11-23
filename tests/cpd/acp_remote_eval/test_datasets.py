@@ -981,7 +981,7 @@ def test_a_task_that_vanished_from_disk_is_reported_once_per_run(
     That is the ordinary way a file goes wrong -- edited, replaced, deleted -- and
     the signature notices, so the rebuild drops it from the index and the run
     simply comes up short.  ``tasks_for_run`` skipped it without a word, and the
-    reader of the ``full`` tier saw a row with no labels and no prompt and could
+    reader of the detail view saw a row with no labels and no prompt and could
     not tell a retired task from a broken corpus.  One line for the whole run,
     because the dashboard polls the report route that calls this.
     """

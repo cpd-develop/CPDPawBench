@@ -352,7 +352,7 @@ D23 说本地命令行提交走这个入口而不是 `run_bench.py --agent acp`�
 | N3 | zip 流式落盘、按路径打开，体积闸在路由上 | `test_datasets_api.py::test_an_archive_over_the_quota_is_refused_before_it_lands`（加固） | 补两条：`"is over" in message`（只有路由的 `Content-Length` 预检会说这句话，unpacker 说的是 "declares"/"while unpacking"）与 `GET /v1/datasets/big` → 404（什么都没落库）。同时路由改为运行期经模块属性读 `MAX_PACKAGE_BYTES`，`monkeypatch` 才真的命中它声称的那道闸——这正是检视者指出的一处"用例名与实际校验不是同一处" |
 | N4 | job 行与数据集快照同事务 | `test_store.py::test_a_job_and_its_snapshot_arrive_together_or_not_at_all`（新）、`test_jobs.py::test_a_submission_that_cannot_write_leaves_no_row_to_close`（改写） | 前者用 `dict(snapshot, requested_by={"not": "a string"})` 让第二条语句在绑参时失败，断 `get_job is None` **且** `list_job_datasets == []`（只断 job 行区分不了"回滚"和"从没写"），再断成功往返；后者从"留下一行 failed"改成"库里一行都没有"，因为契约已经从"补偿写"上移到"事务" |
 | N5 | admit 失败有补偿，补偿失败不顶掉原始错误 | `test_jobs.py::test_a_cancel_landing_midway_is_not_written_back_to_queued`、`test_a_failing_closing_write_does_not_replace_the_real_error`（均改写） | 前者断行停在 `canceled`（守卫在 `new` 才会这样；无守卫的补偿会把它写成 failed）；后者让写入抛 "snapshot write refused"、让补偿抛 "database is locked"，断提交方读到的仍是**前一句**——这一条此前失败过两次：第一版把 `transition_job` 整体改成抛错，结果 `queue.admit` 自己先炸（它也调 `transition_job`），改成"上膛"标志仍不对，最后换成不依赖 cancel 的两条独立消息才真正只测补偿 |
-| N6 | 报表与详情不带端点凭据 | `test_reports.py::test_a_forwardable_report_drops_the_endpoints_credential`（新） | 把 job 行改成 `http://agent:<secret>@eval.example.com/rpc?key=<secret>&v=2`（合法输入，`AcpEndpoint.http` 只看 scheme），断 shared 档 detail 与 `results.environment` 都是 `http://eval.example.com/rpc`、两份 payload 的 JSON 文本里没有密文，再**读回落盘的 md 与 json 两个文件**确认渲染产物也没有——只断 payload 区分不了"渲染时脱敏"和"事后字符串替换" |
+| N6 | 报表与详情不带端点凭据 | `test_reports.py::test_a_forwardable_report_drops_the_endpoints_credential`（新） | 把 job 行改成 `http://agent:<secret>@eval.example.com/rpc?key=<secret>&v=2`（合法输入，`AcpEndpoint.http` 只看 scheme），断详情与 `results.environment` 都是 `http://eval.example.com/rpc`、两份 payload 的 JSON 文本里没有密文，再**读回落盘的 md 与 json 两个文件**确认渲染产物也没有——只断 payload 区分不了"渲染时脱敏"和"事后字符串替换" |
 | N7 | 队列视图（含 `GET /v1/jobs` 全量列表）不带端点凭据 | `test_jobs.py::test_the_queue_views_drop_the_endpoints_credential`（新） | 同时断库行里密文出现两次（runner 还要用它重连）与两个读视图都脱敏；这条是自查项，起因是把 `_job_item` 误判成"提交方看自己那一行"，而它同时服务需求 5 的全量列表 |
 
 计数：`test_cli.py` 由 17 项增至 19、`test_jobs.py` 36 项（其中 3 项改写、1 项新增）、`test_store.py` 23 项、`test_datasets_api.py` 31 项、`test_reports.py` 33 项。全量 **523 passed, 1 warning in 15.06s**（`pytest tests/cpd/acp_remote_eval -q`，命令与环境同 §4.1；文档改完后收口重跑 **523 passed in 15.16s**，代码未变）。反向验证做了一次实测：把 `cli.py` 落盘文件名的 `.name` 守卫改回原文，`test_a_service_that_names_a_path_for_its_file_does_not_choose_where_it_lands` 立即失败（0.34 s），恢复后全绿。
@@ -367,11 +367,11 @@ H3 合并边界重跑：`git diff --name-only main -- pawbench tests data run_be
 
 | 词表 | 内容 | 它防的是哪一种走偏 |
 |---|---|---|
-| `SHARED_ONLY_FIELDS` | `rubric_excerpt`、`expected_behavior`、`judge_notes`、`judge_served_models`、`workspace_path`、`transcript_path`、`downloads` | 裁剪点位放错：字段本身是 `full` 档独有的，出现在 `shared` 里说明分档被跳过了 |
+| `GRADING_SIDE_FIELDS` | `rubric_excerpt`、`expected_behavior`、`judge_notes`、`judge_served_models`、`workspace_path`、`transcript_path`、`downloads` | 裁剪点位放错：这些字段只由判分侧产生，出现在交给排行榜的 `results` 里说明裁剪点错了（原名叫 `SHARED_ONLY_FIELDS`，`shared` 档撤掉后改名） |
 | `ANSWER_KEY_FIELDS` | `automated_checks`、`llm_judge_rubric`、`grading_criteria`、`grading_code`、`checker_source`、`judge_prompt` | 答案外泄：任何档都不该有。`judge_prompt` 现在还不存在，写进表里正是为了"字段还不存在时列表就不被检查"这一刻 |
-| 三组形态正则 | heading（**只认两种形状**：标题点名判分小节 `rubric excerpt`／`expected behavior`／`answer key`…，或标题本身就是小节名 `## Rubric`）、label（`rubric_excerpt:`／`= `）、tag（`<judge_prompt`） | 换了键名不改正文：payload 精简了，渲染层照旧把 rubric 排成一个标题——`md`／`html` 没有 JSON 结构可走，只能按文本扫。第二行是第五轮加的：先前那一版按"标题里出现 rubric"判，实测会命中 `# How to write a rubric`，而任务 prompt 会原样进 shared 报表与 manifest——喊一次狼，下一个人就把这次扫描 `--tier` 掉了 |
+| 三组形态正则 | heading（**只认两种形状**：标题点名判分小节 `rubric excerpt`／`expected behavior`／`answer key`…，或标题本身就是小节名 `## Rubric`）、label（`rubric_excerpt:`／`= `）、tag（`<judge_prompt`） | 换了键名不改正文：payload 精简了，渲染层照旧把 rubric 排成一个标题——`md`／`html` 没有 JSON 结构可走，只能按文本扫。第二行是第五轮加的：先前那一版按"标题里出现 rubric"判，实测会命中 `# How to write a rubric`，而任务 prompt 会原样进 shared 报表与 manifest——喊一次狼，下一个人就把这次扫描 `--profile` 掉了 |
 
-档位就两个：`forwardable`（`shared` 档 + 落盘的报表文件 + 交给 agent 的 manifest，禁上面两份）与 `internal`（`full` 档，仍禁答案表）。`banned_fields()` 对未知档位抛 `ValueError`——写错档位名不能默认成更宽的那一档。
+扫描档就两个：`forwardable`（要交出去的文档：`results` payload、`md`／`html` 报表、交给 agent 的 manifest，禁上面两份）与 `internal`（自己看的：`json` 详情与报告，仍禁答案表）。命令行开关是 `--profile`（早期叫 `--tier`）。`banned_fields()` 对未知档位抛 `ValueError`——写错档位名不能默认成更宽的那一档。
 
 发现项的形状是**位置而不是内容**：`field <名> (line N)`、`key <名> (at tasks[0].rubric_excerpt)`、`marker <型> (line N)`，绝不带被匹配的片段。理由和词表同源：片段可能就是 rubric 原文，而这段输出会被贴进 CI 控制台（`logging-quality` 第 3 条）。落盘的 `.json` 按**文件自己的字节**算行号，不按重新序列化后的 body 算——一行压缩过的捕获文件报"line 4"是在骗人（这一条是命令行实测时自己撞见的，见 §4.14）。
 
@@ -379,23 +379,23 @@ H3 合并边界重跑：`git diff --name-only main -- pawbench tests data run_be
 
 | 用例 | 断的 | 为什么它不算自证 |
 |---|---|---|
-| `test_the_forwardable_documents_pass_the_leakage_scan` | 九份文档一次过：`shared` detail、`results`、`full` detail 三份 payload（后者按 `internal` 档）＋ `md`·`html`·`json` × `shared`·`full` 六份**落盘文件正文**；后段植入 `{"tasks": [{"rubric_excerpt": …}]}` 与 `"## Expected behavior"`，并钉 `## How to write a rubric for the essay` → `[]` | 植入项断 `key rubric_excerpt (at tasks[0].rubric_excerpt)` 与 `marker heading (line 1)`，所以前半段的"零发现"不是规则空转。渲染文件从 `exchange.report_path()` 读回，不是把 payload 重新序列化一遍。**两半证的不是一件事**：干净半区是生产检查，植入半区只保证扫描器自己还会响 |
+| `test_the_rendered_documents_pass_the_leakage_scan` | 九份文档一次过：`shared` detail、`results`、`full` detail 三份 payload（后者按 `internal` 档）＋ `md`·`html`·`json` × `shared`·`full` 六份**落盘文件正文**；后段植入 `{"tasks": [{"rubric_excerpt": …}]}` 与 `"## Expected behavior"`，并钉 `## How to write a rubric for the essay` → `[]` | 植入项断 `key rubric_excerpt (at tasks[0].rubric_excerpt)` 与 `marker heading (line 1)`，所以前半段的"零发现"不是规则空转。渲染文件从 `exchange.report_path()` 读回，不是把 payload 重新序列化一遍。**两半证的不是一件事**：干净半区是生产检查，植入半区只保证扫描器自己还会响 |
 | `test_a_scan_that_never_ran_does_not_report_a_clean_bill` | `main()` 的三个退出码各钉一次：打错路径 → 2、空目录 → 2、干净目录 → 0、植入后同一目录 → 1；顺带 `scan_file()` 对一行压缩的 `detail.json` 断 `["field rubric_excerpt (line 1)", "key … (at tasks[0].rubric_excerpt)"]` | 这一条是第五轮那处**严重**项的反证：修之前同样的命令打印 `0 finding(s)` 并以 0 出门。同时断 stderr 里有字段名而**没有**植入值（`"tone" not in captured.err`），把"位置不带内容"钉成契约 |
-| `test_the_rubric_text_only_ever_reaches_the_full_tier` | 答案**文本**跟着走一遍：full 档载荷与落盘 json 里有 `Award 1.0 when the reply is polite.`，shared 档载荷与落盘 json 里连 `polite` 都没有 | 键位断言在 `rubric_excerpt: None` 上也会过，而本文件此前的 fixture **一道题都没有 rubric**（`write_task` 不写 `## LLM Judge Rubric`，除 `mail_b` 外全是 checker 判分）——用例名叫 "hides the rubric"，桌上一条 rubric 都没有。`support.write_task` 因此新增 `rubric=` |
+| `test_the_rubric_text_reaches_the_document_and_the_export` | 答案**文本**跟着走一遍：详情与落盘 json 里有 `Award 1.0 when the reply is polite.`，落盘 md 里连 `polite` 都没有，且 md 过 `forwardable` 扫描（`shared` 档撤掉后，由这条接替原来「两档各扫一遍」的覆盖面） | 键位断言在 `rubric_excerpt: None` 上也会过，而本文件此前的 fixture **一道题都没有 rubric**（`write_task` 不写 `## LLM Judge Rubric`，除 `mail_b` 外全是 checker 判分）——用例名叫 "hides the rubric"，桌上一条 rubric 都没有。`support.write_task` 因此新增 `rubric=` |
 | `test_a_manifest_carries_nothing_from_the_grading_side` | `build_manifest()` 的 payload 按 `forwardable` 扫为零，且 `task.expected_behavior`／`task.llm_judge_rubric` 两句原文都不在 `json.dumps(manifest)` 里 | manifest 是本特性唯一**从 prompt 而不是端点**离开的文档，响应体上的断言永远碰不到它；`FakeTask` 因此补上这两个字段——没有 rubric 的任务证不了"构建时没带 rubric" |
 
 命令行实测（`<venv>/bin/python tests/cpd/acp_remote_eval/tools/scan_shared_leakage.py <目标>`，三个临时文档：一份干净的 `report.md`、一份 `## Expected behavior` 开头的 `detail.md`、一份压缩成一行的 `detail.json`）：
 
 ```bash
 $ ... scan_shared_leakage.py out/report.md
-1 document(s) scanned at forwardable tier, 0 finding(s).                # exit=0
+1 document(s) scanned as forwardable, 0 finding(s).                     # exit=0
 $ ... scan_shared_leakage.py out/
 out/detail.json: field rubric_excerpt (line 1)
 out/detail.json: key rubric_excerpt (at tasks[0].rubric_excerpt)
 out/detail.md: marker heading (line 1)
-3 document(s) scanned at forwardable tier, 3 finding(s).                # exit=1
-$ ... scan_shared_leakage.py --tier internal out/detail.json
-1 document(s) scanned at internal tier, 0 finding(s).                   # exit=0（同一文件按 forwardable 扫是 2 finding）
+3 document(s) scanned as forwardable, 3 finding(s).                     # exit=1
+$ ... scan_shared_leakage.py --profile internal out/detail.json
+1 document(s) scanned as internal, 0 finding(s).                        # exit=0（同一文件按 forwardable 扫是 2 finding）
 $ ... scan_shared_leakage.py nope
 nothing was scanned: no such path: /tmp/leak_smoke/nope                 # exit=2
 ```

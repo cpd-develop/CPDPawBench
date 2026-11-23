@@ -1,20 +1,21 @@
 # -*- coding: utf-8 -*-
-"""Everything a reader is shown about a job: detail tiers, results, report files.
+"""Everything a reader is shown about a job: the detail, results, report files.
 
-The queue answers "is my job moving".  This answers "what did the subject do, how
-did it score, and what may I send to the people who own the agent".  That second
-question is why the module exists as one place rather than as fields picked by
-each route: the two sensitivity tiers differ *by content*, and the design rule
-(design section 4.1) is that the trimming happens inside the aggregation -- a
-route that forgot to trim is a leak, and there are five routes here.
+The queue answers "is my job moving".  This answers "what did the subject do, and
+how did it score".  That is one view with one field list, which is why the module
+keeps it as one place rather than as fields picked by each route: five routes
+read it, and a field a route forgot to include is a question the reader cannot
+answer.
 
-The line between the tiers is not "who is asking": both are readable by everyone
-on the allowlist.  It is "could this leave the allowlist", because the shared
-tier is the one a submitter forwards to the team being evaluated.  So ``shared``
-carries the prompt, the labels, the score, the breakdown, the timeline and the
-artifact list, while the rubric text, the judge's per-item reasoning and the
-files themselves stay in ``full``.  The grading code -- ``automated_checks`` --
-is in neither: it is the answer key, and no tier is a licence to publish it.
+There is no second, trimmed copy of that view.  An earlier design had one --
+``shared`` was what a submitter forwarded and ``full`` added the rubric text, the
+judge's reasoning and the files -- and it was dropped: two shapes of the same
+document meant every route decided twice what a reader may see, and the answer
+that was actually wanted was always the complete one.  The allowlist is the
+boundary now; a caller with a token sees the run.
+
+The one thing that stays out is ``automated_checks``: the grading code is the
+answer key, and it is not rendered by anything, for anyone.
 
 Nothing here writes.  It reads the rows the runner and the exchange already
 own, renders report files on demand, and hands links to
@@ -44,10 +45,6 @@ from .store import Store
 
 logger = logging.getLogger(__name__)
 
-SENSITIVITY_SHARED = "shared"
-SENSITIVITY_FULL = "full"
-SENSITIVITIES = (SENSITIVITY_SHARED, SENSITIVITY_FULL)
-
 FORMAT_JSON = "json"
 FORMAT_MD = "md"
 FORMAT_HTML = "html"
@@ -56,12 +53,6 @@ REPORT_FORMATS = (FORMAT_JSON, FORMAT_MD, FORMAT_HTML, FORMAT_ZIP)
 
 #: What each format is written as, and the extension a report file carries.
 _FORMAT_SUFFIX = {FORMAT_JSON: "json", FORMAT_MD: "md", FORMAT_HTML: "html", FORMAT_ZIP: "zip"}
-
-#: ``zip`` is the only format that carries another party's files, so it exists
-#: only at the tier that is not forwarded.  Refused as a mismatch, not as a
-#: permission error -- both tiers are open to every whitelisted caller, so a 403
-#: here would send the reader off to ask for a scope that does not exist.
-_FORMAT_TIER_LIMIT = {FORMAT_ZIP: SENSITIVITY_FULL}
 
 #: A transcript page small enough that the dashboard can render it inline; the
 #: ceiling is what keeps ``?limit=`` from turning one read into the whole file.
@@ -135,7 +126,7 @@ class ReportError(ValueError):
 
 
 class Reports:
-    """Reads one job and renders it at a chosen sensitivity."""
+    """Reads one job, and renders what it did as a document."""
 
     def __init__(
         self,
@@ -152,16 +143,15 @@ class Reports:
         # file, so it is held for a write and a hash, never for a render.
         self._report_lock = threading.Lock()
 
-    # ── the two detail views ──────────────────────────────────────────────────
+    # ── the detail, and one task of it ────────────────────────────────────────
 
-    def job_detail(self, job_id: str, sensitivity: str = SENSITIVITY_SHARED) -> dict[str, Any]:
+    def job_detail(self, job_id: str) -> dict[str, Any]:
         """One job as a reader sees it: config, sources, progress, scores, tasks.
 
         Called by ``GET /v1/jobs/{id}/detail``, by the report renderer, and by
         the MCP tool that answers "how did that run go" -- three readers, one
-        field list, so the tier cannot drift between them.
+        field list, so the shape cannot drift between them.
         """
-        tier = check_sensitivity(sensitivity)
         job = self._job(job_id)
         rows = self.store.list_job_tasks(job_id)
         bodies = self._bodies(job_id)
@@ -170,7 +160,6 @@ class Reports:
         progress = _progress(rows)
         return {
             "job_id": job_id,
-            "sensitivity": tier,
             "generated_at": self.clock.now().isoformat(timespec="seconds"),
             "status": job["status"],
             "error": job["error"],
@@ -178,8 +167,8 @@ class Reports:
             "product": job["product"],
             "purpose": job["purpose"],
             # The address the runner dials, not the one a report forwards: an
-            # endpoint that takes its key as userinfo or ``?key=`` is common, and
-            # the shared tier is meant to leave this service.
+            # endpoint that takes its key as userinfo or ``?key=`` is common,
+            # and a report is still a document somebody hands to a colleague.
             "acp_url": url_without_credentials(job["acp_url"]),
             "window": _window(job),
             "env_fingerprint": job["env_fingerprint"],
@@ -194,31 +183,23 @@ class Reports:
                 self._task_entry(
                     job_id,
                     row,
-                    tier,
                     bodies,
                     roots,
                     artifacts.get(str(row["task_id"]), []),
                 )
                 for row in rows
             ],
-            "full_only": tier == SENSITIVITY_FULL,
         }
 
     def task_detail(
-        self,
-        job_id: str,
-        task_id: str,
-        sensitivity: str = SENSITIVITY_SHARED,
-        attempt: int | None = None,
+        self, job_id: str, task_id: str, attempt: int | None = None
     ) -> dict[str, Any]:
-        """One task: the breakdown, the judge's reasoning at full tier, the files."""
-        tier = check_sensitivity(sensitivity)
+        """One task: the breakdown, the judge's reasoning, the files, a timeline."""
         self._job(job_id)
         row = self._task_row(job_id, task_id, attempt)
         entry = self._task_entry(
             job_id,
             row,
-            tier,
             self._bodies(job_id),
             self._fixture_roots(job_id),
             self.store.list_artifacts(job_id, task_id=task_id),
@@ -307,7 +288,7 @@ class Reports:
         cursor: int = 0,
         limit: int = DEFAULT_TRANSCRIPT_PAGE,
     ) -> dict[str, Any]:
-        """A page of the run's timeline, in the shape the shared tier allows.
+        """A page of the run's timeline.
 
         Paged and summarised on purpose: the JSONL is the full stream, and a
         detail route that returned it whole would put every tool argument -- the
@@ -350,13 +331,7 @@ class Reports:
 
     # ── report files ──────────────────────────────────────────────────────────
 
-    def report(
-        self,
-        job_id: str,
-        *,
-        fmt: str = FORMAT_JSON,
-        sensitivity: str = SENSITIVITY_SHARED,
-    ) -> dict[str, Any]:
+    def report(self, job_id: str, *, fmt: str = FORMAT_JSON) -> dict[str, Any]:
         """Render a report and hand back a link, never the bytes.
 
         The file is cached under the fingerprint of the rows it was built from,
@@ -364,17 +339,15 @@ class Reports:
         job that finishes another task gets a different fingerprint, so the old
         file is simply not what a fresh request asks for.
         """
-        tier = check_sensitivity(sensitivity)
-        format_ = check_format(fmt, tier)
+        format_ = check_format(fmt)
         rows = self.store.list_job_tasks(job_id)
-        fingerprint = _fingerprint(job_id, tier, rows)
-        filename = f"report-{fingerprint[:16]}-{tier}.{_FORMAT_SUFFIX[format_]}"
+        fingerprint = _fingerprint(job_id, rows)
+        filename = f"report-{fingerprint[:16]}.{_FORMAT_SUFFIX[format_]}"
         path = self.exchange.report_path(job_id, filename)
-        digest, size = self._ensure_report_file(path, job_id, tier, format_, rows)
+        digest, size = self._ensure_report_file(path, job_id, format_, rows)
         return {
             "job_id": job_id,
             "format": format_,
-            "sensitivity": tier,
             "filename": filename,
             "sha256": digest,
             "size": size,
@@ -387,7 +360,6 @@ class Reports:
         self,
         path: Path,
         job_id: str,
-        tier: str,
         fmt: str,
         rows: Sequence[Mapping[str, Any]],
     ) -> tuple[str, int]:
@@ -406,15 +378,15 @@ class Reports:
         """
         if path.is_file():
             return _digest_and_size(path)
-        payload = self.job_detail(job_id, tier)
-        data = self._render(fmt, payload, job_id, rows, tier)
+        payload = self.job_detail(job_id)
+        data = self._render(fmt, payload, job_id, rows)
         with self._report_lock:
             if path.is_file():
                 return _digest_and_size(path)
             _write(path, data)
             logger.info(
                 "report rendered",
-                extra={"job_id": job_id, "format": fmt, "sensitivity": tier, "bytes": len(data)},
+                extra={"job_id": job_id, "format": fmt, "bytes": len(data)},
             )
         return hashlib.sha256(data).hexdigest(), len(data)
 
@@ -592,7 +564,6 @@ class Reports:
         payload: Mapping[str, Any],
         job_id: str,
         rows: Sequence[Mapping[str, Any]],
-        tier: str,
     ) -> bytes:
         if fmt == FORMAT_JSON:
             return (json.dumps(payload, indent=2, ensure_ascii=False, default=str) + "\n").encode()
@@ -601,15 +572,14 @@ class Reports:
             if fmt == FORMAT_MD:
                 return text.encode("utf-8")
             return _html(payload["job_id"], text).encode("utf-8")
-        return _zip(self.exchange, job_id, payload, rows, tier)
+        return _zip(self.exchange, job_id, payload, rows)
 
-    # ── one task's fields, trimmed here and nowhere else ──────────────────────
+    # ── one task's fields, assembled here and nowhere else ────────────────────
 
     def _task_entry(
         self,
         job_id: str,
         row: Mapping[str, Any],
-        tier: str,
         bodies: Mapping[str, tuple[TaskSummary, Any]],
         roots: Mapping[str, Path],
         recorded: Sequence[Mapping[str, Any]],
@@ -618,8 +588,8 @@ class Reports:
         attempt = int(row["attempt"] or 1)
         summary, task = bodies.get(task_id, (None, None))
         # *recorded* is this task's slice of one query the caller already made,
-        # shaped twice: the list every tier shows, and the download entries only
-        # the full tier gets.
+        # used twice: as the list of files the agent wrote, and as the entries a
+        # download link is built from.
         entry: dict[str, Any] = {
             "task_id": task_id,
             "attempt": attempt,
@@ -655,8 +625,7 @@ class Reports:
             entry["name"] = summary.name
             entry["labels"] = dict(summary.labels)
             entry["has_attachments"] = summary.has_attachments
-            # The question's own files.  Listed at both tiers, like the prompt
-            # and the artifact list: what was handed to the agent is part of
+            # The question's own files: what was handed to the agent is part of
             # what was asked, and a reader who cannot see the attachment cannot
             # judge an answer about it.
             entry["attachments"] = [
@@ -665,17 +634,19 @@ class Reports:
             ]
         if task is not None:
             entry["prompt"] = task.prompt
-        if tier == SENSITIVITY_FULL:
-            entry["judge_notes"] = row["judge_notes"]
-            entry["judge_served_models"] = row["judge_served_models"]
-            entry["workspace_path"] = row["workspace_path"]
-            entry["transcript_path"] = row["transcript_path"]
-            entry["expected_behavior"] = task.expected_behavior if task else None
-            entry["rubric_excerpt"] = _excerpt(task.llm_judge_rubric if task else None)
-            entry["downloads"] = [
-                _artifact_link(job_id, task_id, attempt, str(item["path"]))
-                for item in recorded
-            ]
+        # How the score was reached, and where the rest of it lives.  ``None`` is
+        # an answer for each of these -- a task graded by rules has no rubric --
+        # so they are present on every entry rather than conditionally absent.
+        entry["judge_notes"] = row["judge_notes"]
+        entry["judge_served_models"] = row["judge_served_models"]
+        entry["workspace_path"] = row["workspace_path"]
+        entry["transcript_path"] = row["transcript_path"]
+        entry["expected_behavior"] = task.expected_behavior if task else None
+        entry["rubric_excerpt"] = _excerpt(task.llm_judge_rubric if task else None)
+        entry["downloads"] = [
+            _artifact_link(job_id, task_id, attempt, str(item["path"]))
+            for item in recorded
+        ]
         return entry
 
     # ── reads that every method above shares ──────────────────────────────────
@@ -729,42 +700,18 @@ class Reports:
         return found
 
 
-def check_sensitivity(value: Any) -> str:
-    """The tier, or a refusal naming the two that exist.
+def check_format(value: Any) -> str:
+    """The report format, checked against the four that exist.
 
-    Checked rather than defaulted: a dashboard that misspells ``full`` and is
-    quietly served the shared tier believes it just sent the judge's reasoning
-    to the subject.
+    Checked rather than defaulted, so a typo in a forwarder's script is a
+    sentence about the typo instead of a silent Markdown download.
     """
-    text = str(value or SENSITIVITY_SHARED).strip().casefold()
-    if text not in SENSITIVITIES:
-        raise ReportError(
-            "sensitivity_unknown",
-            f"sensitivity is 'shared' or 'full', not '{value}'",
-            allowed=list(SENSITIVITIES),
-        )
-    return text
-
-
-def check_format(value: Any, tier: str) -> str:
-    """The report format, refusing the pairs that cannot exist together."""
     text = str(value or FORMAT_JSON).strip().casefold()
     if text not in REPORT_FORMATS:
         raise ReportError(
             "report_format_unsupported",
             f"no report format '{value}'; the formats are {list(REPORT_FORMATS)}",
             allowed=list(REPORT_FORMATS),
-        )
-    required = _FORMAT_TIER_LIMIT.get(text)
-    if required is not None and tier != required:
-        raise ReportError(
-            "sensitivity_format_mismatch",
-            f"'{text}' bundles result files, so it is only rendered at "
-            f"'{required}' sensitivity; ask for ?sensitivity={required} or use "
-            f"'{FORMAT_JSON}'",
-            format=text,
-            sensitivity=tier,
-            required=required,
         )
     return text
 
@@ -903,16 +850,14 @@ def _mean(values: Iterable[Any]) -> float | None:
     return round(sum(numbers) / len(numbers), 4)
 
 
-def _fingerprint(
-    job_id: str, tier: str, rows: Sequence[Mapping[str, Any]]
-) -> str:
+def _fingerprint(job_id: str, rows: Sequence[Mapping[str, Any]]) -> str:
     """What the report was built from, so a newer job cannot reuse its file.
 
     Only the columns a reader can see in the numbers: a task that finished, or
     was re-run, changes it, while a label edited in the dataset does not -- the
     report would otherwise churn on every catalogue write.
     """
-    seed = [tier]
+    seed = [job_id]
     for row in sorted(rows, key=lambda item: (str(item["task_id"]), int(item["attempt"] or 1))):
         seed.append(
             f"{row['task_id']}#{row['attempt']}:{row['status']}:{row['score']}:"
@@ -1037,7 +982,7 @@ _ARG_KEYS_SHOWN = 12
 
 
 def _timeline_event(row: Mapping[str, Any]) -> dict[str, Any]:
-    """One JSONL row down to the timeline the shared tier is made of.
+    """One JSONL row down to the timeline the dashboard is made of.
 
     The file holds the raw ``session/update`` stream, not the message events the
     judge is given, so this reads the wire names (``sessionUpdate``, ``rawInput``)
@@ -1117,12 +1062,12 @@ def _block_length(block: Any) -> int:
 
 
 def _artifact_link(job_id: str, task_id: str, attempt: int, path: str) -> dict[str, Any]:
-    """How the full tier's download list says to fetch one result file.
+    """How a task's download entry says to fetch one result file.
 
     A route plus a query, not a presigned link: these files are read back with
-    the caller's own whitelist token, which is the tier's whole guarantee -- a
-    URL that carried its access in itself would outlive the run it came from and
-    stay valid for whoever it got forwarded to.
+    the caller's own whitelist token, which is the whole guarantee -- a URL that
+    carried its access in itself would outlive the run it came from and stay
+    valid for whoever it got forwarded to.
     """
     return {
         "path": path,
@@ -1262,14 +1207,13 @@ def _zip(
     job_id: str,
     payload: Mapping[str, Any],
     rows: Sequence[Mapping[str, Any]],
-    tier: str,
 ) -> bytes:
     """The detail document plus every file the run actually collected."""
     buffer = io.BytesIO()
     by_task = _artifacts_by_task(exchange.store, job_id)
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(
-            f"detail-{tier}.json", json.dumps(payload, indent=2, ensure_ascii=False, default=str)
+            "detail.json", json.dumps(payload, indent=2, ensure_ascii=False, default=str)
         )
         for row in rows:
             task_id = str(row["task_id"])
@@ -1291,7 +1235,6 @@ def _markdown(payload: Mapping[str, Any], results: Mapping[str, Any]) -> str:
         f"# Job {payload['job_id']}",
         "",
         f"- status: {payload['status']}",
-        f"- sensitivity: {payload['sensitivity']}",
         f"- subject: {payload['product']} at {payload['acp_url']}",
         f"- mean score: {results['overall']} over {results['tasks']} scored task(s)",
         f"- by status: {results['tasks_errored']} failed, {results['tasks_missing']} missing, "

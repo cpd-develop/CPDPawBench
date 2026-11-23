@@ -164,9 +164,7 @@ def _cmd_watch(client: EvalClient, args: argparse.Namespace) -> int:
 
 
 def _cmd_detail(client: EvalClient, args: argparse.Namespace) -> int:
-    view = client.json(
-        "GET", f"/v1/jobs/{args.job_id}/detail", params={"sensitivity": args.tier}
-    )
+    view = client.json("GET", f"/v1/jobs/{args.job_id}/detail")
     return _emit(view, args.out)
 
 
@@ -174,7 +172,7 @@ def _cmd_report(client: EvalClient, args: argparse.Namespace) -> int:
     link = client.json(
         "GET",
         f"/v1/jobs/{args.job_id}/report",
-        params={"format": args.format, "sensitivity": args.tier},
+        params={"format": args.format},
     )
     # The service names its own report file, but the name is data from the wire:
     # a path in that field is not ours to honour, or one bad response would write
@@ -424,16 +422,14 @@ def _parser() -> argparse.ArgumentParser:
     _add_watch_flags(watch)
     watch.set_defaults(handler=_cmd_watch)
 
-    detail = commands.add_parser("detail", help="the evaluation view, at one tier")
+    detail = commands.add_parser("detail", help="the evaluation view")
     _job_id(detail)
-    _tier_flag(detail)
     _out_flag(detail)
     detail.set_defaults(handler=_cmd_detail)
 
     report = commands.add_parser("report", help="render a report and download it")
     _job_id(report)
     report.add_argument("--format", default="md", help="json, md, html or zip")
-    _tier_flag(report)
     _out_flag(report)
     report.set_defaults(handler=_cmd_report)
 
@@ -445,10 +441,6 @@ def _parser() -> argparse.ArgumentParser:
 
 def _job_id(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("job_id", help="the id 'submit' printed")
-
-
-def _tier_flag(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--tier", default=None, help="shared (default) or full")
 
 
 def _out_flag(parser: argparse.ArgumentParser) -> None:

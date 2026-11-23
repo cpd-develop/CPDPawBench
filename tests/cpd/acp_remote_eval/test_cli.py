@@ -313,17 +313,21 @@ def test_status_can_hand_the_payload_to_a_script(
     assert sorted(row["task_id"] for row in payload["tasks"]) == ["mail_l1", "mail_l3"]
 
 
-def test_detail_sends_the_tier_it_was_asked_for(
-    run: Any, tmp_path: Path, capsys: Any
+def test_detail_asks_for_the_view_and_writes_what_came_back(
+    run: Any, tmp_path: Path, capsys: Any, seen: list[httpx.Request]
 ) -> None:
     job_id = submitted(run, capsys)
     target = tmp_path / "detail.json"
 
-    assert run("detail", job_id, "--tier", "full", "--out", str(target)) == cli.EXIT_OK
+    assert run("detail", job_id, "--out", str(target)) == cli.EXIT_OK
 
     payload = json.loads(target.read_text(encoding="utf-8"))
     assert payload["job_id"] == job_id
-    assert payload["sensitivity"] == "full"
+    # There is no second view to choose between, so the request carries the job
+    # and nothing else: the CLI cannot be the place a partial document is asked
+    # for, because the service would no longer know what that meant.
+    call = [request for request in seen if str(request.url).endswith("/detail")]
+    assert call and "sensitivity" not in call[-1].url.params
 
 
 def test_report_downloads_what_the_service_described(
@@ -431,14 +435,14 @@ def test_a_service_that_names_a_path_for_its_file_does_not_choose_where_it_lands
 def test_a_refusal_comes_through_as_the_services_words(
     run: Any, capsys: Any, tokens: dict[str, str]
 ) -> None:
-    """``zip`` at the shared tier is the service's rule; the CLI quotes it."""
+    """A format the service does not render; the CLI quotes it and adds nothing."""
     job_id = submitted(run, capsys)
     capsys.readouterr()
 
-    assert run("report", job_id, "--format", "zip") == cli.EXIT_ERROR
+    assert run("report", job_id, "--format", "pdf") == cli.EXIT_ERROR
 
     err = capsys.readouterr().err
-    assert "400 sensitivity_format_mismatch" in err
+    assert "400 report_format_unsupported" in err
     assert tokens["dev-1"] not in err
 
 

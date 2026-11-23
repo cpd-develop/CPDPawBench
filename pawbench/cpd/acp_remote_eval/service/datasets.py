@@ -536,7 +536,7 @@ class DatasetService:
 
         Only the prompt, labels and attachment list leave here -- the grading
         text stays with the grader, and ``service.reports`` reads the same bodies
-        to fill the ``full`` detail tier (design section 4.1).
+        to fill the detail view (design section 4.1).
 
         Parsed through the index instead of ``load_all_tasks()``: the dataset
         record already says which ids it holds, so a builtin view over the whole
