@@ -395,25 +395,7 @@ class Exchange:
 
     def fixture_source(self, dataset_root: Path, source: str) -> Path:
         """Resolve ``workspace_files[].source`` inside the dataset root."""
-        text = str(source or "").strip().replace("\\", "/")
-        if not text or text.startswith("/"):
-            raise ExchangeError(
-                "bad_asset_source", f"asset source must be dataset-relative: {source!r}"
-            )
-        segments = text.split("/")
-        if any(segment in _UNSAFE_SEGMENTS for segment in segments):
-            raise ExchangeError(
-                "bad_asset_source", f"asset source escapes the dataset: {source!r}"
-            )
-        root = Path(dataset_root).resolve()
-        path = root.joinpath(*segments).resolve()
-        if root not in path.parents:
-            raise ExchangeError(
-                "bad_asset_source", f"asset source leaves the dataset root: {source!r}"
-            )
-        if not path.is_file():
-            raise ExchangeError("asset_not_found", f"fixture file missing: {source}")
-        return path
+        return fixture_source(dataset_root, source)
 
     def verify_asset_request(
         self,
@@ -438,11 +420,7 @@ class Exchange:
 
     def fixture_for(self, task: TaskLike, dataset_root: Path, dest: str) -> Path:
         """The file behind a manifest ``dest``, for the route that serves it."""
-        checked_dest = _checked_dest(dest)
-        for entry in _fixtures_of(task):
-            if _checked_dest(str(entry.get("dest", ""))) == checked_dest:
-                return self.fixture_source(dataset_root, str(entry.get("source", "")))
-        raise ExchangeError("asset_unknown_dest", f"{dest} is not an asset of this task")
+        return declared_fixture(_fixtures_of(task), dataset_root, dest)
 
     def session_file(self, job_id: str, task_id: str, attempt: int, dest: str) -> Path:
         """Where a fixture was laid down for one attempt, as the agent saw it.
@@ -765,6 +743,63 @@ def _checked_dest(dest: str) -> str:
     if any(segment.startswith(".") for segment in segments):
         raise ExchangeError("bad_dest", f"fixture destination is a dot file: {dest!r}")
     return "/".join(segments)
+
+
+def fixture_source(dataset_root: Path, source: str) -> Path:
+    """Resolve ``workspace_files[].source`` inside the dataset root.
+
+    Module level rather than a method because two callers ask it and neither
+    owns the other: the data plane serves a fixture to a run, and the catalogue
+    shows a fixture in a dataset that has never been run.  A route that could
+    reach a file the download route refuses would make the second caller a
+    looser door than the first, so the resolution -- and therefore the refusal
+    of absolute paths, dot segments and symlinks out of the tree -- happens in
+    one function.
+    """
+    text = str(source or "").strip().replace("\\", "/")
+    if not text or text.startswith("/"):
+        raise ExchangeError(
+            "bad_asset_source", f"asset source must be dataset-relative: {source!r}"
+        )
+    segments = text.split("/")
+    if any(segment in _UNSAFE_SEGMENTS for segment in segments):
+        raise ExchangeError(
+            "bad_asset_source", f"asset source escapes the dataset: {source!r}"
+        )
+    root = Path(dataset_root).resolve()
+    path = root.joinpath(*segments).resolve()
+    if root not in path.parents:
+        raise ExchangeError(
+            "bad_asset_source", f"asset source leaves the dataset root: {source!r}"
+        )
+    if not path.is_file():
+        raise ExchangeError("asset_not_found", f"fixture file missing: {source}")
+    return path
+
+
+def declared_fixture(
+    workspace_files: Sequence[Mapping[str, str]] | None, dataset_root: Path, dest: str
+) -> Path:
+    """The file behind one manifest ``dest``, whoever is asking for it.
+
+    Only a declared ``dest`` resolves: the dataset directory also holds task
+    markdown, other tasks' fixtures and whatever an author left there, and a
+    lookup that took any relative path would be a browser over all of it.
+    """
+    wanted = _checked_dest(dest)
+    for entry in workspace_files or ():
+        try:
+            declared = _checked_dest(str(entry.get("dest", "")))
+        except ExchangeError:
+            # One malformed line in a manifest is not a reason to hide the
+            # other files: a list of attachments whose answer depends on which
+            # entry happens to come first is not an answer.  The requested
+            # ``dest`` was checked above, so skipping a bad entry cannot turn
+            # an unsafe path into a servable one.
+            continue
+        if declared == wanted:
+            return fixture_source(dataset_root, str(entry.get("source", "")))
+    raise ExchangeError("asset_unknown_dest", f"{dest} is not an asset of this task")
 
 
 def _checked_id(value: str, label: str) -> str:

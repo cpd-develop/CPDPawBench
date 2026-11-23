@@ -39,6 +39,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 from fastapi.testclient import TestClient
 
+from pawbench.cpd.acp_remote_eval.service import preview as preview_mod
 from pawbench.cpd.acp_remote_eval.service import reports as reports_mod
 from pawbench.cpd.acp_remote_eval.service.api import ControlPlane, create_app
 from pawbench.cpd.acp_remote_eval.service.attempts import AttemptRegistry
@@ -1287,9 +1288,12 @@ def test_a_text_artifact_is_trimmed_at_the_cap_and_says_so(
 
     The cap is patched down rather than the file patched up: the exchange in
     this fixture refuses artifacts over 4 KB, and what is under test is that the
-    route stops at whatever the cap says -- not the size of the cap.
+    route stops at whatever the cap says -- not the size of the cap.  The cap
+    lives in ``service.preview`` because the catalogue reads it too, so that is
+    where it is patched; patching a name re-exported into ``reports`` would have
+    left the reader still using the old number.
     """
-    monkeypatch.setattr(reports_mod, "PREVIEW_TEXT_BYTES", 200)
+    monkeypatch.setattr(preview_mod, "PREVIEW_TEXT_BYTES", 200)
     oversized = ("FATAL: it broke\n" * 40).encode()
     upload(env, "mail_b", "output/run.txt", oversized)
 

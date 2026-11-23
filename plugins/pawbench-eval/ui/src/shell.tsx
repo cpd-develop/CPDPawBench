@@ -18,6 +18,7 @@ import { describeError, icons } from "./host/sdk";
 import { useCallback, useEffect, useMemo, useState } from "./host/react";
 import { DesignScope } from "./theme";
 import { DatasetsModule } from "./modules/datasets";
+import { DatasetDetailModule, DatasetTaskModule } from "./modules/dataset-detail";
 import { JobsModule } from "./modules/jobs";
 import { NewJobModal } from "./modules/new-job";
 import { ReportModule } from "./modules/report";
@@ -46,11 +47,18 @@ function store(key: string, value: string): void {
 }
 
 export function Shell(): unknown {
-  const [view, setView] = useState<View>("jobs");
-  const [jobId, setJobId] = useState<string>(() => {
-    const query = new URLSearchParams(window.location.search);
-    return query.get("job") ?? "";
-  });
+  // One read of the query string for all three drill-downs: a link may carry a
+  // job, a dataset, or a dataset and one of its tasks.
+  const boot = useMemo(() => new URLSearchParams(window.location.search), []);
+  const [view, setView] = useState<View>(() => (boot.get("dataset") ? "datasets" : "jobs"));
+  const [jobId, setJobId] = useState<string>(() => boot.get("job") ?? "");
+  const [datasetId, setDatasetId] = useState<string>(() => boot.get("dataset") ?? "");
+  // A task belongs to a dataset, and a job link wins when both are present.
+  // Reading an orphan `?task=` into state would leave the address bar claiming
+  // a depth the page can never show.
+  const [taskId, setTaskId] = useState<string>(() =>
+    boot.get("job") || !boot.get("dataset") ? "" : boot.get("task") ?? "",
+  );
   const [jobs, setJobs] = useState<JobItem[]>([]);
   const [jobsLoading, setJobsLoading] = useState(true);
   const [jobsError, setJobsError] = useState<{ code: string; message: string } | null>(null);
@@ -97,30 +105,79 @@ export function Shell(): unknown {
     return () => window.clearInterval(timer);
   }, [live, refreshJobs]);
 
-  const openReport = useCallback((id: string) => {
-    // A report belongs to 评测, so opening one puts the module there as well.
-    // Without this the rail's answer ("which module am I in") and the render
-    // branch's answer ("jobId or view") would be two different questions.
-    setView("jobs");
-    setJobId(id);
+  /**
+   * The address bar, kept in step with the drill-down state.
+   *
+   * ``replaceState`` rather than push: a report or a task is a place inside the
+   * page, and turning every row click into a history entry makes the back
+   * button walk back through a browsing session instead of leaving.
+   */
+  const setQuery = useCallback((next: { job?: string; dataset?: string; task?: string }) => {
     const url = new URL(window.location.href);
-    url.searchParams.set("job", id);
+    for (const [key, value] of Object.entries(next)) {
+      if (value) url.searchParams.set(key, value);
+      else url.searchParams.delete(key);
+    }
     window.history.replaceState({}, "", url.toString());
   }, []);
+
+  const openReport = useCallback(
+    (id: string) => {
+      // A report belongs to 评测, so opening one puts the module there as well.
+      // Without this the rail's answer ("which module am I in") and the render
+      // branch's answer ("jobId or view") would be two different questions.
+      setView("jobs");
+      setJobId(id);
+      setDatasetId("");
+      setTaskId("");
+      setQuery({ job: id, dataset: "", task: "" });
+    },
+    [setQuery],
+  );
 
   const backToList = useCallback(() => {
     setJobId("");
-    const url = new URL(window.location.href);
-    url.searchParams.delete("job");
-    window.history.replaceState({}, "", url.toString());
-  }, []);
+    setDatasetId("");
+    setTaskId("");
+    setQuery({ job: "", dataset: "", task: "" });
+  }, [setQuery]);
 
-  // A report is a drill-down of 评测, not a fourth module: the rail keeps
-  // 评测 current while one is open, so somebody two clicks deep still knows
-  // which module they are in.  Computed rather than compared as
+  const openDataset = useCallback(
+    (id: string) => {
+      // Same reasoning as a report: the list is a drill-down of 数据集.
+      setView("datasets");
+      setDatasetId(id);
+      setTaskId("");
+      setQuery({ job: "", dataset: id, task: "" });
+    },
+    [setQuery],
+  );
+
+  const openDatasetTask = useCallback(
+    (id: string) => {
+      setTaskId(id);
+      setQuery({ task: id });
+    },
+    [setQuery],
+  );
+
+  const backToDatasets = useCallback(() => {
+    setDatasetId("");
+    setTaskId("");
+    setQuery({ dataset: "", task: "" });
+  }, [setQuery]);
+
+  const backToDataset = useCallback(() => {
+    setTaskId("");
+    setQuery({ task: "" });
+  }, [setQuery]);
+
+  // A report and a task are drill-downs of a module, not modules of their own:
+  // the rail keeps 评测 (or 数据集) current while one is open, so somebody two
+  // clicks deep still knows where they are.  Computed rather than compared as
   // `view === key && !jobId` -- that spelling un-highlights every row, because
-  // the report is reached with `view` still on "jobs".
-  const surface: View = jobId ? "jobs" : view;
+  // a report is reached with `view` still on "jobs".
+  const surface: View = jobId ? "jobs" : datasetId ? "datasets" : view;
 
   const running = jobs.filter((job) => job.status === "running").length;
 
@@ -219,6 +276,18 @@ export function Shell(): unknown {
 
           {jobId ? (
             <ReportModule jobId={jobId} onBack={backToList} />
+          ) : datasetId && taskId ? (
+            <DatasetTaskModule
+              datasetId={datasetId}
+              taskId={taskId}
+              onBack={backToDataset}
+            />
+          ) : datasetId ? (
+            <DatasetDetailModule
+              datasetId={datasetId}
+              onBack={backToDatasets}
+              onOpenTask={openDatasetTask}
+            />
           ) : view === "jobs" ? (
             <JobsModule
               jobs={jobs}
@@ -229,7 +298,7 @@ export function Shell(): unknown {
               onNew={() => setNewOpen(true)}
             />
           ) : view === "datasets" ? (
-            <DatasetsModule subject={config?.subject ?? ""} />
+            <DatasetsModule subject={config?.subject ?? ""} onOpen={openDataset} />
           ) : (
             <SettingsModule
               config={config}

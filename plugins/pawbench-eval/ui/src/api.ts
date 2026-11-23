@@ -208,6 +208,77 @@ export interface DatasetItem {
   updated_at: string;
 }
 
+/**
+ * One task inside a dataset, as the catalogue lists it.
+ *
+ * Not the task itself: name, labels, grading *kind* and how many files come
+ * with it.  The question lives one request further in (``DatasetTaskDetail``),
+ * because a listing that quoted every prompt would be a corpus leak with a
+ * scrollbar.
+ */
+export interface DatasetTaskEntry {
+  task_id: string;
+  name: string;
+  grading_type: string;
+  timeout_seconds: number;
+  has_attachments: boolean;
+  attachment_count: number;
+  labels: Record<string, unknown>;
+}
+
+export interface DatasetDetail {
+  id: string;
+  name: string;
+  owner: string;
+  kind: string;
+  description: string;
+  categories: string[];
+  filter_spec: Record<string, unknown>;
+  task_count: number;
+  tasks: DatasetTaskEntry[];
+}
+
+/** One fixture a task declares, and whether the file is still on disk. */
+export interface DatasetAttachment {
+  path: string;
+  size: number | null;
+  present: boolean;
+}
+
+/**
+ * One task of one dataset: the question, and what came with it.
+ *
+ * ``unreadable`` is the service's answer for a markdown file that no longer
+ * parses: the labels are still there (they come from the index), and the
+ * prompt is ``null``.  That is a state to show, not an error to hide -- the
+ * person looking at the dataset is the one who can fix the file.
+ */
+export interface DatasetTaskDetail {
+  dataset_id: string;
+  task_id: string;
+  name: string;
+  grading_type: string;
+  timeout_seconds: number;
+  labels: Record<string, unknown>;
+  prompt: string | null;
+  expected_behavior: string | null;
+  /**
+   * How the task is scored: the criteria list and the judge rubric.
+   *
+   * The rubric is text about what a good answer looks like; ``automated_checks``
+   * -- the script that carries the expected values -- is deliberately absent
+   * from this payload, and ``has_automated_checks`` is the only thing that says
+   * it exists.
+   */
+  grading_criteria: string[];
+  llm_judge_rubric: string | null;
+  grading_weights: Record<string, number>;
+  has_automated_checks: boolean;
+  attachments: DatasetAttachment[];
+  unreadable: string | null;
+}
+
+
 export interface DatasetList {
   datasets: DatasetItem[];
 }
@@ -331,6 +402,33 @@ export const api = {
     call<ReportLink>("GET", `/v1/jobs/${q(jobId)}/report?format=${format}`),
 
   datasets: () => call<DatasetList>("GET", "/v1/datasets"),
+  datasetDetail: (datasetId: string) => call<DatasetDetail>("GET", `/v1/datasets/${q(datasetId)}`),
+  datasetTask: (datasetId: string, taskId: string) =>
+    call<DatasetTaskDetail>("GET", `/v1/datasets/${q(datasetId)}/tasks/${q(taskId)}`),
+  /**
+   * A fixture's contents, before any run exists.
+   *
+   * The same shape an artifact preview answers with, from the same function in
+   * the service: the file a task comes with and the file an agent wrote back
+   * are read with one set of rules.
+   */
+  datasetFixture: (datasetId: string, taskId: string, path: string) =>
+    call<FilePreview>(
+      "GET",
+      `/v1/datasets/${q(datasetId)}/tasks/${q(taskId)}/attachments/preview?path=${q(path)}`,
+    ),
+  /**
+   * The task's own markdown.
+   *
+   * The fallback the detail page offers beside the parsed fields: if a rubric
+   * resists parsing, the file itself is one click away.  Previewed through the
+   * same reader as a fixture, so the trim is the same.
+   */
+  datasetTaskSource: (datasetId: string, taskId: string) =>
+    call<FilePreview>("GET", `/v1/datasets/${q(datasetId)}/tasks/${q(taskId)}/source`),
+  /** Where a fixture download goes, so the proxy can add the token on the way out. */
+  datasetFixtureUrl: (datasetId: string, taskId: string, path: string) =>
+    `/v1/datasets/${q(datasetId)}/tasks/${q(taskId)}/attachments?path=${q(path)}`,
   categories: () => call<CategoryList>("GET", "/v1/dataset-categories"),
   resolve: (selector: { categories: string[]; datasets: string[] }) =>
     call<ResolveResult>("POST", "/v1/datasets/resolve", { selector }),

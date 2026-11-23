@@ -744,9 +744,12 @@ function TaskDialog(props: {
           detour on the way to a judgement, not a different place to be. */}
       {preview ? (
         <PreviewModal
-          jobId={props.jobId}
-          taskId={detail.task_id}
-          attempt={detail.attempt}
+          source={{
+            kind: "job",
+            jobId: props.jobId,
+            taskId: detail.task_id,
+            attempt: detail.attempt,
+          }}
           target={preview}
           onClose={() => setPreview(null)}
         />

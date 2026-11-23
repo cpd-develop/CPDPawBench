@@ -137,7 +137,10 @@ reports     job_id, format(json|md|html|zip), sensitivity(shared|full), path, sh
 | `GET /v1/jobs/{id}/report?format=json\|md\|html\|zip&sensitivity=` | 报告下载（需求 9）。返回一次性预签名 URL + sha256 + size + 过期时刻，不直接回流文件字节 |
 | `GET /v1/jobs/{id}/transcript?task_id=&cursor=&limit=` | 轨迹分段读取（默认 200 事件/页），避免大轨迹把服务与前端打爆 |
 | `POST /v1/datasets/packages` | 上传自定义评测集（zip 整包，元数据走 query：`id` / `name` / `categories` / `description`）→ `{dataset_id, validation_report}`；校验失败返回逐项原因，**不注册、不进队列**。实现上把 body 分成两条路由而不是 `POST /v1/datasets` 按 `kind` 分叉：zip 是 256 MB 上限的二进制体，内置视图是几十字节的 JSON 过滤器，合成一条会让 JSON 调用方也走一遍 multipart 解析（原方案的那一条已按此拆开） |
-| `GET /v1/datasets` / `GET /v1/datasets/{id}` | 目录浏览：名称、owner、kind、分类、任务数、labels 分布（能力/场景/复杂度/环境/模态），**不含判分细节与题目正文** |
+| `GET /v1/datasets` / `GET /v1/datasets/{id}` | 目录浏览：名称、owner、kind、分类、任务数、labels 分布（能力/场景/复杂度/环境/模态）。**列表与数据集描述不含题目正文**：一页列出每个数据集的每道题，等于把题库发出去；正文只走下面那条一次一题的路径 |
+| `GET /v1/datasets/{id}/tasks/{tid}` | 单题（下钻的最后一层）：题干、期望行为、标签、判分**方式**与权重、超时、**判据清单与 judge 细则正文**、`workspace_files` 清单（含文件在不在、多大）。判据若被写成普通项目符号——语料 150 题里有 26 题如此，`TaskLoader` 只认 `- [ ]`——这里补一道只用于展示的解析，不碰 loader 也不碰判分器。**不含 `automated_checks`**：那是期望值本身，等于答案 |
+| `GET /v1/datasets/{id}/tasks/{tid}/source` | 这道题 markdown 的原文预览，走与夹具预览同一个函数（text/image/binary、256 KiB 上限）；其中 `## Automated Checks` 一节换成说明文字，不让"看原文"成为答案的第二扇门。解析不出来的地方文件本身才是答案，一屏读完胜过猜 |
+| `GET /v1/datasets/{id}/tasks/{tid}/attachments?path=` / `.../preview?path=` | 一个夹具的字节 / 一个夹具的预览。**只认 `workspace_files` 声明过的 `dest`**，解析复用数据面同一个函数（`exchange.declared_fixture`），所以下载路由拒绝的路径在浏览路由一样拒绝 |
 | `POST /v1/datasets` 与 `PUT /v1/datasets/{id}` | 把题库切片存成命名数据集：body 是 `filter`（`scenario` / `capability` / `complexity` / `environment` / `modality` / `source` / 显式 `task_ids`）；服务端立即解析成 `task_ids` 快照。**建**对全员开放、**改**限 owner 或 `admin`（D15 的两半，判定在 `edit_builtin_view` 里，HTTP 与将来的 MCP 共用）；管理员重切不改变 owner，空字段表示"沿用存着的值" |
 | `DELETE /v1/datasets/{id}` | 仅 owner 或 `admin`；被任何 job 引用过则拒删（返回引用 job 数） |
 | `GET /v1/dataset-categories` / `POST` / `DELETE` | 分类增删查（扁平一层，已定：创建权限全员开放）。`POST` 名称规范化后去重，命中既有分类直接返回它（幂等，便于 skill 侧盲建）；`DELETE` 仅创建者与 `admin`，且仍有数据集引用则拒并返回引用数 |
@@ -372,7 +375,7 @@ token 丢掉（只透传 `content-type`/`accept`）。代价是所有调用多�
 - **结果区**：按 job 展开到任务分数、能力/场景切片、`no_artifacts` 与 `skipped(window_closed)` 标红。
 - **详情视图**（需求 8）：三级下钻——job 概览（配置 / 窗口 / 数据集来源与解析快照 / 进度 / 总分 / 切片对比）→ 逐题列表（分数、耗时、失败原因、两个写回计数）→ 单题详情（判分逐项、轨迹时间线分页、产物清单、报告下载）。两档对白名单内全员开放，所以默认呈现 `shared` 档 + 一个对**任何人**都可见的"完整版"开关（不是只给提交人），切到完整版时旁边固定一行说明：「完整版含评分依据与他人产物，对外只发 shared 版」。
 - **报告下载**：格式选择（json / md / html / zip）+ 生成中状态 + sha256 与过期时刻展示；zip 仅完整版可选，选 shared + zip 时前端直接不给这个组合（服务端返回 `400 sensitivity_format_mismatch`，不写成 403）。
-- **数据集区**（可折叠）：列表 / 新建视图 / 上传自定义集 / 分类管理入口。建数据集与建分类对全员开放（已定）；删除入口只在创建者与 `admin` 的行上出现，其他人看到的是禁用态 + 一行说明（"由 <创建者> 维护"），不是点下去才报错。
+- **数据集区**（可折叠）：列表 / 新建视图 / 上传自定义集 / 分类管理入口。列表的行可点开，两层下钻——题目清单（`?dataset=`）→ 单题（`?dataset=&task=`），与详情视图同构：下钻时左侧导航停在「数据集」，地址可分享。单题页的「判分规则」把判据、判分方式与权重摊开，judge 细则默认收起（一两千字，占满一屏会淹没用来横向比较的题干与判据），解析不出来时右上角有「看题目 markdown」直接读原文。建数据集与建分类对全员开放（已定）；删除入口只在创建者与 `admin` 的行上出现，其他人看到的是禁用态 + 一行说明（"由 <创建者> 维护"），不是点下去才报错。
 
 设计系统硬约束（`.qoder/rules/qwenpal-design-system.md`）：颜色全走语义 token、浅色深色各走一遍、圆角三档；PR 团队块必须写"设计系统：遵循 DesignSys v1"。
 

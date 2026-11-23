@@ -183,6 +183,16 @@ _CONTROL_STATUS: dict[str, int] = {
     "dataset_not_found": 404,
     "category_not_found": 404,
     "task_not_found": 404,
+    # The catalogue drill-down's two misses, kept apart on purpose: "this
+    # dataset never held that task" is somebody reading a stale link, while "it
+    # names it and no file holds it" is a corpus or package that need fixing.
+    # Both are 404s; the code is what tells those two people apart.
+    "task_not_in_dataset": 404,
+    "task_not_on_disk": 404,
+    # A file the index still names went unreadable between the two calls.  Same
+    # answer as a vanished file: the click cannot be completed, and the code in
+    # the body says which of the two it was.
+    "preview_unavailable": 404,
     "artifact_not_found": 404,
     "attachment_not_found": 404,
     # 409: the row exists and is not in a state for this.
@@ -206,6 +216,10 @@ _CONTROL_STATUS: dict[str, int] = {
     "empty_selection": 422,
     "empty_selector": 422,
     "too_many_tasks": 422,
+    # A fixture asked for by a path the exchange would refuse to lay down: the
+    # catalogue's preview shares the data plane's path rules, so a refusal that
+    # is a 422 there is a 422 here rather than a second opinion.
+    "bad_attachment_path": 422,
     # A package that unpacked and then failed validation, item by item.
     "package_invalid": 422,
     "window_too_short": 422,
@@ -710,6 +724,86 @@ def _add_control_routes(app: FastAPI, control: ControlPlane) -> None:
         authenticate(request)
         return JSONResponse(
             content=await asyncio.to_thread(control.datasets.describe, dataset_id)
+        )
+
+    @app.get("/v1/datasets/{dataset_id}/tasks/{task_id}")
+    async def describe_dataset_task(
+        dataset_id: str, task_id: str, request: Request
+    ) -> JSONResponse:
+        """One task of one dataset: the question, the rules, its fixtures.
+
+        The drill-down's last step, and the first route under ``/v1/datasets``
+        that returns a task body.  The criteria, weights and judge rubric are
+        here on purpose: deciding whether a set measures what you need is not
+        possible from the question alone.  What never leaves on any route is
+        ``automated_checks`` -- the expected values are the answer itself.
+        Fixture *bytes* are a second request (``.../preview``), so the default
+        answer stays a readable page rather than a base64 blob.
+        """
+        authenticate(request)
+        return JSONResponse(
+            content=await asyncio.to_thread(
+                control.datasets.describe_task, dataset_id, task_id
+            )
+        )
+
+    @app.get("/v1/datasets/{dataset_id}/tasks/{task_id}/source")
+    async def dataset_task_source(
+        dataset_id: str, task_id: str, request: Request
+    ) -> JSONResponse:
+        """The task's markdown, as text.
+
+        The escape hatch beside :func:`describe_dataset_task`: a rubric written
+        in a shape the loader does not parse comes back as an empty field, and
+        the person who owns the corpus needs to see the file rather than a
+        parser's opinion of it.  Same trim and same shape as a fixture preview.
+        The ``## Automated Checks`` section is replaced by a note: the answer
+        script stays behind the grader on this door as on every other.
+        """
+        authenticate(request)
+        return JSONResponse(
+            content=await asyncio.to_thread(
+                control.datasets.preview_source, dataset_id, task_id
+            )
+        )
+
+    @app.get("/v1/datasets/{dataset_id}/tasks/{task_id}/attachments")
+    async def dataset_attachment(
+        dataset_id: str, task_id: str, request: Request
+    ) -> FileResponse:
+        """One fixture of a dataset task, as bytes.
+
+        The preview beside it is for reading; this is for opening a spreadsheet
+        in the program that made it.  Same split as the job routes make between
+        a preview and a download, and the same declared-only rule: a path the
+        task does not name is not a file this service hands over.
+        """
+        authenticate(request)
+        path = await asyncio.to_thread(
+            control.datasets.attachment_file,
+            dataset_id,
+            task_id,
+            request.query_params.get("path", ""),
+        )
+        return FileResponse(path, media_type="application/octet-stream", filename=path.name)
+
+    @app.get("/v1/datasets/{dataset_id}/tasks/{task_id}/attachments/preview")
+    async def preview_dataset_attachment(
+        dataset_id: str, task_id: str, request: Request
+    ) -> JSONResponse:
+        """What is inside one fixture of a dataset task.
+
+        The same trim and the same three answers an artifact preview gives, from
+        the same function: a reader comparing a question with an answer should
+        not have to learn a second set of rules for the file in front of them.
+        Only a ``dest`` the task declares can be asked for.
+        """
+        authenticate(request)
+        raw_path = request.query_params.get("path", "")
+        return JSONResponse(
+            content=await asyncio.to_thread(
+                control.datasets.preview_attachment, dataset_id, task_id, raw_path
+            )
         )
 
     @app.put("/v1/datasets/{dataset_id}")

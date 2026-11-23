@@ -349,6 +349,13 @@
   cursor: pointer;
 }
 
+/* The row itself is the drill-down's link; a keyboard user must be able to
+   see where they are before pressing Enter on it. */
+.pbe-table .ant-table-tbody > tr:focus-visible {
+  outline: 2px solid var(--border-brand);
+  outline-offset: -2px;
+}
+
 .pbe-table__foot {
   display: flex;
   align-items: center;
@@ -375,6 +382,71 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ── disclosure ────────────────────────────────────────────────────────── */
+
+/* A long block that opens closed.  The whole row is the button -- a 12px
+   chevron is a mean target -- and the state sits at the right end, after the
+   reader has decided the block is worth opening.  The label stays flush left
+   with the other sub-labels it sits among. */
+.pbe-disclosure {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--spacer-8);
+  margin: 0;
+  padding: var(--spacer-4) 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-family: inherit;
+  font-size: var(--body-sm-font-size);
+  line-height: var(--body-sm-line-height);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pbe-disclosure:focus-visible {
+  outline: 2px solid var(--border-brand);
+  outline-offset: 2px;
+  border-radius: var(--radius-4);
+}
+
+.pbe-disclosure__label {
+  color: var(--text-secondary);
+}
+
+.pbe-disclosure__note {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pbe-disclosure__act {
+  color: var(--text-tertiary);
+}
+
+.pbe-disclosure__chevron {
+  flex: none;
+  color: var(--text-tertiary);
+  transition: transform 140ms ease;
+}
+
+.pbe-disclosure:hover .pbe-disclosure__label,
+.pbe-disclosure:hover .pbe-disclosure__act,
+.pbe-disclosure:hover .pbe-disclosure__chevron {
+  color: var(--text-default);
+}
+
+.pbe-disclosure[aria-expanded="true"] .pbe-disclosure__chevron {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pbe-disclosure__chevron {
+    transition: none;
+  }
 }
 
 /* ── report ────────────────────────────────────────────────────────────── */

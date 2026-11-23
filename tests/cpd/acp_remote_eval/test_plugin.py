@@ -72,6 +72,16 @@ DASHBOARD_ENDPOINTS = [
     ("GET", "/v1/datasets", "/v1/datasets"),
     ("POST", "/v1/datasets", "/v1/datasets"),
     ("DELETE", "/v1/datasets/ds-1", "/v1/datasets/"),
+    # The drill-down: a dataset's task list, one task, and one fixture.
+    ("GET", "/v1/datasets/ds-1", "/v1/datasets/${q(datasetId)}"),
+    ("GET", "/v1/datasets/ds-1/tasks/t1", "/tasks/${q(taskId)}"),
+    ("GET", "/v1/datasets/ds-1/tasks/t1/source", "/source"),
+    ("GET", "/v1/datasets/ds-1/tasks/t1/attachments", "/attachments?path="),
+    (
+        "GET",
+        "/v1/datasets/ds-1/tasks/t1/attachments/preview",
+        "/attachments/preview?path=",
+    ),
     ("POST", "/v1/datasets/resolve", "/v1/datasets/resolve"),
     ("POST", "/v1/datasets/packages", "/v1/datasets/packages?"),
     ("GET", "/v1/dataset-categories", "/v1/dataset-categories"),
@@ -314,8 +324,61 @@ def test_the_shipped_bundle_is_self_contained() -> None:
     assert "registerRoutes" in source
     # One marker per module, so a stale bundle (built before a module existed)
     # fails here rather than as a blank panel on somebody's screen.
-    for marker in ("pbe-root", "新建评测", "数据集", "配置", "session_id"):
+    for marker in (
+        "pbe-root",
+        "新建评测",
+        "数据集",
+        "配置",
+        "session_id",
+        # The dataset drill-down's two levels, so a stale bundle fails here
+        # rather than as a list that does not open.
+        "返回数据集列表",
+        "返回题目清单",
+        "题目带的文件",
+        # The grading panel, whose whole point is that the rubric is one click
+        # away rather than on the page.
+        "判分细则",
+        "看题目 markdown",
+        "pbe-disclosure",
+    ):
         assert marker in source, marker
+
+
+def test_the_drill_down_rows_are_reachable_by_keyboard() -> None:
+    """A row that only has onClick is a link a keyboard user cannot follow.
+
+    Both levels of the dataset drill-down are the primary navigation of their
+    page.  ``tabIndex`` alone would get them focused and go nowhere, so the
+    Enter/Space handler is pinned too; the guard on nested buttons keeps a
+    focused 删除 from also opening the dataset it deletes.
+    """
+    for name in ("datasets.tsx", "dataset-detail.tsx"):
+        source = (UI_SRC / "modules" / name).read_text(encoding="utf-8")
+        assert "tabIndex: 0" in source, name
+        assert 'event.key === "Enter"' in source, name
+        assert "event.target !== event.currentTarget" in source, name
+    bundle = UI_BUNDLE.read_text(encoding="utf-8")
+    assert bundle.count("tabIndex: 0") >= 2, "the bundle predates the keyboard rows"
+
+
+def test_the_rubric_opens_folded() -> None:
+    """The judge rubric is 1,300 characters, and it is also the reason this page exists.
+
+    Both are true, so the page says how long it is and starts closed: the
+    question, the criteria and the attachments are what a reader compares across
+    tasks, and four screens of prose between them pushes the comparison off the
+    fold.  The default lives in one place, and flipping it would do that to
+    every task at once -- which is why it is pinned here rather than trusted.
+    """
+    detail = (UI_SRC / "modules" / "dataset-detail.tsx").read_text(encoding="utf-8")
+    assert "function Disclosure(" in detail
+    disclosure = detail.split("function Disclosure(", 1)[1]
+    head, _, body = disclosure.partition("return (")
+    assert "useState(false)" in head, "the disclosure no longer starts closed"
+    assert "aria-expanded={open}" in body, "the header stopped announcing its state"
+    # Folded means not rendered: a hidden-by-CSS rubric is still in the page for
+    # find-in-page and for a screen reader to read out of order.
+    assert "{open ? (" in body, "the rubric is rendered even when folded"
 
 
 def test_the_submission_form_offers_the_fingerprint_the_report_reads() -> None:
@@ -362,9 +425,11 @@ def test_a_report_is_still_the_module_it_drilled_down_from() -> None:
     """
     shell = _squashed((UI_SRC / "shell.tsx").read_text(encoding="utf-8"))
     bundle = _squashed(UI_BUNDLE.read_text(encoding="utf-8"))
-    assert 'const surface: View = jobId ? "jobs" : view;' in shell
+    assert (
+        'const surface: View = jobId ? "jobs" : datasetId ? "datasets" : view;' in shell
+    )
     assert 'aria-current={surface === item.key ? "page" : undefined}' in shell
-    assert 'const surface = jobId ? "jobs" : view;' in bundle, (
+    assert 'const surface = jobId ? "jobs" : datasetId ? "datasets" : view;' in bundle, (
         "ui/index.js lacks the rail rule: rebuild (`npm run build`) or the "
         "build output changed shape"
     )
@@ -377,7 +442,11 @@ def test_a_report_is_still_the_module_it_drilled_down_from() -> None:
     for label, text in (("ui/src/shell.tsx", shell), ("ui/index.js", bundle)):
         windows = re.findall(r"aria-current.{0,70}", text)
         assert windows, label
-        offenders = [window for window in windows if "jobId" in window]
+        offenders = [
+            window
+            for window in windows
+            if "jobId" in window or "datasetId" in window or "taskId" in window
+        ]
         assert not offenders, (label, offenders)
 
 

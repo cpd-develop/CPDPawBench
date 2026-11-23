@@ -141,6 +141,7 @@ def write_task(
     fixtures: tuple[str, ...] = (),
     prompt: str | None = "Write output/result.txt with the answer.",
     rubric: str | None = None,
+    criteria: tuple[str, ...] = (),
     source: str | None = None,
     subcategory: str | None = None,
     channels: tuple[str, ...] = (),
@@ -177,6 +178,10 @@ def write_task(
     if prompt is not None:
         lines += [prompt, ""]
     lines += ["## Expected Behavior", "", "A file is written."]
+    if criteria:
+        # Plain bullets, deliberately: ``TaskLoader`` reads ``- [ ]`` lines and
+        # skips these, which is the shape 26 of the shipped tasks use.
+        lines += ["", "## Grading Criteria", "", *[f"- {item}" for item in criteria]]
     if rubric is not None:
         lines += ["", "## LLM Judge Rubric", "", rubric]
 

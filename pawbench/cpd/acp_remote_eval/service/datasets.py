@@ -37,6 +37,8 @@ from pawbench.task_loader import Task, TaskLoader
 
 from .auth import Principal, SCOPE_ADMIN
 from .config import DatasetConfig, SCORE_HIJACK_FILENAMES
+from .exchange import ExchangeError, declared_fixture
+from .preview import PREVIEW_TEXT_BYTES, preview_of
 from .store import Store, utc_now_iso
 
 logger = logging.getLogger(__name__)
@@ -530,6 +532,220 @@ class DatasetService:
     def task_summaries(self, record: Mapping[str, Any]) -> list[TaskSummary]:
         index = self._index(record["id"])
         return [index[task_id] for task_id in record["task_ids"] if task_id in index]
+
+    def describe_task(self, dataset_id: str, task_id: str) -> dict[str, Any]:
+        """One task of one dataset: the question, and what it was handed.
+
+        What is here: the question (prompt, expected behaviour), the labels, the
+        kind of grading, the timeout, the fixtures, and the **grading rules** --
+        the criteria list and the judge rubric.  Reading how a task is scored is
+        part of deciding whether to run it, and a dataset view that hid the
+        rubric could not answer "why did this task score 0.4".
+
+        What is not here, at any depth: ``automated_checks``.  The rubric says
+        what a good answer looks like; the checks script holds the expected
+        values (``("F8", 4639, ...)``), which is the answer itself.  It stays
+        behind the grader, and ``has_automated_checks`` says only that one
+        exists.
+
+        A task whose markdown no longer parses still answers: the labels come
+        from the index, and ``unreadable`` says what went wrong, because "the
+        file is broken" and "the task is gone" are two different facts and the
+        person looking at the dataset is the one who can fix the first.
+        """
+        record, summary, root = self._task_of(dataset_id, task_id)
+        path = self._task_file(dataset_id, task_id, summary)
+        task: Task | None = None
+        unreadable: str | None = None
+        criteria: list[str] = []
+        try:
+            task = TaskLoader(self._tasks_dir(record)).load_task(summary.path)
+            criteria = list(task.grading_criteria)
+        except (ValueError, OSError) as failure:
+            unreadable = str(failure)
+            logger.warning(
+                "dataset task unreadable",
+                extra={"dataset_id": dataset_id, "task_id": task_id, "reason": unreadable},
+            )
+        if not criteria:
+            # The loader keeps only `- [ ]` lines, because the judge prompt is
+            # built from them; 26 of the shipped 150 tasks write plain bullets,
+            # and for a reader those are still the criteria.  Display only: the
+            # grader's view of the same file is untouched.
+            criteria = _plain_criteria(path)
+        rows = [self._fixture_row(summary, root, item) for item in summary.workspace_files]
+        missing = [row["path"] for row in rows if not row["present"]]
+        if missing:
+            # A missing fixture is a row in the response, not an exception --
+            # but it is still a broken dataset, and the one browser that saw it
+            # is not the person who can fix it.
+            logger.warning(
+                "dataset task has missing attachments",
+                extra={
+                    "dataset_id": dataset_id,
+                    "task_id": task_id,
+                    "missing": missing[:MAX_LOGGED_TASK_IDS],
+                    "count": len(missing),
+                },
+            )
+        return {
+            "dataset_id": dataset_id,
+            "task_id": summary.task_id,
+            "name": summary.name,
+            "grading_type": summary.grading_type,
+            "timeout_seconds": summary.timeout_seconds,
+            "labels": dict(summary.labels),
+            "prompt": task.prompt if task is not None else None,
+            "expected_behavior": task.expected_behavior if task is not None else None,
+            "grading_criteria": criteria,
+            "llm_judge_rubric": task.llm_judge_rubric if task is not None else None,
+            # Front-matter this file did not write the way the page expects is a
+            # blank field, not a 500: the same file indexes and grades fine, and
+            # "one broken line takes the whole task page down" is not a trade.
+            "grading_weights": (
+                dict(task.grading_weights)
+                if task is not None and isinstance(task.grading_weights, Mapping)
+                else {}
+            ),
+            "has_automated_checks": bool(task is not None and task.automated_checks),
+            "attachments": rows,
+            "unreadable": unreadable,
+        }
+
+    def preview_source(self, dataset_id: str, task_id: str) -> dict[str, Any]:
+        """The task's markdown, as a page of text.
+
+        The fallback for everything :meth:`describe_task` could not parse into a
+        field: a task whose rubric is written in a shape the loader does not
+        recognise still has a file, and the person curating the set can read it.
+        It goes through the same preview function as a fixture, so the cap and
+        the "text / image / binary" answer are the same as everywhere else.
+
+        One section does not survive the trip: ``## Automated Checks`` is
+        replaced by a note saying why.  The boundary :meth:`describe_task`
+        states -- the question and the rules are readable, the expected values
+        never leave the grader -- has to hold on every route that hands out task
+        text, and "this one is only for reading" is where boundaries erode.  The
+        reader who truly needs the script has the repository; the reader this
+        page serves needs the rules, which are all still here.
+        """
+        _, summary, _ = self._task_of(dataset_id, task_id)
+        path = self._task_file(dataset_id, task_id, summary)
+        try:
+            answer = preview_of(path, path.name)
+        except OSError as failure:
+            # is_file() then stat() is a race, and permissions can change between
+            # the index and this read.  The route answering 500 for "the file
+            # vanished mid-click" would be a third answer for the same fact that
+            # describe_task already calls `task_not_on_disk`.
+            raise DatasetError(
+                "preview_unavailable",
+                f"task {task_id} of {dataset_id} could not be read: {failure}",
+                dataset_id=dataset_id,
+                task_id=task_id,
+            ) from failure
+        if answer["kind"] == "text":
+            answer["text"] = _without_checks(answer["text"])
+        return answer
+
+    def _task_file(self, dataset_id: str, task_id: str, summary: TaskSummary) -> Path:
+        """The task's markdown, or the reason there is none."""
+        if not summary.path.is_file():
+            # The index remembers the task, the disk does not: reading it would
+            # raise FileNotFoundError out of a read route, which answers 500 to
+            # a question whose answer is "this file is gone".
+            raise DatasetError(
+                "task_not_on_disk",
+                f"{dataset_id} names {task_id} but its task file is gone",
+                dataset_id=dataset_id,
+                task_id=task_id,
+            )
+        return summary.path
+
+    def attachment_file(self, dataset_id: str, task_id: str, raw_path: str) -> Path:
+        """One fixture of one dataset task, for the route that hands it over.
+
+        Declared-only, resolved under the dataset root by the same function the
+        data plane uses -- a path the exchange refuses to serve a run must not
+        be servable from the catalogue either.
+        """
+        _, summary, root = self._task_of(dataset_id, task_id)
+        try:
+            return declared_fixture(summary.workspace_files, root, raw_path)
+        except ExchangeError as refusal:
+            if refusal.code == "bad_asset_source":
+                # The manifest points outside the dataset: the corpus is broken,
+                # not the caller's query.  The api layer already logs this code
+                # as a server fault; folding it into 422 would send somebody to
+                # fix a path that was right and wake up nobody.
+                raise
+            shown = raw_path if len(raw_path) <= 120 else f"{raw_path[:117]}…"
+            raise DatasetError(
+                "attachment_not_found"
+                if refusal.code in {"asset_not_found", "asset_unknown_dest"}
+                else "bad_attachment_path",
+                f"task {task_id} of {dataset_id} has no readable attachment {shown!r}: {refusal}",
+                dataset_id=dataset_id,
+                task_id=task_id,
+                path=shown,
+            ) from refusal
+
+    def preview_attachment(self, dataset_id: str, task_id: str, raw_path: str) -> dict[str, Any]:
+        """One fixture, as much of it as a dialog can show.
+
+        Same answer shape as an artifact preview, from the same function, so a
+        reader sees one kind of thing whether they are looking at a question or
+        at an answer to it.
+        """
+        path = self.attachment_file(dataset_id, task_id, raw_path)
+        try:
+            return preview_of(path, raw_path)
+        except OSError as failure:
+            raise DatasetError(
+                "preview_unavailable",
+                f"attachment {raw_path[:120]} of task {task_id} could not be read: {failure}",
+                dataset_id=dataset_id,
+                task_id=task_id,
+                path=raw_path[:120],
+            ) from failure
+
+    def _task_of(
+        self, dataset_id: str, task_id: str
+    ) -> tuple[dict[str, Any], TaskSummary, Path]:
+        """The dataset, the summary and the root for one task the dataset names."""
+        record = self.get(dataset_id)
+        if task_id not in record["task_ids"]:
+            raise DatasetError(
+                "task_not_in_dataset",
+                f"{dataset_id} does not hold a task called {task_id}",
+                dataset_id=dataset_id,
+                task_id=task_id,
+            )
+        summary = self._index(dataset_id).get(task_id)
+        if summary is None:
+            # Named by the snapshot, absent from disk: retired corpus, or a
+            # package whose file was edited after registration.
+            raise DatasetError(
+                "task_not_on_disk",
+                f"{dataset_id} names {task_id} but no task file holds it",
+                dataset_id=dataset_id,
+                task_id=task_id,
+            )
+        return record, summary, self._dataset_root(record)
+
+    def _fixture_row(
+        self, summary: TaskSummary, root: Path, item: Mapping[str, str]
+    ) -> dict[str, Any]:
+        """One line of a task's attachment list: what it is and how big."""
+        dest = str(item.get("dest", ""))
+        try:
+            path = declared_fixture(summary.workspace_files, root, dest)
+            return {"path": dest, "size": path.stat().st_size, "present": True}
+        except (ExchangeError, OSError):
+            # Declared but not on disk is a row, not an error: the manifest says
+            # the task comes with this file, and a reader deciding whether to run
+            # the task needs to know it is missing.
+            return {"path": dest, "size": None, "present": False}
 
     def tasks_for_run(self, dataset_id: str) -> list[Task]:
         """Full task objects for the runner; never exposed through the catalogue.
@@ -1267,6 +1483,69 @@ def _as_value_set(value: Any) -> set[str]:
     if isinstance(value, Iterable):
         return {str(item) for item in value}
     return {str(value)}
+
+
+_BULLET = re.compile(r"^[-*+]\s+(?:\[[ xX]\]\s+)?(.+)$")
+_NUMBERED = re.compile(r"^\d+[.)]\s+(.+)$")
+_CRITERIA_HEADING = re.compile(
+    r"^##\s+Grading Criteria\s*$(.*?)(?=^##\s|\Z)", re.MULTILINE | re.DOTALL
+)
+_AUTOMATED_CHECKS = re.compile(
+    r"^##\s+Automated Checks\s*$(.*?)(?=^##\s|\Z)", re.MULTILINE | re.DOTALL
+)
+_CHECKS_NOTE = (
+    "## Automated Checks\n\n"
+    "（这一节是判分器的检查脚本，里面写着这道题的答案，不在此出现——"
+    "判分方式、判据与细则见详情页的字段。）"
+)
+
+
+def _without_checks(text: str) -> str:
+    """The file a reader gets, with the answer script's body replaced."""
+    return _AUTOMATED_CHECKS.sub(_CHECKS_NOTE + "\n", text)
+
+
+def _plain_criteria(path: Path) -> list[str]:
+    """The ``## Grading Criteria`` list as a human reads it, when the loader kept nothing.
+
+    ``TaskLoader`` keeps only ``- [ ]`` lines, because the judge prompt is
+    assembled from them.  26 of the shipped 150 tasks write the same section as
+    plain bullets -- ``- Final response is clear and accurate`` -- and the
+    loader drops every one, so the detail page said "no criteria" about a file
+    that plainly had three.  For a reader those lines are the criteria; the
+    grader's view of the same file is untouched.
+
+    Numbered lists and a section written as plain sentences are accepted too,
+    because the point is to show what the file says, not to insist on a shape.
+    An empty or absent section returns an empty list, and the page falls back to
+    the markdown button.
+    """
+    try:
+        # Capped like a dialog preview: a package may hold a 256 MB markdown,
+        # and "which criteria does this task list" does not need the rest.  The
+        # section sits near the top of every file the corpus ships.
+        with path.open("rb") as handle:
+            body = handle.read(PREVIEW_TEXT_BYTES).decode("utf-8", "replace")
+    except OSError as failure:
+        # Silent here means the page falls back to "no criteria" with no trace
+        # of why -- the exact symptom this function exists to fix.
+        logger.debug("criteria section unreadable", extra={"path": str(path), "reason": str(failure)})
+        return []
+    match = _CRITERIA_HEADING.search(body)
+    if not match:
+        return []
+    bullets: list[str] = []
+    loose: list[str] = []
+    for line in match.group(1).split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        bullet = _BULLET.match(stripped) or _NUMBERED.match(stripped)
+        if bullet:
+            bullets.append(bullet.group(1).strip())
+        elif not stripped.startswith(("#", "|", "```", "<!--")):
+            loose.append(stripped)
+    return bullets or loose
 
 
 def _text(value: Any) -> str:

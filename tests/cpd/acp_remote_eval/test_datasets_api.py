@@ -53,8 +53,11 @@ from support import (
 ACP_URL = "http://127.0.0.1:9000/rpc"
 
 #: The prompt sentence ``support.write_task`` puts in every task file.  The
-#: catalogue must never carry it: a listing that quotes the question tells the
-#: subject what is expected before it has answered anything.
+#: *listing* must never carry it: a listing that quotes the question tells the
+#: subject what is expected before it has answered anything.  One route is the
+#: deliberate exception -- ``/v1/datasets/{id}/tasks/{task_id}``, where a reader
+#: has asked for one task by name -- so the assertions below are about the
+#: listing and the detail never drifting into each other.
 PROMPT_MARK = "Write output/result.txt"
 
 
@@ -977,3 +980,100 @@ def test_every_catalogue_route_refuses_an_absent_token(client):
 
     assert [response.status_code for response in calls] == [401] * len(calls)
     assert {response.json()["error"] for response in calls} == {"unauthenticated"}
+
+
+# ── the drill-down: one task of one dataset ───────────────────────────────────
+
+
+def test_one_task_of_a_dataset_answers_with_its_prompt(client, tokens):
+    """The listing refuses bodies; this route is the deliberate way in.
+
+    Both halves are asserted together because the distinction is the whole
+    design: a listing that quotes the question tells the subject what is
+    expected before it answered anything, while a reader who has opened one
+    task has asked for that task.
+    """
+    response = client.get("/v1/datasets/mail/tasks/mail_l1", headers=as_(tokens))
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["task_id"] == "mail_l1"
+    assert PROMPT_MARK in body["prompt"]
+    assert body["labels"]["scenario"] == "Office_Productivity/Email"
+    assert body["attachments"] == []
+    # The rules travel with the question; the grading code does not.
+    assert "automated_checks" not in body
+    assert set(body) >= {"grading_criteria", "llm_judge_rubric", "has_automated_checks"}
+    # Still true of the listing, which is the route the picker reads.
+    assert PROMPT_MARK not in client.get("/v1/datasets/mail", headers=as_(tokens)).text
+
+
+def test_a_task_markdown_can_be_read_when_the_fields_come_back_thin(client, tokens, tmp_path):
+    """The button beside the rubric: the file itself, through the same reader."""
+    source = tmp_path / "pkg"
+    write_task(source, "with_file", scenario="Custom/One", fixtures=("budget.txt",))
+    client.post(
+        "/v1/datasets/packages?id=cust-src&name=Source",
+        content=zip_package(source),
+        headers=as_(tokens),
+    )
+
+    response = client.get("/v1/datasets/cust-src/tasks/with_file/source", headers=as_(tokens))
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["kind"] == "text"
+    assert "## Prompt" in body["text"]
+    assert PROMPT_MARK in body["text"]
+
+
+def test_a_task_outside_the_dataset_answers_its_own_404(client, tokens):
+    response = client.get("/v1/datasets/mail/tasks/chart_open", headers=as_(tokens))
+
+    assert response.status_code == 404
+    assert response.json()["error"] == "task_not_in_dataset"
+
+
+def test_a_package_fixture_can_be_previewed_and_a_stray_path_is_422(
+    client, tokens, tmp_path
+):
+    """One path policy: what the exchange would refuse to serve a run, this
+    route refuses to show a browser."""
+    source = tmp_path / "pkg"
+    write_task(source, "with_file", scenario="Custom/One", fixtures=("budget.txt",))
+    uploaded = client.post(
+        "/v1/datasets/packages?id=cust-files&name=Files",
+        content=zip_package(source),
+        headers=as_(tokens),
+    )
+    assert uploaded.status_code == 201, uploaded.text
+
+    task = client.get("/v1/datasets/cust-files/tasks/with_file", headers=as_(tokens)).json()
+    assert task["attachments"] == [
+        {"path": "fixtures/budget.txt", "size": len("content of budget.txt"), "present": True}
+    ]
+
+    preview = client.get(
+        "/v1/datasets/cust-files/tasks/with_file/attachments/preview",
+        params={"path": "fixtures/budget.txt"},
+        headers=as_(tokens),
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["kind"] == "text"
+    assert preview.json()["text"] == "content of budget.txt"
+
+    undeclared = client.get(
+        "/v1/datasets/cust-files/tasks/with_file/attachments/preview",
+        params={"path": "tasks/with_file.md"},
+        headers=as_(tokens),
+    )
+    assert undeclared.status_code == 404
+    assert undeclared.json()["error"] == "attachment_not_found"
+
+    escaping = client.get(
+        "/v1/datasets/cust-files/tasks/with_file/attachments/preview",
+        params={"path": "../outside.txt"},
+        headers=as_(tokens),
+    )
+    assert escaping.status_code == 422
+    assert escaping.json()["error"] == "bad_attachment_path"

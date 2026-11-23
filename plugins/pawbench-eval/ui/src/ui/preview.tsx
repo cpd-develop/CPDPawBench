@@ -19,28 +19,47 @@ import { api, FilePreview } from "../api";
 import { EmptyHint, bytes } from "./primitives";
 
 export interface PreviewTarget {
-  kind: "artifacts" | "attachments";
+  kind: "artifacts" | "attachments" | "fixture" | "source";
   path: string;
   canDownload: boolean;
 }
 
+/**
+ * Where the bytes come from: one attempt of one run, or one task of one dataset.
+ *
+ * Both are "a declared file", and both are answered by the service's single
+ * preview function, so the dialog does not need a second body for the second
+ * case -- only a second way to ask for the bytes.
+ */
+export type PreviewSource =
+  | { kind: "job"; jobId: string; taskId: string; attempt: number }
+  | { kind: "dataset"; datasetId: string; taskId: string };
+
 export function PreviewModal(props: {
-  jobId: string;
-  taskId: string;
-  attempt: number;
+  source: PreviewSource;
   target: PreviewTarget;
   onClose: () => void;
 }): unknown {
   const [preview, setPreview] = useState<FilePreview | null>(null);
   const [error, setError] = useState("");
   const { kind, path } = props.target;
+  const { source } = props;
+  // The source object is rebuilt on every render, so the effect keys off its
+  // fields instead: an identity dependency would refetch on each keystroke
+  // anywhere on the page.
+  const sourceKey = JSON.stringify(source);
 
   useEffect(() => {
     let alive = true;
     setPreview(null);
     setError("");
-    api
-      .preview(props.jobId, props.taskId, props.attempt, kind, path)
+    const asked =
+      source.kind === "job"
+        ? api.preview(source.jobId, source.taskId, source.attempt, kind as "artifacts" | "attachments", path)
+        : kind === "source"
+          ? api.datasetTaskSource(source.datasetId, source.taskId)
+          : api.datasetFixture(source.datasetId, source.taskId, path);
+    asked
       .then((answer) => {
         if (alive) setPreview(answer);
       })
@@ -50,12 +69,25 @@ export function PreviewModal(props: {
     return () => {
       alive = false;
     };
-  }, [props.jobId, props.taskId, props.attempt, kind, path]);
+  }, [sourceKey, kind, path]);
 
   const name = path.split("/").pop() || path;
 
   function save(): void {
-    void download(api.fileUrl(props.jobId, props.taskId, props.attempt, kind, path), name);
+    // A fixture of a dataset has no attempt, so its download is its own route;
+    // the job's artifacts and attachments share the one the report already uses.
+    const url =
+      source.kind === "dataset"
+        ? api.datasetFixtureUrl(source.datasetId, source.taskId, path)
+        : kind === "artifacts" || kind === "attachments"
+          ? api.fileUrl(source.jobId, source.taskId, source.attempt, kind, path)
+          : "";
+    if (url) {
+      // The download button is the last action in the dialog; a rejected
+      // promise here used to leave it doing nothing at all.  The same Alert
+      // that reports a failed preview can report a failed save.
+      void download(url, name).catch((err: unknown) => setError(describeError(err).message));
+    }
   }
 
   return (

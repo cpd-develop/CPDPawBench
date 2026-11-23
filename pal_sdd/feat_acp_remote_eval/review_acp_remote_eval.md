@@ -823,3 +823,69 @@ Playwright 驱动真 console（`http://127.0.0.1:8088/apps/pawbench-eval`）+ �
 | # | 位置 | 发现 | 期限／处理 |
 |---|---|---|---|
 | L46 | 新用例 | 断言仍是文本匹配，不验证渲染：若渲染分支将来改用另一个变量（如 `openReportId`）而 `surface` 仍用 `jobId`，用例仍全绿而高亮与模块脱节 | 不修：这类一致性由 `openReport` 里的 `setView("jobs")` 保证，再加一层"源码结构断言"只会把测试绑死在实现上；真要防，应该加一个跑真实页面的 e2e，见本轮验证脚本 `/tmp/check_rail_state.py`（未入库，因为它依赖本机 console） |
+
+## 第十五轮：数据集两级下钻、判据兜底与判分细则折叠（2026-11-23）
+
+- 检视者：**两个**新上下文 subagent（general-purpose），分别拿 backend diff（1070 行，含
+  `service/` 四个文件与五个测试文件）与 frontend diff（626 行，含 `ui/src/` 六个文件与两个
+  测试文件），外加三个新文件全文（`service/preview.py`、`modules/dataset-detail.tsx`、
+  调用方 `service/datasets.py`）和三份规范。**未提供作者方案说明**；仅说明"测试全绿、
+  tsc 通过、检视设计级问题"，不提供用例清单让它照着对
+- 起因（用户原话）：`数据集菜单页要支持继续下钻，一直到查看数据集单题详细信息`、
+  `还缺少了判分规则呢，比如：Xlsx Recover Data`、
+  `如果没法把判分规则解析出来，在详情页留一个按钮，点击预览题目内容markdown也可以，用户自己看`、
+  `判分细则一般都比较长，支持收起吧。默认自动收起状态`
+- 五类必查：后端"资源泄漏 / 阻塞卡顿"无发现（四条路由都在 `asyncio.to_thread`，`preview.py`
+  用 `with`，`FileResponse` 交 Starlette 流式处理），前端"资源泄漏 / 日志 / XSS"无发现；
+  其余各类结论见下表
+
+### 发现与处理
+
+| # | 严重度 | 位置 | 发现 | 处理 |
+|---|---|---|---|---|
+| 1 | **严重** | `service/datasets.py` `preview_source` + `api.py` `/source` | `describe_task` 明文守住"`automated_checks` 是答案，任何深度不出服务"，同一批改动里的 `/source` 却把整份 md——含 `## Automated Checks` 里那 15 个缺失单元格的值——交给任一持白名单 token 的调用方；两条路由只调 `authenticate()`，"读者就是维护者"只写在注释里。两扇门对同一条边界给出相反答案 | **已修**：`preview_source` 把该节正文换成说明文字（标题保留），答案不出预览；`/source` 的 docstring 与设计/手册同步写明。未选 `SCOPE_ADMIN`——设计已定白名单内全员可读，门槛应是内容边界而不是新增权限 |
+| 2 | **严重** | `modules/datasets.tsx:125`、`dataset-detail.tsx:255` | 两级下钻的唯一入口是 `onRow` 的 `onClick`，`<tr>` 无 `tabIndex`/键盘处理，键盘与读屏用户完全进不去详情 | **已修**：两处 `onRow` 补 `tabIndex: 0` + Enter/Space 处理，并在 `event.target !== event.currentTarget` 时直接返回，避免行内「删除」按钮的 Enter 连带打开数据集；`styles.css` 给 `tr:focus-visible` 加品牌色 outline |
+| 3 | 一般 | `service/datasets.py` `_plain_criteria` | 无上限 `read_text()` + DOTALL 全文正则，与 loader 重复读同一个文件；256 MB 的 md 会在共享线程池里吃几百 MB | **已修**：改成 `open("rb").read(PREVIEW_TEXT_BYTES)`（256 KiB 上限）后 `decode(..., "replace")`，同时顺手解决非 UTF-8 文件的 500 |
+| 4 | 一般 | `service/datasets.py` `grading_weights` | `dict(task.grading_weights or {})` 对 YAML 里写成列表的字段抛 `TypeError` → 500，而同一个文件在索引与判分器里都正常 | **已修**：`isinstance(..., Mapping)` 才转 dict，否则空字段 |
+| 5 | 一般 | `service/preview.py` 的 OSError 调用点 | `is_file()` 与 `stat()` 间有 TOCTOU；权限变化/文件消失让 `/source`、`/preview` 回 500，而 `describe_task` 对同一事实回 `task_not_on_disk` | **已修**：两个调用点包 `except OSError` → `DatasetError("preview_unavailable")`，`_CONTROL_STATUS` 映射 404 |
+| 6 | 一般 | `service/datasets.py` `attachment_file` | 清单里的 `bad_asset_source`（语料自身坏了）被折叠成 422 `bad_attachment_path`，调用方去改本来正确的 query，api 层的 `logger.error("data plane could not serve its own dataset")` 也不会触发 | **已修**：该码原样上抛，保留 server-fault 语义与日志 |
+| 7 | 一般 | `service/exchange.py` `declared_fixture` | 清单里任意一条畸形 `dest` 会让整表遍历抛错：合法路径回 422，坏条目之后的附件全被标 missing，答案取决于清单顺序 | **已修**：遍历时用 `try/except ExchangeError: continue` 跳过坏条目；请求的 `dest` 仍在函数入口严格校验，跳过条目不会把不安全路径变成可服务路径 |
+| 8 | 一般 | 附件缺失与读不到 criteria 的日志 | 两者都只降级成响应里的 `present: false` / `criteria: []`，日志零痕迹——恰好复现"页面说没有、文件里明明有"却更难查 | **已修**：`describe_task` 聚合一条 `warning`（`dataset_id`/`task_id`/缺失清单/数量，按 `MAX_LOGGED_TASK_IDS` 截断）；`_plain_criteria` 读失败留 `debug` + path |
+| 9 | 一般 | `ui/preview.tsx` `save()` | `void download(url, name)` 丢弃 rejected promise：下载 404/401 时按钮毫无反应，错误既不给用户也不给控制台 | **已修**：`.catch(...)` 写进弹层已有的错误 Alert |
+| 10 | 一般 | `modules/dataset-detail.tsx` 搜索 | 每次击键对每条任务 `JSON.stringify(labels)`；`tasks = detail?.tasks ?? []` 让 `useMemo` 在加载期每次渲染失效 | **已修**：`haystacks` 用 `useMemo` 一次建好小写索引，搜索只查表；空数组换成模块常量 `NO_TASKS` |
+| 11 | 一般 | 两张表的 `pagination={false}` | 自定义包可能带上千题，antd Table 一次渲染全部行 DOM | **已修**：`pagination={{ pageSize: 50, hideOnSinglePage: true }}`，小于 50 题的 pilot 页面视觉不变 |
+| 12 | 建议 | `service/datasets.py` `_fixture_row` | N 个附件 × 每次全表扫描 + `resolve/stat`，O(N²) | **登记遗留**：pilot 最多 9 个附件，工作集在几十量级；等真出现大包再建 `{dest: path}` 映射（见遗留 L47） |
+| 13 | 建议 | `_task_of` / `_index` | 一次下钻读两次 store；冷缓存时整包重解析且并发 worker 会各做一遍 | **登记遗留**：这是 `describe` 已有的索引成本，不是新路由引入；single-flight 会动到缓存核心，单独做（L48） |
+| 14 | 建议 | `describe_task` 的 `unreadable` | `str(failure)` 把服务器绝对路径回给浏览器 | **登记遗留**：读的人是白名单内的语料维护者，路径有助于定位；若要分类，应连 `unreadable` 的 UI 呈现一起改（L49） |
+| 15 | 建议 | `TaskLoader` 构造 | 每读一个任务都构造 loader，其构造函数无条件打一条带绝对路径的 INFO | **登记遗留**：要复用 loader 得动 `pawbench/task_loader.py`（核心目录），本特性不越界（L50） |
+| 16 | 建议 | `describe_task` 的 warn | 坏文件每请求一条 warn，重复刷新淹掉首因 | **登记遗留**：同一坏文件反复被点是低频，且当前 warn 带 `dataset_id`/`task_id` 可聚合；去重状态要带失效策略（L51） |
+| 17 | 建议 | `attachment_file` 的 `raw_path` 回显 | 用户可控 query 原样进 message/details，超长请求被反射回响应 | **已修**：截断到 120 字符 |
+| 18 | 建议 | `tests/.../test_datasets.py` | "两个不同 404"的用例断言 `in {A, B}`，删掉任一码仍然绿 | **已修**：改成精确 `== "task_not_on_disk"` |
+| 19 | 建议 | `shell.tsx` boot | `?task=` 无 `?dataset=`，或 `?job=` 与 `?dataset=` 并存时，URL 声称有深度但页面不显示，参数也不会被清掉 | **已修**：`taskId` 只在无 `job` 且有 `dataset` 时读取 |
+| 20 | 建议 | `dataset-detail.tsx` 期望行为 | 唯一没设 max-height 的长文本块，会把 panel 撑开数屏 | **已修**：复用 `.pbe-prompt`（320px 裁剪） |
+| 21 | 建议 | `Input.Search` | 只有 placeholder，输入后屏幕阅读器读到匿名输入框 | **已修**：两个搜索框各加 `aria-label` |
+| 22 | 建议 | `reports.py` vs `exchange.py` | "dest 是否被声明"两套判定（精确字符串 vs 归一比较），同一路径写法在报告页与看板得到不同答案 | **登记遗留**：改报告页的取件路径会动到已上线的分享链接，单独评估（L52） |
+
+### 复检
+
+- 新增 6 条用例，覆盖两个严重项与 #3–#8、#18：`test_the_markdown_fallback_hides_the_check_script_but_keeps_the_rules`、
+  `test_a_weird_weights_field_is_a_blank_field_not_a_500`、`test_an_unreadable_preview_answers_a_coded_refusal`、
+  `test_a_broken_manifest_source_is_not_blamed_on_the_caller`、`test_one_bad_dest_does_not_hide_the_other_attachments`、
+  `test_the_drill_down_rows_are_reachable_by_keyboard`
+- `tests/cpd` **710 → 716 全绿**；`tsc --noEmit` 通过；`npm run build` 产物 197 594 B，
+  sha256 `d26a7495ee23e787a314c8c5fcde48d84d96375c6081b340d8cbc513682539f5`，已同步安装副本
+- 真实页面（重启本地服务后）：键盘 Tab 聚焦数据集行 → Enter 进题目清单 → 再聚焦 → Enter 进单题；
+  「看题目 markdown」弹窗里 `## Prompt` 与判分文字都在，`## Automated Checks` 标题保留但
+  `4639` / `19285` 等期望值一个都没有；判分细则仍默认收起；零页面报错
+  （`/tmp/check_review_fixes.py`、截图 `/tmp/review15-source-masked.png`）
+
+### 登记遗留
+
+| # | 位置 | 发现 | 期限／处理 |
+|---|---|---|---|
+| L47 | `_fixture_row` | 附件多时 O(N²) 路径解析 | 等出现实际大包再做；责任：数据集模块 owner |
+| L48 | `_index` 冷缓存 | 重复 store 读与并发重复解析 | 与索引缓存重构一起做；责任：服务 owner |
+| L49 | `unreadable` | 绝对路径回显 | 与 UI 错误呈现一起分类；责任：插件 owner |
+| L50 | `TaskLoader` 构造日志 | 每请求一条 INFO | 不越界改核心；责任：语料/loader owner |
+| L51 | `dataset task unreadable` warn | 逐请求重复 | 低优先级；责任：服务 owner |
+| L52 | `reports.py` 的 dest 判定 | 与看板归一规则不一致 | 单独评估分享链接兼容；责任：报告模块 owner |

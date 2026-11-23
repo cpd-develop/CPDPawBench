@@ -1056,3 +1056,294 @@ def test_the_worker_that_loses_a_category_race_reports_the_row_that_landed(
     assert answer["created"] is False
     assert answer["created_by"] == "someone-else"
     assert [item["name"] for item in service.list_categories()] == ["field kit"]
+
+
+# ── one task, read down to its question ──────────────────────────────────────
+
+
+def _one_task_view(service: DatasetService, *task_ids: str, dataset_id: str = "ds") -> dict:
+    return service.create_builtin_view(
+        dataset_id=dataset_id,
+        name=dataset_id,
+        owner="owner",
+        filter_spec={"task_ids": list(task_ids)},
+        categories=[],
+    )
+
+
+def test_a_task_of_a_dataset_reads_down_to_its_prompt(service: DatasetService) -> None:
+    """The catalogue's last step: what the task asks, and what it was handed.
+
+    Without this the dashboard could only say "there are 15 tasks" -- which is
+    enough to submit and not enough to decide *whether* to.
+    """
+    _one_task_view(service, "mail_l1")
+
+    detail = service.describe_task("ds", "mail_l1")
+
+    assert detail["task_id"] == "mail_l1"
+    assert detail["prompt"].startswith("Write output/result.txt")
+    assert detail["expected_behavior"] == "A file is written."
+    assert detail["labels"]["scenario"] == "Office_Productivity/Email"
+    assert detail["grading_type"] == "automated"
+    assert detail["timeout_seconds"] == 300
+    assert detail["attachments"] == []
+    assert detail["unreadable"] is None
+
+
+def test_the_catalogue_hands_out_the_rules_but_never_the_grading_code(
+    service: DatasetService, builtin_root: Path
+) -> None:
+    """Where the line sits, and why: the rubric says what good looks like, the
+    check script holds the expected values.
+
+    Reading the rules is part of choosing a dataset -- "why did this score 0.4"
+    has no answer without them.  The script is the answer itself: for
+    ``xlsx-recover-data`` it carries a table of the 15 missing cells and their
+    values.
+    """
+    write_task(builtin_root, "judged", rubric="Full marks only if the file is perfect.")
+    _one_task_view(service, "judged")
+
+    detail = service.describe_task("ds", "judged")
+
+    assert "Full marks only" in detail["llm_judge_rubric"]
+    assert "automated_checks" not in detail
+    assert detail["has_automated_checks"] is False
+    assert set(detail) == {
+        "dataset_id",
+        "task_id",
+        "name",
+        "grading_type",
+        "timeout_seconds",
+        "labels",
+        "prompt",
+        "expected_behavior",
+        "grading_criteria",
+        "llm_judge_rubric",
+        "grading_weights",
+        "has_automated_checks",
+        "attachments",
+        "unreadable",
+    }
+
+
+def test_criteria_written_as_plain_bullets_are_read_as_criteria(
+    service: DatasetService, builtin_root: Path
+) -> None:
+    """A file that plainly lists three criteria is not a file with none.
+
+    ``TaskLoader`` keeps ``- [ ]`` lines only, because the judge prompt is built
+    from them; 26 of the shipped 150 tasks write the section as plain bullets.
+    The detail page said "no criteria" about those files.  The reading happens
+    here, for display: the loader's own answer for the same file stays empty, so
+    nothing about grading moves.
+    """
+    path = write_task(
+        builtin_root,
+        "plain",
+        rubric="Score on the file, not the prose.",
+        criteria=("Output file exists", "Values match the source", "Tone is neutral"),
+    )
+    _one_task_view(service, "plain")
+
+    detail = service.describe_task("ds", "plain")
+
+    assert detail["grading_criteria"] == [
+        "Output file exists",
+        "Values match the source",
+        "Tone is neutral",
+    ]
+    # The grader reads the same file through the same loader, and sees what it
+    # always saw: the display path does not edit the corpus.
+    assert TaskLoader(builtin_root / "tasks").load_task(path).grading_criteria == []
+
+
+def test_the_task_markdown_is_readable_as_the_fallback_for_a_thin_parse(
+    service: DatasetService,
+) -> None:
+    """When the parsed fields come back empty, the file is still the answer.
+
+    Same reader as a fixture preview: text, capped, and it names the file it
+    read.  This is the button the detail page shows next to an empty rubric.
+    """
+    _one_task_view(service, "mail_l1")
+
+    source = service.preview_source("ds", "mail_l1")
+
+    assert source["kind"] == "text"
+    assert source["path"] == "mail_l1.md"
+    assert "## Prompt" in source["text"]
+    assert "Write output/result.txt" in source["text"]
+    assert source["truncated"] is False
+
+    with pytest.raises(DatasetError) as missing:
+        service.preview_source("ds", "chart_open")
+    assert missing.value.code == "task_not_in_dataset"
+
+
+def test_the_markdown_fallback_hides_the_check_script_but_keeps_the_rules(
+    service: DatasetService, builtin_root: Path
+) -> None:
+    """The source door is not a second way to hand out the answer.
+
+    ``describe_task`` keeps ``automated_checks`` in the grader; a markdown
+    preview that printed the whole file would undo that with one click.  The
+    rules stay: that is why this door exists.
+    """
+    path = write_task(builtin_root, "checked", rubric="Reward clean output.")
+    body = path.read_text(encoding="utf-8")
+    path.write_text(
+        body
+        + "\n\n## Automated Checks\n\nassert sheet['F8'] == 4639\n\n"
+        + "## LLM Judge Rubric\n\nReward clean output.",
+        encoding="utf-8",
+    )
+    _one_task_view(service, "checked")
+
+    source = service.preview_source("ds", "checked")
+
+    assert "## Prompt" in source["text"]
+    assert "Reward clean output." in source["text"]
+    assert "## Automated Checks" in source["text"]
+    assert "4639" not in source["text"]
+    assert "不在此出现" in source["text"]
+
+
+def test_a_weird_weights_field_is_a_blank_field_not_a_500(
+    service: DatasetService, builtin_root: Path
+) -> None:
+    """Front-matter the page cannot read is a blank fact in an otherwise good task."""
+    path = write_task(builtin_root, "odd_weights")
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "grading_type: automated", "grading_type: hybrid\ngrading_weights: [0.6, 0.4]", 1
+        ),
+        encoding="utf-8",
+    )
+    _one_task_view(service, "odd_weights")
+
+    detail = service.describe_task("ds", "odd_weights")
+
+    assert detail["grading_weights"] == {}
+    assert detail["llm_judge_rubric"] is None or isinstance(detail["llm_judge_rubric"], str)
+
+
+def test_an_unreadable_preview_answers_a_coded_refusal(
+    service: DatasetService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A file that vanishes between the index and the read is not a 500."""
+    _one_task_view(service, "mail_l1")
+
+    def gone(path: object, raw_path: str) -> dict[str, Any]:
+        raise PermissionError(path)
+
+    monkeypatch.setattr(datasets_module, "preview_of", gone)
+    with pytest.raises(DatasetError) as refusal:
+        service.preview_source("ds", "mail_l1")
+
+    assert refusal.value.code == "preview_unavailable"
+
+
+def test_a_broken_manifest_source_is_not_blamed_on_the_caller(
+    service: DatasetService, builtin_root: Path
+) -> None:
+    """The api layer logs ``bad_asset_source`` as a server fault; keep the code."""
+    write_task(builtin_root, "broken_source", fixtures=("good.png",))
+    task_file = builtin_root / "tasks" / "broken_source.md"
+    task_file.write_text(
+        task_file.read_text(encoding="utf-8").replace(
+            "source: fixtures/good.png", "source: /etc/passwd"
+        ),
+        encoding="utf-8",
+    )
+    _one_task_view(service, "broken_source")
+
+    with pytest.raises(Exception) as refusal:
+        service.attachment_file("ds", "broken_source", "fixtures/good.png")
+
+    assert getattr(refusal.value, "code", None) == "bad_asset_source"
+
+
+def test_one_bad_dest_does_not_hide_the_other_attachments(
+    service: DatasetService, builtin_root: Path
+) -> None:
+    """The attachment list must not depend on manifest order."""
+    write_task(builtin_root, "mixed_dests", fixtures=("a.png", "b.png"))
+    task_file = builtin_root / "tasks" / "mixed_dests.md"
+    task_file.write_text(
+        task_file.read_text(encoding="utf-8").replace(
+            "  dest: fixtures/b.png", "  dest: .hidden", 1
+        ),
+        encoding="utf-8",
+    )
+    _one_task_view(service, "mixed_dests")
+
+    detail = service.describe_task("ds", "mixed_dests")
+
+    assert len(detail["attachments"]) == 2
+    assert [row["present"] for row in detail["attachments"]] == [True, False]
+
+
+def test_a_declared_fixture_can_be_read_and_a_stray_path_cannot(
+    service: DatasetService,
+) -> None:
+    """Two refusals, two codes: absent is "no such attachment", escaping is 422.
+
+    The task markdown sits beside the fixtures, so a lookup that took any
+    relative path would let the catalogue read its own answer files.
+    """
+    _one_task_view(service, "xlsx_with_file")
+
+    detail = service.describe_task("ds", "xlsx_with_file")
+    assert detail["attachments"] == [
+        {"path": "fixtures/budget.xlsx", "size": len("content of budget.xlsx"), "present": True}
+    ]
+
+    fixture = service.attachment_file("ds", "xlsx_with_file", "fixtures/budget.xlsx")
+    assert fixture.read_text(encoding="utf-8") == "content of budget.xlsx"
+    assert service.preview_attachment("ds", "xlsx_with_file", "fixtures/budget.xlsx")["kind"] == "text"
+
+    with pytest.raises(DatasetError) as undeclared:
+        service.attachment_file("ds", "xlsx_with_file", "tasks/mail_l1.md")
+    assert undeclared.value.code == "attachment_not_found"
+
+    with pytest.raises(DatasetError) as escaping:
+        service.attachment_file("ds", "xlsx_with_file", "../state.db")
+    assert escaping.value.code == "bad_attachment_path"
+
+
+def test_a_fixture_declared_but_missing_is_a_row_rather_than_an_error(
+    service: DatasetService, builtin_root: Path
+) -> None:
+    """A deleted fixture is a fact about the task, and the reader can fix it."""
+    write_task(builtin_root, "lost_file", fixtures=("gone.xlsx",))
+    _one_task_view(service, "lost_file")
+    (builtin_root / "fixtures" / "gone.xlsx").unlink()
+
+    detail = service.describe_task("ds", "lost_file")
+
+    assert detail["attachments"] == [{"path": "fixtures/gone.xlsx", "size": None, "present": False}]
+    with pytest.raises(DatasetError) as missing:
+        service.attachment_file("ds", "lost_file", "fixtures/gone.xlsx")
+    assert missing.value.code == "attachment_not_found"
+
+
+def test_a_task_the_dataset_does_not_hold_is_two_different_404s(
+    service: DatasetService, builtin_root: Path
+) -> None:
+    """"Never here" and "was here, file gone" send two different people to fix it."""
+    _one_task_view(service, "mail_l1", "mail_l3")
+
+    with pytest.raises(DatasetError) as outside:
+        service.describe_task("ds", "chart_open")
+    assert outside.value.code == "task_not_in_dataset"
+
+    (builtin_root / "tasks" / "mail_l3.md").unlink()
+    with pytest.raises(DatasetError) as vanished:
+        service.describe_task("ds", "mail_l3")
+    assert vanished.value.code == "task_not_on_disk"
+
+    with pytest.raises(DatasetError) as nowhere:
+        service.describe_task("no-such-dataset", "mail_l1")
+    assert nowhere.value.code == "dataset_not_found"

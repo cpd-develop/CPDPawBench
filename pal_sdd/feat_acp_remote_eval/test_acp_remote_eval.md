@@ -1061,6 +1061,82 @@ PYTHONPATH=$PWD <venv>/bin/python -m pytest tests/cpd -q --basetemp=./.tmp-py
 「题目」标签 / 单题目面板 / 直接开 `?job=` 链接，五处「评测」都是 `page`；切到「数据集」后
 才是「数据集」`page`、「评测」无。判据：`review_` 第十四轮（0 严重 / 1 一般 / 3 建议，全部处理）。
 
+### 4.33 数据集一路下钻到单题，以及单题页的判分规则（698→716，2026-11-23）
+
+**为什么。** 数据集页原来只到列表：能看见"pilot_v1 有 15 题"，看不见那 15 题问的是什么、按
+什么给分。要判断一个集合值不值得跑，只能先跑一遍——这正是这个看板想省掉的那一步。所以加了
+两层下钻（`?dataset=` → `?dataset=&task=`），第二层把题目、判据、judge 细则、附件摊开。
+
+边界仍旧画在"答案"上：`automated_checks`（期望值本身，比如哪一格应该是 4639）任何一层都不
+出现，页面只说"这道题另有一段自动检查脚本"。rubric 与判据属于**规则**，不是答案，属于可见侧。
+
+**判据的三次修正**，都是拿真实语料打出来的：
+
+| 现象 | 原因 | 改法 |
+|---|---|---|
+| `Xlsx Recover Data` 判据为空 | `TaskLoader._extract_grading_criteria` 只收 `- [ ]` 行（judge prompt 由它们拼成），而语料 150 题里 **26 题**写的是 `- 输出文件存在` 这种普通条目 | 在 `describe_task` 里补一道 `_plain_criteria`：读 `## Grading Criteria` 段，认 `-`/`*`/`+`/编号，展示用；loader 与判分器一个字节没动（用例里同时断言 loader 仍返回 `[]`） |
+| 筛选条件 dump 成 15 个 id，把表格挤出屏幕 | 直接把 `filter` JSON 摊在页头 | `filterSummary` 折成 `task_ids（15 项）`，id 就在下面的表里 |
+| 细则 1304 字，一展开就淹没题干与判据 | — | 默认收起，标题右侧写字数，点整行展开；收起时 `<pre>` 不渲染（不是 CSS 隐藏） |
+
+解析不出来时还有兜底：`GET …/tasks/{tid}/source` 把这道题的 md 原文当文本预览返回，页面上
+是「看题目 markdown」按钮，弹窗与附件预览同一个组件、同一套 256 KiB 上限。
+
+**边界的两处实现选择。** 夹具路径解析复用数据面同一个 `exchange.declared_fixture`（提到模块
+级，接受 `workspace_files` 列表而不是 `TaskLike`，避免 import 环），所以"数据面拒绝的路径，
+浏览面一样拒绝"不是靠两处代码写得像。预览策略（text/image/binary、两个上限、先嗅探再解码）
+从 `reports.py` 抽成 `service/preview.py`，报告与目录共用一份。
+
+12 条新用例：
+
+| 用例 | 钉住的东西 |
+|---|---|
+| `test_a_task_of_a_dataset_reads_down_to_its_prompt`（`test_datasets.py`） | 单题字段集合固定；题干、期望行为、超时、标签各就各位 |
+| `test_the_catalogue_hands_out_the_rules_but_never_the_grading_code`（同） | `llm_judge_rubric` 在，`automated_checks` 一层都没有；`has_automated_checks` 只说是布尔 |
+| `test_criteria_written_as_plain_bullets_are_read_as_criteria`（同） | 普通项目符号也能读成判据；同一文件经 `TaskLoader` 仍然是 `[]`——展示不改判分 |
+| `test_the_task_markdown_is_readable_as_the_fallback_for_a_thin_parse`（同） | 原文预览：`kind=text`、文件名对、含 `## Prompt`；不在集合里的题报 `task_not_in_dataset` |
+| `test_a_declared_fixture_can_be_read_and_a_stray_path_cannot`（同） | 声明过的 `dest` 读得到；`../state.db` 这种 422 |
+| `test_a_fixture_declared_but_missing_is_a_row_rather_than_an_error`（同） | 文件不在盘上时是 `present=false` 的一行，不是整页失败 |
+| `test_a_task_the_dataset_does_not_hold_is_two_different_404s`（同） | "不在这个集合"与"盘上没有"是两个 404，两种原因 |
+| `test_one_task_of_a_dataset_answers_with_its_prompt`（`test_datasets_api.py`） | HTTP 一层字段透传，且不含 `automated_checks` |
+| `test_a_task_markdown_can_be_read_when_the_fields_come_back_thin`（同） | `/source` 走的是预览的返回形状，不是原始字节 |
+| `test_a_task_outside_the_dataset_answers_its_own_404`（同） | 错误码到状态码的映射 |
+| `test_a_package_fixture_can_be_previewed_and_a_stray_path_is_422`（同） | 附件预览 200；越界路径 422 |
+| `test_the_rubric_opens_folded`（`test_plugin.py`） | `Disclosure` 的默认值是 `false`、`aria-expanded={open}`、收起时 `{open ? (` 不渲染；产物里另有 `判分细则` / `看题目 markdown` / `pbe-disclosure` 三个 marker |
+
+`test_control_api.py` 的无 token 路由计数 24 → 28（四条新路由），`test_plugin.py` 的
+`DASHBOARD_ENDPOINTS` 同步补齐。
+
+前端 `tsc --noEmit` 通过，`npm run build` 产物 197 594 B。`tests/cpd` **716 通过**（698 → 716，
+其中 12 条是功能用例，6 条来自第十五轮检视的修复）。
+
+真实页面（Playwright + 真 console + 已安装副本 + 真起一份本地服务在 127.0.0.1:8471）：
+
+- 数据集列表 → `?dataset=pilot_v1`（15 行）→ `?dataset=pilot_v1&task=…`，三层「数据集」都是
+  `aria-current="page"`；地址可分享，直接开深链落回同一道题；「返回题目清单」逐级退回。
+- 附件：PNG 在弹窗里直接显示，「下载」按钮把 `poster_original.png`（34 379 B）存下来；
+  `../state.db` 走 HTTP 是 422。
+- 判分规则（`xlsx-recover-data`）：判据 4 条（含 `Every assertion in the embedded SkillsBench
+  pytest suite passes`）、混合判分、`自动 60% · LLM 40%`、细则 1304 字**默认收起**、点开出现
+  `### task_completion (Weight: 50%)`、再点收起；收起时 DOM 里没有 `<pre>`；零页面报错。
+
+判据：`review_` 第十五轮：0 严重遗留 / 2 严重已修 / 9 一般已修 / 6 一般与建议登记遗留 /
+4 建议已修（含分页与 a11y）。两个严重项——`/source` 把答案脚本随 markdown 一起发出去、
+两级下钻的行键盘不可达——都在真实页面复检后才算关闭。
+
+**检视后补的 6 条用例**：
+
+| 用例 | 钉住的东西 |
+|---|---|
+| `test_the_markdown_fallback_hides_the_check_script_but_keeps_the_rules` | 预览里判分文字在、`## Automated Checks` 的期望值一个都不在 |
+| `test_a_weird_weights_field_is_a_blank_field_not_a_500` | front-matter 写成列表的权重退成空字段，不拖垮整页 |
+| `test_an_unreadable_preview_answers_a_coded_refusal` | 文件在两次调用之间读不到 → `preview_unavailable`（404），不是 500 |
+| `test_a_broken_manifest_source_is_not_blamed_on_the_caller` | 清单里的绝对路径 `source` 保留 `bad_asset_source`，由 api 记 server fault |
+| `test_one_bad_dest_does_not_hide_the_other_attachments` | 一条 `dest: .hidden` 不再让后一个附件的状态随清单顺序变 |
+| `test_the_drill_down_rows_are_reachable_by_keyboard` | 两个表格行都有 `tabIndex`、Enter/Space 处理、嵌套按钮守卫，且产物已重建 |
+
+检视后的真实页面复检（`/tmp/check_review_fixes.py`）：键盘聚焦 → Enter 两次进到单题；
+markdown 弹窗里 `4639` / `19285` 等期望值均不出现；细则仍默认收起。
+
 ## 5. 下一批要补的执行记录
 
 

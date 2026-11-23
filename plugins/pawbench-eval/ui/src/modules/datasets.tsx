@@ -18,7 +18,10 @@ import { useEffect, useMemo, useState } from "../host/react";
 import { useFeedback } from "../ui/feedback";
 import { CopyId, EmptyHint, Field, Fieldset, PageHead, Panel, stamp } from "../ui/primitives";
 
-export function DatasetsModule(props: { subject: string }): unknown {
+export function DatasetsModule(props: {
+  subject: string;
+  onOpen: (datasetId: string) => void;
+}): unknown {
   const feedback = useFeedback();
   const [datasets, setDatasets] = useState<DatasetItem[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -99,6 +102,7 @@ export function DatasetsModule(props: { subject: string }): unknown {
         <span className="pbe-toolbar__label">搜索</span>
         <Input.Search
           allowClear
+          aria-label="搜索数据集"
           placeholder="名称 / id / 分类 / 描述"
           style={{ width: 280 }}
           value={search}
@@ -118,7 +122,22 @@ export function DatasetsModule(props: { subject: string }): unknown {
           size="middle"
           loading={loading}
           dataSource={shown}
-          pagination={false}
+          pagination={{ pageSize: 50, hideOnSinglePage: true }}
+          onRow={(item: DatasetItem) => ({
+            onClick: () => props.onOpen(item.id),
+            // The row is the primary navigation of this page; a click-only row
+            // puts it out of reach of a keyboard and of a screen reader.
+            tabIndex: 0,
+            onKeyDown: (event: any) => {
+              // A button inside the row owns its own Enter/Space: opening the
+              // dataset when somebody activates 删除 would be a surprise.
+              if (event.target !== event.currentTarget) return;
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                props.onOpen(item.id);
+              }
+            },
+          })}
           locale={{ emptyText: <EmptyHint>还没有数据集。可以上传一个任务包，或从内置语料里切一个视图。</EmptyHint> }}
           columns={[
             {
@@ -173,17 +192,22 @@ export function DatasetsModule(props: { subject: string }): unknown {
               width: 130,
               render: (_: unknown, item: DatasetItem) =>
                 props.subject && item.owner === props.subject ? (
-                  <Popconfirm
-                    title="删除这个数据集？"
-                    description="已经被作业引用过的数据集可能删不掉。"
-                    okText="删除"
-                    cancelText="不删"
-                    onConfirm={() => remove(item)}
-                  >
-                    <Button size="small" type="text" danger>
-                      删除
-                    </Button>
-                  </Popconfirm>
+                  // The cell stops the click: the row opens the dataset, and a
+                  // delete that also navigated would be a page change nobody
+                  // asked for behind a confirmation.
+                  <div onClick={(event: any) => event.stopPropagation()}>
+                    <Popconfirm
+                      title="删除这个数据集？"
+                      description="已经被作业引用过的数据集可能删不掉。"
+                      okText="删除"
+                      cancelText="不删"
+                      onConfirm={() => remove(item)}
+                    >
+                      <Button size="small" type="text" danger>
+                        删除
+                      </Button>
+                    </Popconfirm>
+                  </div>
                 ) : (
                   <span className="pbe-cell-sub">只读</span>
                 ),
@@ -192,7 +216,7 @@ export function DatasetsModule(props: { subject: string }): unknown {
         />
         <div className="pbe-table__foot">
           <span>共 {shown.length} 条</span>
-          <span>删除只对自己创建的行开放</span>
+          <span>点一行看题目清单；删除只对自己创建的行开放</span>
         </div>
       </div>
 

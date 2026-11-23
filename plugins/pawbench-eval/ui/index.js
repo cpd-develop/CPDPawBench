@@ -496,7 +496,7 @@ pre {
 `;
 
 // src/styles.css
-var styles_default = "/**\n * Page-local layout, on top of the design system's atoms.\n *\n * Nothing here names a colour: every value is a semantic token from\n * `designsys/colors_and_type.css`, which carries both themes.  A rule that\n * needed a colour the tokens do not offer would be a signal that the rule is\n * wrong, not that a literal is missing.\n *\n * The one deviation from `.ds-card` is deliberate: `.ds-card` lights up on\n * hover, which is right for a card you can click and wrong for a panel you\n * read.  Static surfaces therefore use `.pbe-panel`, and interactive ones add\n * `.pbe-panel--link`.\n */\n\n/* ── shell ─────────────────────────────────────────────────────────────── */\n\n.pbe-root {\n  display: block;\n  min-height: 100%;\n  background: var(--bg-base-secondary);\n  color: var(--text-default);\n  font-family: var(--body-base-font-family);\n  font-size: var(--body-base-font-size);\n  line-height: var(--body-base-line-height);\n  -webkit-font-smoothing: antialiased;\n}\n\n/*\n * The rail and the module sit in one row that this file owns.\n *\n * Deliberately not expressed on `.pbe-root`: between the two there is antd's\n * `App` wrapper, whose display is the host build's business.  Relying on it\n * being a pass-through produced a page whose content started 100vh down the\n * screen — one row for the rail, another for everything else.\n */\n.pbe-shell {\n  display: flex;\n  flex-wrap: nowrap;\n  align-items: flex-start;\n  min-height: 100%;\n}\n\n.pbe-rail {\n  position: sticky;\n  top: 0;\n  display: flex;\n  flex: 0 0 var(--layout-sidebar);\n  flex-direction: column;\n  gap: var(--spacer-16);\n  width: var(--layout-sidebar);\n  height: 100vh;\n  padding: var(--spacer-16) var(--spacer-12);\n  border-right: 1px solid var(--border-neutral-l1);\n  background: var(--bg-menu);\n  box-sizing: border-box;\n}\n\n.pbe-rail__brand {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-8);\n  padding: 0 var(--spacer-8);\n  color: var(--text-default);\n  font-family: var(--font-family-heading);\n  font-size: var(--body-lg-font-size);\n  font-weight: 600;\n}\n\n.pbe-rail__nav {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n}\n\n.pbe-nav-item {\n  display: flex;\n  align-items: center;\n  gap: var(--sb-item-gap);\n  width: 100%;\n  height: var(--nav-item-h);\n  padding: 0 var(--sb-item-pad-x);\n  border: 0;\n  border-radius: var(--radius-8);\n  background: transparent;\n  color: var(--text-default);\n  font-family: inherit;\n  font-size: var(--body-base-font-size);\n  text-align: left;\n  cursor: pointer;\n}\n\n.pbe-nav-item:hover {\n  background: var(--bg-overlay-l1);\n}\n\n.pbe-nav-item[aria-current=\"page\"] {\n  background: var(--bg-overlay-l2);\n  font-weight: 500;\n}\n\n.pbe-nav-item__count {\n  margin-left: auto;\n  color: var(--text-tertiary);\n  font-family: var(--code-editor-font-family);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-rail__foot {\n  margin-top: auto;\n  padding: var(--spacer-12);\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-12);\n  background: var(--bg-base-default);\n  text-align: left;\n  cursor: pointer;\n  font: inherit;\n  color: inherit;\n  width: 100%;\n}\n\n.pbe-rail__foot:hover {\n  background: var(--bg-card-hover);\n}\n\n.pbe-main {\n  flex: 1 1 auto;\n  min-width: 0;\n  padding: var(--spacer-24) var(--spacer-32) var(--spacer-32);\n}\n\n/* ── page heading ──────────────────────────────────────────────────────── */\n\n.pbe-head {\n  display: flex;\n  align-items: flex-start;\n  gap: var(--spacer-16);\n  margin-bottom: var(--spacer-24);\n  /* The host parks a floating control (… and collapse) in the top-right corner\n     of every route; without this the primary button sits under it. */\n  padding-right: 76px;\n}\n\n.pbe-head__text {\n  min-width: 0;\n}\n\n.pbe-head__title {\n  margin: 0;\n  color: var(--text-default);\n  font-family: var(--font-family-heading);\n  font-size: var(--heading-lg-font-size);\n  font-weight: 600;\n  line-height: var(--heading-lg-line-height);\n}\n\n.pbe-head__sub {\n  margin-top: var(--spacer-4);\n  color: var(--text-secondary);\n  font-size: var(--body-base-font-size);\n}\n\n.pbe-head__actions {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin-left: auto;\n}\n\n/* ── surfaces ──────────────────────────────────────────────────────────── */\n\n.pbe-panel {\n  background: var(--bg-base-default);\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-12);\n}\n\n.pbe-panel--pad {\n  padding: var(--spacer-20);\n}\n\n.pbe-panel--link {\n  cursor: pointer;\n  transition: background-color 0.15s ease;\n}\n\n.pbe-panel--link:hover {\n  background: var(--bg-card-hover);\n}\n\n.pbe-grid {\n  display: grid;\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n  gap: var(--spacer-16);\n  align-items: start;\n}\n\n.pbe-grid--wide {\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n}\n\n@media (max-width: 1000px) {\n  .pbe-grid,\n  .pbe-grid--wide {\n    grid-template-columns: minmax(0, 1fr);\n  }\n}\n\n.pbe-span-all {\n  grid-column: 1 / -1;\n}\n\n/* ── metric row (C2 tier) ──────────────────────────────────────────────── */\n\n.pbe-metrics {\n  display: grid;\n  grid-template-columns: repeat(3, minmax(0, 1fr));\n  gap: var(--spacer-16);\n  margin-bottom: var(--spacer-24);\n}\n\n@media (max-width: 1000px) {\n  .pbe-metrics {\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n  }\n}\n\n@media (max-width: 680px) {\n  .pbe-metrics {\n    grid-template-columns: minmax(0, 1fr);\n  }\n}\n\n.pbe-metric {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-12);\n  height: 72px;\n  padding: var(--spacer-16);\n  box-sizing: border-box;\n}\n\n.pbe-tile {\n  display: inline-flex;\n  flex: 0 0 44px;\n  align-items: center;\n  justify-content: center;\n  width: 44px;\n  height: 44px;\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-8);\n  background: transparent;\n  color: var(--text-secondary);\n}\n\n.pbe-metric__body {\n  min-width: 0;\n}\n\n.pbe-metric__title {\n  color: var(--text-default);\n  font-size: var(--body-base-font-size);\n  font-weight: 600;\n  line-height: 20px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.pbe-metric__desc {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-6);\n  height: 20px;\n  color: var(--text-secondary);\n  font-size: var(--body-sm-font-size);\n  line-height: 20px;\n}\n\n.pbe-figure {\n  color: var(--text-default);\n  font-family: var(--font-family-metric);\n  font-variant-numeric: tabular-nums;\n  font-weight: 500;\n}\n\n.pbe-mono {\n  font-family: var(--code-editor-font-family);\n  font-variant-numeric: tabular-nums;\n}\n\n/* ── toolbar (filter / search, single row, labels inline) ──────────────── */\n\n.pbe-toolbar {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: var(--spacer-12);\n  margin-bottom: var(--spacer-16);\n}\n\n.pbe-toolbar__label {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  white-space: nowrap;\n}\n\n.pbe-toolbar__right {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin-left: auto;\n}\n\n/* ── table ─────────────────────────────────────────────────────────────── */\n\n.pbe-table-wrap {\n  overflow: hidden;\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-12);\n  background: var(--bg-base-default);\n}\n\n.pbe-table .ant-table {\n  background: transparent;\n}\n\n.pbe-table .ant-table-thead > tr > th {\n  background: transparent;\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  font-weight: 500;\n  letter-spacing: var(--body-sm-letter-spacing);\n  border-bottom: 1px solid var(--border-neutral-l1);\n}\n\n.pbe-table .ant-table-thead > tr > th::before {\n  display: none;\n}\n\n.pbe-table .ant-table-tbody > tr > td {\n  border-bottom: 1px solid var(--border-neutral-l1);\n}\n\n.pbe-table .ant-table-tbody > tr:last-child > td {\n  border-bottom: 0;\n}\n\n.pbe-table .ant-table-tbody > tr {\n  cursor: pointer;\n}\n\n.pbe-table__foot {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: var(--spacer-12);\n  padding: var(--spacer-12) var(--spacer-16);\n  border-top: 1px solid var(--border-neutral-l1);\n  color: var(--text-secondary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-cell-title {\n  color: var(--text-default);\n  font-weight: 500;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.pbe-cell-sub {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  line-height: var(--body-sm-line-height);\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n/* ── report ────────────────────────────────────────────────────────────── */\n\n.pbe-meta {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin-top: var(--spacer-8);\n  color: var(--text-secondary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-meta__sep {\n  color: var(--text-tertiary);\n}\n\n.pbe-scoreboard {\n  display: grid;\n  grid-template-columns: repeat(4, minmax(0, 1fr));\n  margin-bottom: var(--spacer-24);\n}\n\n@media (max-width: 900px) {\n  .pbe-scoreboard {\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n  }\n}\n\n.pbe-scoreboard__cell {\n  padding: 0 var(--spacer-16);\n  border-left: 1px solid var(--border-neutral-l1);\n}\n\n.pbe-scoreboard__cell:first-child {\n  border-left: 0;\n  padding-left: 0;\n}\n\n.pbe-scoreboard__label {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-scoreboard__value {\n  margin-top: var(--spacer-4);\n  color: var(--text-default);\n  font-family: var(--font-family-metric);\n  font-variant-numeric: tabular-nums;\n  font-size: var(--heading-md-font-size, 20px);\n  font-weight: 600;\n}\n\n.pbe-block {\n  padding: var(--spacer-12) var(--spacer-16);\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-8);\n  background: var(--bg-base-tertiary);\n  color: var(--text-default);\n  font-family: var(--code-editor-font-family);\n  font-size: var(--body-sm-font-size);\n  line-height: 1.6;\n  white-space: pre-wrap;\n  word-break: break-word;\n  overflow-x: auto;\n}\n\n.pbe-prompt {\n  max-height: 320px;\n  overflow-y: auto;\n  margin: 0;\n}\n\n.pbe-facts {\n  display: grid;\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n  gap: var(--spacer-12) var(--spacer-24);\n}\n\n@media (max-width: 760px) {\n  .pbe-facts {\n    grid-template-columns: minmax(0, 1fr);\n  }\n}\n\n.pbe-fact__label {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-fact__value {\n  margin-top: 2px;\n  color: var(--text-default);\n  word-break: break-word;\n}\n\n.pbe-rows {\n  display: flex;\n  flex-direction: column;\n}\n\n.pbe-row {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-12);\n  padding: var(--spacer-8) 0;\n  border-bottom: 1px solid var(--border-neutral-l1);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-row:last-child {\n  border-bottom: 0;\n}\n\n.pbe-row__grow {\n  flex: 1 1 auto;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/*\n * A row whose bytes can be opened.  It is a real `<button>` -- so it takes\n * focus and answers the keyboard -- which means undoing the browser's default\n * chrome rather than decorating a div, and keeping the row's own box so the\n * list does not jump when only some rows are openable.\n */\n.pbe-row--file {\n  width: calc(100% + var(--spacer-16));\n  margin: 0 calc(var(--spacer-8) * -1);\n  border: 0;\n  border-bottom: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-4);\n  background: none;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n  padding-left: var(--spacer-8);\n  padding-right: var(--spacer-8);\n}\n\n.pbe-row--file:hover {\n  background: var(--bg-card-hover);\n}\n\n.pbe-row--file:focus-visible {\n  outline: 2px solid var(--border-brand);\n  outline-offset: -2px;\n}\n\n.pbe-section-title {\n  margin: 0 0 var(--spacer-12);\n  color: var(--text-default);\n  font-size: var(--body-base-font-size);\n  font-weight: 600;\n}\n\n.pbe-timeline {\n  display: flex;\n  flex-direction: column;\n}\n\n.pbe-timeline__item {\n  display: grid;\n  grid-template-columns: 88px 96px minmax(0, 1fr);\n  gap: var(--spacer-12);\n  padding: var(--spacer-8) 0;\n  border-bottom: 1px solid var(--border-neutral-l1);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-timeline__item:last-child {\n  border-bottom: 0;\n}\n\n.pbe-timeline__at {\n  color: var(--text-tertiary);\n  font-family: var(--code-editor-font-family);\n}\n\n@media (max-width: 760px) {\n  .pbe-timeline__item {\n    grid-template-columns: minmax(0, 1fr);\n    gap: var(--spacer-4);\n  }\n}\n\n/* ── form (label left, control right — the system default) ─────────────── */\n\n.pbe-field {\n  display: flex;\n  align-items: flex-start;\n  gap: var(--spacer-12);\n  margin-bottom: var(--spacer-16);\n}\n\n.pbe-field__label {\n  flex: none;\n  width: 92px;\n  padding-top: var(--spacer-6);\n  color: var(--text-secondary);\n  font-size: var(--body-base-font-size);\n  text-align: right;\n}\n\n.pbe-field__control {\n  flex: 1 1 auto;\n  min-width: 0;\n}\n\n.pbe-field__hint {\n  margin-top: var(--spacer-4);\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-fieldset {\n  margin-bottom: var(--spacer-24);\n}\n\n.pbe-fieldset__title {\n  margin-bottom: var(--spacer-12);\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  letter-spacing: 0.04em;\n}\n\n.pbe-empty {\n  padding: var(--spacer-32);\n  color: var(--text-tertiary);\n  text-align: center;\n}\n\n.pbe-copy {\n  display: inline-flex;\n  align-items: center;\n  gap: var(--spacer-6);\n  max-width: 100%;\n  padding: 0;\n  border: 0;\n  background: transparent;\n  color: var(--text-secondary);\n  font-family: var(--code-editor-font-family);\n  font-size: var(--body-sm-font-size);\n  cursor: pointer;\n}\n\n.pbe-copy:hover {\n  color: var(--text-default);\n}\n\n.pbe-copy__value {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/* ── status pill ───────────────────────────────────────────────────────── */\n\n.pbe-pill {\n  display: inline-flex;\n  align-items: center;\n  gap: var(--spacer-6);\n  height: 20px;\n  padding: 0 var(--spacer-8);\n  border: 1px solid transparent;\n  border-radius: var(--radius-4);\n  font-size: var(--body-xs-font-size);\n  line-height: 20px;\n  white-space: nowrap;\n}\n\n.pbe-pill__dot {\n  width: 6px;\n  height: 6px;\n  border-radius: 999px;\n  background: currentColor;\n}\n\n.pbe-pill--ok {\n  background: var(--status-success-surface-l1);\n  color: var(--status-success-default);\n}\n\n.pbe-pill--warn {\n  background: var(--status-warning-surface-l1);\n  color: var(--status-warning-default);\n}\n\n.pbe-pill--err {\n  background: var(--status-error-surface-l1);\n  color: var(--status-error-default);\n}\n\n.pbe-pill--info {\n  background: var(--status-primary-surface-l1);\n  color: var(--status-primary-default);\n}\n\n.pbe-pill--muted {\n  background: var(--bg-overlay-l1);\n  color: var(--text-secondary);\n}\n\n/* ── one file, opened ──────────────────────────────────────────────────── */\n\n.pbe-preview__title {\n  display: flex;\n  align-items: baseline;\n  gap: var(--spacer-12);\n  min-width: 0;\n}\n\n.pbe-preview__title > .pbe-mono {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/*\n * The height is a ceiling, not a size: a short file should make a short\n * dialog, and a long one should scroll inside this box instead of pushing the\n * footer off the screen.\n */\n.pbe-preview {\n  max-height: 58vh;\n  margin: 0;\n  overflow: auto;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n\n.pbe-preview__image {\n  display: block;\n  max-width: 100%;\n  max-height: 58vh;\n  margin: 0 auto;\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-8);\n  background: var(--bg-base-tertiary);\n  object-fit: contain;\n}\n\n/* Why the text below stops where it stops.  Above the block, because a reader\n   who starts scrolling should meet it before the scrollbar, not after. */\n.pbe-preview__note {\n  margin-bottom: var(--spacer-8);\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n";
+var styles_default = "/**\n * Page-local layout, on top of the design system's atoms.\n *\n * Nothing here names a colour: every value is a semantic token from\n * `designsys/colors_and_type.css`, which carries both themes.  A rule that\n * needed a colour the tokens do not offer would be a signal that the rule is\n * wrong, not that a literal is missing.\n *\n * The one deviation from `.ds-card` is deliberate: `.ds-card` lights up on\n * hover, which is right for a card you can click and wrong for a panel you\n * read.  Static surfaces therefore use `.pbe-panel`, and interactive ones add\n * `.pbe-panel--link`.\n */\n\n/* ── shell ─────────────────────────────────────────────────────────────── */\n\n.pbe-root {\n  display: block;\n  min-height: 100%;\n  background: var(--bg-base-secondary);\n  color: var(--text-default);\n  font-family: var(--body-base-font-family);\n  font-size: var(--body-base-font-size);\n  line-height: var(--body-base-line-height);\n  -webkit-font-smoothing: antialiased;\n}\n\n/*\n * The rail and the module sit in one row that this file owns.\n *\n * Deliberately not expressed on `.pbe-root`: between the two there is antd's\n * `App` wrapper, whose display is the host build's business.  Relying on it\n * being a pass-through produced a page whose content started 100vh down the\n * screen — one row for the rail, another for everything else.\n */\n.pbe-shell {\n  display: flex;\n  flex-wrap: nowrap;\n  align-items: flex-start;\n  min-height: 100%;\n}\n\n.pbe-rail {\n  position: sticky;\n  top: 0;\n  display: flex;\n  flex: 0 0 var(--layout-sidebar);\n  flex-direction: column;\n  gap: var(--spacer-16);\n  width: var(--layout-sidebar);\n  height: 100vh;\n  padding: var(--spacer-16) var(--spacer-12);\n  border-right: 1px solid var(--border-neutral-l1);\n  background: var(--bg-menu);\n  box-sizing: border-box;\n}\n\n.pbe-rail__brand {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-8);\n  padding: 0 var(--spacer-8);\n  color: var(--text-default);\n  font-family: var(--font-family-heading);\n  font-size: var(--body-lg-font-size);\n  font-weight: 600;\n}\n\n.pbe-rail__nav {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n}\n\n.pbe-nav-item {\n  display: flex;\n  align-items: center;\n  gap: var(--sb-item-gap);\n  width: 100%;\n  height: var(--nav-item-h);\n  padding: 0 var(--sb-item-pad-x);\n  border: 0;\n  border-radius: var(--radius-8);\n  background: transparent;\n  color: var(--text-default);\n  font-family: inherit;\n  font-size: var(--body-base-font-size);\n  text-align: left;\n  cursor: pointer;\n}\n\n.pbe-nav-item:hover {\n  background: var(--bg-overlay-l1);\n}\n\n.pbe-nav-item[aria-current=\"page\"] {\n  background: var(--bg-overlay-l2);\n  font-weight: 500;\n}\n\n.pbe-nav-item__count {\n  margin-left: auto;\n  color: var(--text-tertiary);\n  font-family: var(--code-editor-font-family);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-rail__foot {\n  margin-top: auto;\n  padding: var(--spacer-12);\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-12);\n  background: var(--bg-base-default);\n  text-align: left;\n  cursor: pointer;\n  font: inherit;\n  color: inherit;\n  width: 100%;\n}\n\n.pbe-rail__foot:hover {\n  background: var(--bg-card-hover);\n}\n\n.pbe-main {\n  flex: 1 1 auto;\n  min-width: 0;\n  padding: var(--spacer-24) var(--spacer-32) var(--spacer-32);\n}\n\n/* ── page heading ──────────────────────────────────────────────────────── */\n\n.pbe-head {\n  display: flex;\n  align-items: flex-start;\n  gap: var(--spacer-16);\n  margin-bottom: var(--spacer-24);\n  /* The host parks a floating control (… and collapse) in the top-right corner\n     of every route; without this the primary button sits under it. */\n  padding-right: 76px;\n}\n\n.pbe-head__text {\n  min-width: 0;\n}\n\n.pbe-head__title {\n  margin: 0;\n  color: var(--text-default);\n  font-family: var(--font-family-heading);\n  font-size: var(--heading-lg-font-size);\n  font-weight: 600;\n  line-height: var(--heading-lg-line-height);\n}\n\n.pbe-head__sub {\n  margin-top: var(--spacer-4);\n  color: var(--text-secondary);\n  font-size: var(--body-base-font-size);\n}\n\n.pbe-head__actions {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin-left: auto;\n}\n\n/* ── surfaces ──────────────────────────────────────────────────────────── */\n\n.pbe-panel {\n  background: var(--bg-base-default);\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-12);\n}\n\n.pbe-panel--pad {\n  padding: var(--spacer-20);\n}\n\n.pbe-panel--link {\n  cursor: pointer;\n  transition: background-color 0.15s ease;\n}\n\n.pbe-panel--link:hover {\n  background: var(--bg-card-hover);\n}\n\n.pbe-grid {\n  display: grid;\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n  gap: var(--spacer-16);\n  align-items: start;\n}\n\n.pbe-grid--wide {\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n}\n\n@media (max-width: 1000px) {\n  .pbe-grid,\n  .pbe-grid--wide {\n    grid-template-columns: minmax(0, 1fr);\n  }\n}\n\n.pbe-span-all {\n  grid-column: 1 / -1;\n}\n\n/* ── metric row (C2 tier) ──────────────────────────────────────────────── */\n\n.pbe-metrics {\n  display: grid;\n  grid-template-columns: repeat(3, minmax(0, 1fr));\n  gap: var(--spacer-16);\n  margin-bottom: var(--spacer-24);\n}\n\n@media (max-width: 1000px) {\n  .pbe-metrics {\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n  }\n}\n\n@media (max-width: 680px) {\n  .pbe-metrics {\n    grid-template-columns: minmax(0, 1fr);\n  }\n}\n\n.pbe-metric {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-12);\n  height: 72px;\n  padding: var(--spacer-16);\n  box-sizing: border-box;\n}\n\n.pbe-tile {\n  display: inline-flex;\n  flex: 0 0 44px;\n  align-items: center;\n  justify-content: center;\n  width: 44px;\n  height: 44px;\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-8);\n  background: transparent;\n  color: var(--text-secondary);\n}\n\n.pbe-metric__body {\n  min-width: 0;\n}\n\n.pbe-metric__title {\n  color: var(--text-default);\n  font-size: var(--body-base-font-size);\n  font-weight: 600;\n  line-height: 20px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.pbe-metric__desc {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-6);\n  height: 20px;\n  color: var(--text-secondary);\n  font-size: var(--body-sm-font-size);\n  line-height: 20px;\n}\n\n.pbe-figure {\n  color: var(--text-default);\n  font-family: var(--font-family-metric);\n  font-variant-numeric: tabular-nums;\n  font-weight: 500;\n}\n\n.pbe-mono {\n  font-family: var(--code-editor-font-family);\n  font-variant-numeric: tabular-nums;\n}\n\n/* ── toolbar (filter / search, single row, labels inline) ──────────────── */\n\n.pbe-toolbar {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: var(--spacer-12);\n  margin-bottom: var(--spacer-16);\n}\n\n.pbe-toolbar__label {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  white-space: nowrap;\n}\n\n.pbe-toolbar__right {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin-left: auto;\n}\n\n/* ── table ─────────────────────────────────────────────────────────────── */\n\n.pbe-table-wrap {\n  overflow: hidden;\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-12);\n  background: var(--bg-base-default);\n}\n\n.pbe-table .ant-table {\n  background: transparent;\n}\n\n.pbe-table .ant-table-thead > tr > th {\n  background: transparent;\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  font-weight: 500;\n  letter-spacing: var(--body-sm-letter-spacing);\n  border-bottom: 1px solid var(--border-neutral-l1);\n}\n\n.pbe-table .ant-table-thead > tr > th::before {\n  display: none;\n}\n\n.pbe-table .ant-table-tbody > tr > td {\n  border-bottom: 1px solid var(--border-neutral-l1);\n}\n\n.pbe-table .ant-table-tbody > tr:last-child > td {\n  border-bottom: 0;\n}\n\n.pbe-table .ant-table-tbody > tr {\n  cursor: pointer;\n}\n\n/* The row itself is the drill-down's link; a keyboard user must be able to\n   see where they are before pressing Enter on it. */\n.pbe-table .ant-table-tbody > tr:focus-visible {\n  outline: 2px solid var(--border-brand);\n  outline-offset: -2px;\n}\n\n.pbe-table__foot {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: var(--spacer-12);\n  padding: var(--spacer-12) var(--spacer-16);\n  border-top: 1px solid var(--border-neutral-l1);\n  color: var(--text-secondary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-cell-title {\n  color: var(--text-default);\n  font-weight: 500;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.pbe-cell-sub {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  line-height: var(--body-sm-line-height);\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n/* ── disclosure ────────────────────────────────────────────────────────── */\n\n/* A long block that opens closed.  The whole row is the button -- a 12px\n   chevron is a mean target -- and the state sits at the right end, after the\n   reader has decided the block is worth opening.  The label stays flush left\n   with the other sub-labels it sits among. */\n.pbe-disclosure {\n  display: flex;\n  width: 100%;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin: 0;\n  padding: var(--spacer-4) 0;\n  border: 0;\n  background: transparent;\n  color: var(--text-tertiary);\n  font-family: inherit;\n  font-size: var(--body-sm-font-size);\n  line-height: var(--body-sm-line-height);\n  text-align: left;\n  cursor: pointer;\n}\n\n.pbe-disclosure:focus-visible {\n  outline: 2px solid var(--border-brand);\n  outline-offset: 2px;\n  border-radius: var(--radius-4);\n}\n\n.pbe-disclosure__label {\n  color: var(--text-secondary);\n}\n\n.pbe-disclosure__note {\n  margin-left: auto;\n  color: var(--text-tertiary);\n  font-variant-numeric: tabular-nums;\n}\n\n.pbe-disclosure__act {\n  color: var(--text-tertiary);\n}\n\n.pbe-disclosure__chevron {\n  flex: none;\n  color: var(--text-tertiary);\n  transition: transform 140ms ease;\n}\n\n.pbe-disclosure:hover .pbe-disclosure__label,\n.pbe-disclosure:hover .pbe-disclosure__act,\n.pbe-disclosure:hover .pbe-disclosure__chevron {\n  color: var(--text-default);\n}\n\n.pbe-disclosure[aria-expanded=\"true\"] .pbe-disclosure__chevron {\n  transform: rotate(90deg);\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .pbe-disclosure__chevron {\n    transition: none;\n  }\n}\n\n/* ── report ────────────────────────────────────────────────────────────── */\n\n.pbe-meta {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin-top: var(--spacer-8);\n  color: var(--text-secondary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-meta__sep {\n  color: var(--text-tertiary);\n}\n\n.pbe-scoreboard {\n  display: grid;\n  grid-template-columns: repeat(4, minmax(0, 1fr));\n  margin-bottom: var(--spacer-24);\n}\n\n@media (max-width: 900px) {\n  .pbe-scoreboard {\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n  }\n}\n\n.pbe-scoreboard__cell {\n  padding: 0 var(--spacer-16);\n  border-left: 1px solid var(--border-neutral-l1);\n}\n\n.pbe-scoreboard__cell:first-child {\n  border-left: 0;\n  padding-left: 0;\n}\n\n.pbe-scoreboard__label {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-scoreboard__value {\n  margin-top: var(--spacer-4);\n  color: var(--text-default);\n  font-family: var(--font-family-metric);\n  font-variant-numeric: tabular-nums;\n  font-size: var(--heading-md-font-size, 20px);\n  font-weight: 600;\n}\n\n.pbe-block {\n  padding: var(--spacer-12) var(--spacer-16);\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-8);\n  background: var(--bg-base-tertiary);\n  color: var(--text-default);\n  font-family: var(--code-editor-font-family);\n  font-size: var(--body-sm-font-size);\n  line-height: 1.6;\n  white-space: pre-wrap;\n  word-break: break-word;\n  overflow-x: auto;\n}\n\n.pbe-prompt {\n  max-height: 320px;\n  overflow-y: auto;\n  margin: 0;\n}\n\n.pbe-facts {\n  display: grid;\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n  gap: var(--spacer-12) var(--spacer-24);\n}\n\n@media (max-width: 760px) {\n  .pbe-facts {\n    grid-template-columns: minmax(0, 1fr);\n  }\n}\n\n.pbe-fact__label {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-fact__value {\n  margin-top: 2px;\n  color: var(--text-default);\n  word-break: break-word;\n}\n\n.pbe-rows {\n  display: flex;\n  flex-direction: column;\n}\n\n.pbe-row {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-12);\n  padding: var(--spacer-8) 0;\n  border-bottom: 1px solid var(--border-neutral-l1);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-row:last-child {\n  border-bottom: 0;\n}\n\n.pbe-row__grow {\n  flex: 1 1 auto;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/*\n * A row whose bytes can be opened.  It is a real `<button>` -- so it takes\n * focus and answers the keyboard -- which means undoing the browser's default\n * chrome rather than decorating a div, and keeping the row's own box so the\n * list does not jump when only some rows are openable.\n */\n.pbe-row--file {\n  width: calc(100% + var(--spacer-16));\n  margin: 0 calc(var(--spacer-8) * -1);\n  border: 0;\n  border-bottom: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-4);\n  background: none;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n  padding-left: var(--spacer-8);\n  padding-right: var(--spacer-8);\n}\n\n.pbe-row--file:hover {\n  background: var(--bg-card-hover);\n}\n\n.pbe-row--file:focus-visible {\n  outline: 2px solid var(--border-brand);\n  outline-offset: -2px;\n}\n\n.pbe-section-title {\n  margin: 0 0 var(--spacer-12);\n  color: var(--text-default);\n  font-size: var(--body-base-font-size);\n  font-weight: 600;\n}\n\n.pbe-timeline {\n  display: flex;\n  flex-direction: column;\n}\n\n.pbe-timeline__item {\n  display: grid;\n  grid-template-columns: 88px 96px minmax(0, 1fr);\n  gap: var(--spacer-12);\n  padding: var(--spacer-8) 0;\n  border-bottom: 1px solid var(--border-neutral-l1);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-timeline__item:last-child {\n  border-bottom: 0;\n}\n\n.pbe-timeline__at {\n  color: var(--text-tertiary);\n  font-family: var(--code-editor-font-family);\n}\n\n@media (max-width: 760px) {\n  .pbe-timeline__item {\n    grid-template-columns: minmax(0, 1fr);\n    gap: var(--spacer-4);\n  }\n}\n\n/* ── form (label left, control right — the system default) ─────────────── */\n\n.pbe-field {\n  display: flex;\n  align-items: flex-start;\n  gap: var(--spacer-12);\n  margin-bottom: var(--spacer-16);\n}\n\n.pbe-field__label {\n  flex: none;\n  width: 92px;\n  padding-top: var(--spacer-6);\n  color: var(--text-secondary);\n  font-size: var(--body-base-font-size);\n  text-align: right;\n}\n\n.pbe-field__control {\n  flex: 1 1 auto;\n  min-width: 0;\n}\n\n.pbe-field__hint {\n  margin-top: var(--spacer-4);\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-fieldset {\n  margin-bottom: var(--spacer-24);\n}\n\n.pbe-fieldset__title {\n  margin-bottom: var(--spacer-12);\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  letter-spacing: 0.04em;\n}\n\n.pbe-empty {\n  padding: var(--spacer-32);\n  color: var(--text-tertiary);\n  text-align: center;\n}\n\n.pbe-copy {\n  display: inline-flex;\n  align-items: center;\n  gap: var(--spacer-6);\n  max-width: 100%;\n  padding: 0;\n  border: 0;\n  background: transparent;\n  color: var(--text-secondary);\n  font-family: var(--code-editor-font-family);\n  font-size: var(--body-sm-font-size);\n  cursor: pointer;\n}\n\n.pbe-copy:hover {\n  color: var(--text-default);\n}\n\n.pbe-copy__value {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/* ── status pill ───────────────────────────────────────────────────────── */\n\n.pbe-pill {\n  display: inline-flex;\n  align-items: center;\n  gap: var(--spacer-6);\n  height: 20px;\n  padding: 0 var(--spacer-8);\n  border: 1px solid transparent;\n  border-radius: var(--radius-4);\n  font-size: var(--body-xs-font-size);\n  line-height: 20px;\n  white-space: nowrap;\n}\n\n.pbe-pill__dot {\n  width: 6px;\n  height: 6px;\n  border-radius: 999px;\n  background: currentColor;\n}\n\n.pbe-pill--ok {\n  background: var(--status-success-surface-l1);\n  color: var(--status-success-default);\n}\n\n.pbe-pill--warn {\n  background: var(--status-warning-surface-l1);\n  color: var(--status-warning-default);\n}\n\n.pbe-pill--err {\n  background: var(--status-error-surface-l1);\n  color: var(--status-error-default);\n}\n\n.pbe-pill--info {\n  background: var(--status-primary-surface-l1);\n  color: var(--status-primary-default);\n}\n\n.pbe-pill--muted {\n  background: var(--bg-overlay-l1);\n  color: var(--text-secondary);\n}\n\n/* ── one file, opened ──────────────────────────────────────────────────── */\n\n.pbe-preview__title {\n  display: flex;\n  align-items: baseline;\n  gap: var(--spacer-12);\n  min-width: 0;\n}\n\n.pbe-preview__title > .pbe-mono {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/*\n * The height is a ceiling, not a size: a short file should make a short\n * dialog, and a long one should scroll inside this box instead of pushing the\n * footer off the screen.\n */\n.pbe-preview {\n  max-height: 58vh;\n  margin: 0;\n  overflow: auto;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n\n.pbe-preview__image {\n  display: block;\n  max-width: 100%;\n  max-height: 58vh;\n  margin: 0 auto;\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-8);\n  background: var(--bg-base-tertiary);\n  object-fit: contain;\n}\n\n/* Why the text below stops where it stops.  Above the block, because a reader\n   who starts scrolling should meet it before the scrollbar, not after. */\n.pbe-preview__note {\n  margin-bottom: var(--spacer-8);\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n";
 
 // src/host/sdk.ts
 var API_BASE = "/pawbench-eval";
@@ -666,6 +666,29 @@ var api = {
   fileUrl: (jobId, taskId, attempt, kind, path) => `/v1/jobs/${jobId}/tasks/${taskId}/attempts/${attempt}/${kind}?path=${q(path)}`,
   report: (jobId, format) => call("GET", `/v1/jobs/${q(jobId)}/report?format=${format}`),
   datasets: () => call("GET", "/v1/datasets"),
+  datasetDetail: (datasetId) => call("GET", `/v1/datasets/${q(datasetId)}`),
+  datasetTask: (datasetId, taskId) => call("GET", `/v1/datasets/${q(datasetId)}/tasks/${q(taskId)}`),
+  /**
+   * A fixture's contents, before any run exists.
+   *
+   * The same shape an artifact preview answers with, from the same function in
+   * the service: the file a task comes with and the file an agent wrote back
+   * are read with one set of rules.
+   */
+  datasetFixture: (datasetId, taskId, path) => call(
+    "GET",
+    `/v1/datasets/${q(datasetId)}/tasks/${q(taskId)}/attachments/preview?path=${q(path)}`
+  ),
+  /**
+   * The task's own markdown.
+   *
+   * The fallback the detail page offers beside the parsed fields: if a rubric
+   * resists parsing, the file itself is one click away.  Previewed through the
+   * same reader as a fixture, so the trim is the same.
+   */
+  datasetTaskSource: (datasetId, taskId) => call("GET", `/v1/datasets/${q(datasetId)}/tasks/${q(taskId)}/source`),
+  /** Where a fixture download goes, so the proxy can add the token on the way out. */
+  datasetFixtureUrl: (datasetId, taskId, path) => `/v1/datasets/${q(datasetId)}/tasks/${q(taskId)}/attachments?path=${q(path)}`,
   categories: () => call("GET", "/v1/dataset-categories"),
   resolve: (selector) => call("POST", "/v1/datasets/resolve", { selector }),
   createDataset: (body) => call("POST", "/v1/datasets", body),
@@ -1071,6 +1094,7 @@ function DatasetsModule(props) {
     Input.Search,
     {
       allowClear: true,
+      "aria-label": "搜索数据集",
       placeholder: "名称 / id / 分类 / 描述",
       style: { width: 280 },
       value: search,
@@ -1084,7 +1108,20 @@ function DatasetsModule(props) {
       size: "middle",
       loading,
       dataSource: shown,
-      pagination: false,
+      pagination: { pageSize: 50, hideOnSinglePage: true },
+      onRow: (item) => ({
+        onClick: () => props.onOpen(item.id),
+        // The row is the primary navigation of this page; a click-only row
+        // puts it out of reach of a keyboard and of a screen reader.
+        tabIndex: 0,
+        onKeyDown: (event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            props.onOpen(item.id);
+          }
+        }
+      }),
       locale: { emptyText: /* @__PURE__ */ __h(EmptyHint, null, "还没有数据集。可以上传一个任务包，或从内置语料里切一个视图。") },
       columns: [
         {
@@ -1126,21 +1163,26 @@ function DatasetsModule(props) {
           title: "操作",
           dataIndex: "id",
           width: 130,
-          render: (_, item) => props.subject && item.owner === props.subject ? /* @__PURE__ */ __h(
-            Popconfirm,
-            {
-              title: "删除这个数据集？",
-              description: "已经被作业引用过的数据集可能删不掉。",
-              okText: "删除",
-              cancelText: "不删",
-              onConfirm: () => remove(item)
-            },
-            /* @__PURE__ */ __h(Button, { size: "small", type: "text", danger: true }, "删除")
+          render: (_, item) => props.subject && item.owner === props.subject ? (
+            // The cell stops the click: the row opens the dataset, and a
+            // delete that also navigated would be a page change nobody
+            // asked for behind a confirmation.
+            /* @__PURE__ */ __h("div", { onClick: (event) => event.stopPropagation() }, /* @__PURE__ */ __h(
+              Popconfirm,
+              {
+                title: "删除这个数据集？",
+                description: "已经被作业引用过的数据集可能删不掉。",
+                okText: "删除",
+                cancelText: "不删",
+                onConfirm: () => remove(item)
+              },
+              /* @__PURE__ */ __h(Button, { size: "small", type: "text", danger: true }, "删除")
+            ))
           ) : /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, "只读")
         }
       ]
     }
-  ), /* @__PURE__ */ __h("div", { className: "pbe-table__foot" }, /* @__PURE__ */ __h("span", null, "共 ", shown.length, " 条"), /* @__PURE__ */ __h("span", null, "删除只对自己创建的行开放"))), /* @__PURE__ */ __h(
+  ), /* @__PURE__ */ __h("div", { className: "pbe-table__foot" }, /* @__PURE__ */ __h("span", null, "共 ", shown.length, " 条"), /* @__PURE__ */ __h("span", null, "点一行看题目清单；删除只对自己创建的行开放"))), /* @__PURE__ */ __h(
     CreateViewModal,
     {
       open: viewOpen,
@@ -1354,6 +1396,360 @@ function CategoryModal(props) {
       loading: busy
     }
   )), /* @__PURE__ */ __h("div", { className: "pbe-rows" }, props.categories.length ? props.categories.map((name) => /* @__PURE__ */ __h("div", { className: "pbe-row", key: name }, /* @__PURE__ */ __h("span", { className: "pbe-row__grow" }, /* @__PURE__ */ __h(CopyId, { value: name, label: "分类", keep: 40 })), /* @__PURE__ */ __h(Popconfirm, { title: "删除这个分类？", okText: "删除", cancelText: "不删", onConfirm: () => remove(name) }, /* @__PURE__ */ __h(Button, { size: "small", type: "text", danger: true }, "删除")))) : /* @__PURE__ */ __h(EmptyHint, null, "还没有分类")));
+}
+
+// src/ui/preview.tsx
+function PreviewModal(props) {
+  const [preview, setPreview] = useState(null);
+  const [error, setError] = useState("");
+  const { kind, path } = props.target;
+  const { source } = props;
+  const sourceKey = JSON.stringify(source);
+  useEffect(() => {
+    let alive = true;
+    setPreview(null);
+    setError("");
+    const asked = source.kind === "job" ? api.preview(source.jobId, source.taskId, source.attempt, kind, path) : kind === "source" ? api.datasetTaskSource(source.datasetId, source.taskId) : api.datasetFixture(source.datasetId, source.taskId, path);
+    asked.then((answer) => {
+      if (alive) setPreview(answer);
+    }).catch((err) => {
+      if (alive) setError(describeError(err).message);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [sourceKey, kind, path]);
+  const name = path.split("/").pop() || path;
+  function save() {
+    const url = source.kind === "dataset" ? api.datasetFixtureUrl(source.datasetId, source.taskId, path) : kind === "artifacts" || kind === "attachments" ? api.fileUrl(source.jobId, source.taskId, source.attempt, kind, path) : "";
+    if (url) {
+      void download(url, name).catch((err) => setError(describeError(err).message));
+    }
+  }
+  return /* @__PURE__ */ __h(
+    Modal,
+    {
+      open: true,
+      width: 920,
+      onCancel: props.onClose,
+      title: /* @__PURE__ */ __h("div", { className: "pbe-preview__title" }, /* @__PURE__ */ __h("span", { className: "pbe-mono" }, path), preview ? /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, bytes(preview.bytes)) : null),
+      footer: /* @__PURE__ */ __h(__Fragment, null, props.target.canDownload ? /* @__PURE__ */ __h(Button, { onClick: save, disabled: !preview }, "下载") : null, /* @__PURE__ */ __h(Button, { type: "primary", onClick: props.onClose }, "关闭"))
+    },
+    error ? /* @__PURE__ */ __h(Alert, { type: "error", showIcon: true, message: "读不到这个文件", description: error }) : null,
+    !error && !preview ? /* @__PURE__ */ __h(Skeleton, { active: true, paragraph: { rows: 6 } }) : null,
+    preview ? /* @__PURE__ */ __h(PreviewBody, { preview }) : null
+  );
+}
+function PreviewBody(props) {
+  const { preview } = props;
+  if (preview.kind === "binary") {
+    return /* @__PURE__ */ __h(EmptyHint, null, `${preview.media_type}，${bytes(preview.bytes)}，不能在页面里打开。下载后用本地程序查看。`);
+  }
+  if (preview.kind === "image") {
+    if (!preview.data_url) {
+      return /* @__PURE__ */ __h(EmptyHint, null, `图片 ${bytes(preview.bytes)}，超过内联预览的上限了，下载后查看。`);
+    }
+    return /* @__PURE__ */ __h("img", { className: "pbe-preview__image", src: preview.data_url, alt: preview.path });
+  }
+  return /* @__PURE__ */ __h(__Fragment, null, preview.truncated ? /* @__PURE__ */ __h("div", { className: "pbe-preview__note" }, `只显示前 ${bytes(preview.shown_bytes)}，全文 ${bytes(preview.bytes)}——下载可以拿到完整的。`) : null, /* @__PURE__ */ __h("pre", { className: "pbe-block pbe-preview" }, preview.text || "（空文件）"));
+}
+
+// src/modules/dataset-detail.tsx
+var GRADING = {
+  automated: "自动判分",
+  llm_judge: "LLM 判分",
+  hybrid: "混合判分"
+};
+var NO_TASKS = [];
+function gradingLabel(value) {
+  if (!value) return "—";
+  return GRADING[value] ?? value;
+}
+function kindLabel(kind) {
+  if (kind === "builtin_view") return "内置视图";
+  if (kind === "custom") return "自定义包";
+  return kind || "—";
+}
+function filterSummary(spec) {
+  const parts = Object.entries(spec ?? {});
+  if (!parts.length) return "无（整个语料）";
+  return parts.map(
+    ([key, value]) => Array.isArray(value) ? `${key}（${value.length} 项）` : `${key} = ${String(value)}`
+  ).join(" · ");
+}
+function scenarioOf(labels) {
+  const scenario = labels?.scenario;
+  return typeof scenario === "string" && scenario ? scenario : "—";
+}
+function Disclosure(props) {
+  const [open, setOpen] = useState(false);
+  return /* @__PURE__ */ __h("div", null, /* @__PURE__ */ __h(
+    "button",
+    {
+      type: "button",
+      className: "pbe-disclosure",
+      "aria-expanded": open,
+      "aria-controls": props.id,
+      onClick: () => setOpen((prev) => !prev)
+    },
+    /* @__PURE__ */ __h("span", { className: "pbe-disclosure__label" }, props.label),
+    /* @__PURE__ */ __h("span", { className: "pbe-disclosure__note" }, props.note),
+    /* @__PURE__ */ __h("span", { className: "pbe-disclosure__act" }, open ? "收起" : "展开"),
+    /* @__PURE__ */ __h(
+      "svg",
+      {
+        className: "pbe-disclosure__chevron",
+        width: "12",
+        height: "12",
+        viewBox: "0 0 12 12",
+        "aria-hidden": "true",
+        focusable: "false"
+      },
+      /* @__PURE__ */ __h("path", { d: "M4 2.5 8.5 6 4 9.5", fill: "none", stroke: "currentColor", strokeWidth: "1.6" })
+    )
+  ), open ? /* @__PURE__ */ __h("div", { id: props.id, style: { marginTop: "var(--spacer-8)" } }, props.children) : null);
+}
+function DatasetDetailModule(props) {
+  const [detail, setDetail] = useState(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setDetail(null);
+    api.datasetDetail(props.datasetId).then((answer) => {
+      if (!alive) return;
+      setDetail(answer);
+      setError(null);
+    }).catch((err) => {
+      if (alive) setError(describeError(err));
+    }).finally(() => {
+      if (alive) setLoading(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [props.datasetId]);
+  const tasks = detail?.tasks ?? NO_TASKS;
+  const haystacks = useMemo(
+    () => new Map(
+      tasks.map((task) => [
+        task.task_id,
+        [task.task_id, task.name, JSON.stringify(task.labels ?? {})].join(" ").toLowerCase()
+      ])
+    ),
+    [tasks]
+  );
+  const shown = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return tasks;
+    return tasks.filter((task) => haystacks.get(task.task_id)?.includes(needle));
+  }, [tasks, haystacks, search]);
+  return /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h(
+    PageHead,
+    {
+      title: detail?.name || props.datasetId,
+      sub: /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h("span", null, detail ? kindLabel(detail.kind) : "读取中", " · ", detail?.owner || "—", " ·", " ", tasks.length, " 题"), /* @__PURE__ */ __h("span", { className: "pbe-meta" }, /* @__PURE__ */ __h(CopyId, { value: props.datasetId, label: "数据集 id", keep: 24 }), (detail?.categories ?? []).length ? /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h("span", { className: "pbe-meta__sep" }, "·"), /* @__PURE__ */ __h("span", null, detail.categories.join("、"))) : null)),
+      actions: /* @__PURE__ */ __h(Button, { onClick: props.onBack }, "返回数据集列表")
+    }
+  ), error ? /* @__PURE__ */ __h(
+    Alert,
+    {
+      type: "error",
+      showIcon: true,
+      message: error.code,
+      description: error.message,
+      style: { marginBottom: "var(--spacer-16)" }
+    }
+  ) : null, detail ? /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "这个集合"), /* @__PURE__ */ __h("div", { className: "pbe-cell-sub" }, detail.description || "这个集合没有写描述。"), /* @__PURE__ */ __h("div", { className: "pbe-meta", style: { marginTop: "var(--spacer-12)" } }, /* @__PURE__ */ __h("span", null, "分类：", (detail.categories ?? []).join("、") || "未分类"), /* @__PURE__ */ __h("span", { className: "pbe-meta__sep" }, "·"), /* @__PURE__ */ __h("span", null, "筛选条件：", filterSummary(detail.filter_spec)))) : null, /* @__PURE__ */ __h("div", { className: "pbe-toolbar", style: { marginTop: "var(--spacer-16)" } }, /* @__PURE__ */ __h("span", { className: "pbe-toolbar__label" }, "题目"), /* @__PURE__ */ __h(
+    Input.Search,
+    {
+      allowClear: true,
+      "aria-label": "搜索题目",
+      placeholder: "名称 / task id / 标签",
+      style: { width: 280 },
+      value: search,
+      onChange: (event) => setSearch(event.target.value)
+    }
+  ), /* @__PURE__ */ __h("div", { className: "pbe-toolbar__right" }, /* @__PURE__ */ __h("span", { className: "pbe-toolbar__label" }, "共 ", shown.length, " 条", search.trim() ? `（全部 ${tasks.length}）` : ""))), /* @__PURE__ */ __h("div", { className: "pbe-table-wrap" }, /* @__PURE__ */ __h(
+    Table,
+    {
+      className: "pbe-table",
+      rowKey: "task_id",
+      size: "middle",
+      loading,
+      dataSource: shown,
+      pagination: { pageSize: 50, hideOnSinglePage: true },
+      onRow: (task) => ({
+        onClick: () => props.onOpenTask(task.task_id),
+        tabIndex: 0,
+        onKeyDown: (event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            props.onOpenTask(task.task_id);
+          }
+        }
+      }),
+      locale: {
+        emptyText: /* @__PURE__ */ __h(EmptyHint, null, error ? "读不到这个数据集的题目" : "没有符合搜索的题目")
+      },
+      columns: [
+        {
+          title: "题目",
+          dataIndex: "name",
+          render: (_, task) => /* @__PURE__ */ __h("div", null, /* @__PURE__ */ __h("div", { className: "pbe-cell-title" }, task.name || task.task_id), /* @__PURE__ */ __h("div", { className: "pbe-cell-sub pbe-mono" }, task.task_id))
+        },
+        {
+          title: "场景",
+          dataIndex: "labels",
+          width: 240,
+          render: (_, task) => /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, scenarioOf(task.labels))
+        },
+        {
+          title: "复杂度",
+          dataIndex: "complexity",
+          width: 90,
+          render: (_, task) => /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, String(task.labels?.complexity ?? "—"))
+        },
+        {
+          title: "判分",
+          dataIndex: "grading_type",
+          width: 110,
+          render: (value) => /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, gradingLabel(value))
+        },
+        {
+          title: "超时",
+          dataIndex: "timeout_seconds",
+          width: 90,
+          render: (value) => /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, value, "s")
+        },
+        {
+          title: "附件",
+          dataIndex: "attachment_count",
+          width: 90,
+          render: (value, task) => task.has_attachments ? /* @__PURE__ */ __h("span", { className: "pbe-pill pbe-pill--info" }, value, " 个") : /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, "—")
+        }
+      ]
+    }
+  ), /* @__PURE__ */ __h("div", { className: "pbe-table__foot" }, /* @__PURE__ */ __h("span", null, "共 ", shown.length, " 条"), /* @__PURE__ */ __h("span", null, "点一行看题干、附件与判分方式"))));
+}
+function DatasetTaskModule(props) {
+  const [detail, setDetail] = useState(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [preview, setPreview] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setDetail(null);
+    api.datasetTask(props.datasetId, props.taskId).then((answer) => {
+      if (!alive) return;
+      setDetail(answer);
+      setError(null);
+    }).catch((err) => {
+      if (alive) setError(describeError(err));
+    }).finally(() => {
+      if (alive) setLoading(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [props.datasetId, props.taskId]);
+  const labels = detail?.labels ?? {};
+  const attachments = detail?.attachments ?? [];
+  return /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h(
+    PageHead,
+    {
+      title: detail?.name || props.taskId,
+      sub: /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h("span", null, detail ? gradingLabel(detail.grading_type) : "读取中", " ·", " ", detail ? `${detail.timeout_seconds}s` : "—", " ·", " ", scenarioOf(labels)), /* @__PURE__ */ __h("span", { className: "pbe-meta" }, /* @__PURE__ */ __h(CopyId, { value: props.datasetId, label: "数据集", keep: 20 }), /* @__PURE__ */ __h("span", { className: "pbe-meta__sep" }, "/"), /* @__PURE__ */ __h(CopyId, { value: props.taskId, label: "task id", keep: 28 }))),
+      actions: /* @__PURE__ */ __h(Button, { onClick: props.onBack }, "返回题目清单")
+    }
+  ), error ? /* @__PURE__ */ __h(
+    Alert,
+    {
+      type: "error",
+      showIcon: true,
+      message: error.code,
+      description: error.message,
+      style: { marginBottom: "var(--spacer-16)" }
+    }
+  ) : null, detail?.unreadable ? /* @__PURE__ */ __h(
+    Alert,
+    {
+      type: "warning",
+      showIcon: true,
+      message: "这道题的 markdown 解析不了",
+      description: `${detail.unreadable}。标签还在，题干读不出来；改好文件后刷新本页。`,
+      style: { marginBottom: "var(--spacer-16)" }
+    }
+  ) : null, /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "题干"), loading && !detail ? /* @__PURE__ */ __h("div", { className: "pbe-cell-sub" }, "读取中…") : /* @__PURE__ */ __h("pre", { className: "pbe-block pbe-prompt" }, detail?.prompt || "（这道题没有记录题干）"), detail?.expected_behavior ? /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h("div", { style: { height: "var(--spacer-16)" } }), /* @__PURE__ */ __h(SectionTitle, null, "期望行为"), /* @__PURE__ */ __h("pre", { className: "pbe-block pbe-prompt" }, detail.expected_behavior)) : null), /* @__PURE__ */ __h("div", { style: { marginTop: "var(--spacer-16)" } }, /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h("div", { style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "var(--spacer-12)" } }, /* @__PURE__ */ __h(SectionTitle, null, "判分规则"), /* @__PURE__ */ __h(
+    Button,
+    {
+      size: "small",
+      onClick: () => setPreview({ kind: "source", path: `${props.taskId}.md`, canDownload: false })
+    },
+    "看题目 markdown"
+  )), /* @__PURE__ */ __h("div", { className: "pbe-facts" }, /* @__PURE__ */ __h(Fact, { label: "判分方式", value: gradingLabel(detail?.grading_type) }), /* @__PURE__ */ __h(Fact, { label: "权重", value: weightsOf(detail?.grading_weights) })), detail?.grading_criteria?.length ? /* @__PURE__ */ __h("div", { style: { marginTop: "var(--spacer-12)" } }, /* @__PURE__ */ __h("div", { className: "pbe-cell-sub", style: { marginBottom: "var(--spacer-6)" } }, "判据"), /* @__PURE__ */ __h(
+    "ul",
+    {
+      style: {
+        margin: 0,
+        paddingLeft: "var(--spacer-20)",
+        color: "var(--text-default)",
+        lineHeight: 1.7
+      }
+    },
+    detail.grading_criteria.map((item) => /* @__PURE__ */ __h("li", { key: item }, item))
+  )) : null, detail?.llm_judge_rubric ? /* @__PURE__ */ __h("div", { style: { marginTop: "var(--spacer-12)" } }, /* @__PURE__ */ __h(
+    Disclosure,
+    {
+      id: "task-rubric",
+      label: "判分细则",
+      note: `${detail.llm_judge_rubric.length} 字`
+    },
+    /* @__PURE__ */ __h("pre", { className: "pbe-block", style: { maxHeight: 340, overflowY: "auto" } }, detail.llm_judge_rubric)
+  )) : null, detail?.has_automated_checks ? /* @__PURE__ */ __h("div", { className: "pbe-cell-sub", style: { marginTop: "var(--spacer-12)" } }, "这道题另有一段自动检查脚本，跑在判分器里。脚本里写着这道题的答案，所以不在页面上出现——上面这两块是它按什么标准给分。") : null)), /* @__PURE__ */ __h("div", { className: "pbe-grid", style: { marginTop: "var(--spacer-16)" } }, /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "标签与属性"), /* @__PURE__ */ __h("div", { className: "pbe-facts" }, /* @__PURE__ */ __h(Fact, { label: "超时", value: detail ? `${detail.timeout_seconds} 秒` : "—" }), /* @__PURE__ */ __h(Fact, { label: "场景", value: scenarioOf(labels) }), /* @__PURE__ */ __h(Fact, { label: "复杂度", value: String(labels.complexity ?? "—") }), /* @__PURE__ */ __h(Fact, { label: "环境", value: String(labels.environment ?? "—") }), /* @__PURE__ */ __h(Fact, { label: "能力", value: labelList(labels.capabilities) }), /* @__PURE__ */ __h(Fact, { label: "模态", value: modalityOf(labels.modality) }))), /* @__PURE__ */ __h(Panel, null, /* @__PURE__ */ __h(SectionTitle, null, "题目带的文件"), attachments.length ? /* @__PURE__ */ __h("div", { className: "pbe-rows" }, attachments.map((item) => /* @__PURE__ */ __h(
+    "button",
+    {
+      key: item.path,
+      type: "button",
+      className: "pbe-row pbe-row--file",
+      disabled: !item.present,
+      onClick: () => setPreview({ kind: "fixture", path: item.path, canDownload: true })
+    },
+    /* @__PURE__ */ __h("span", { className: "pbe-row__grow pbe-mono" }, item.path),
+    item.present ? null : /* @__PURE__ */ __h(StatusPill, { tone: "err", label: "文件缺失" }),
+    /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, item.size === null ? "—" : bytes(item.size)),
+    item.present ? /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, "预览") : null
+  ))) : /* @__PURE__ */ __h(EmptyHint, null, "这道题不带文件，只需要读题干。"))), preview ? /* @__PURE__ */ __h(
+    PreviewModal,
+    {
+      source: { kind: "dataset", datasetId: props.datasetId, taskId: props.taskId },
+      target: preview,
+      onClose: () => setPreview(null)
+    }
+  ) : null);
+}
+function weightsOf(weights) {
+  const parts = Object.entries(weights ?? {});
+  if (!parts.length) return "—";
+  const names = { automated: "自动", llm_judge: "LLM", hybrid: "混合" };
+  return parts.map(([key, value]) => `${names[key] ?? key} ${Math.round(Number(value) * 100)}%`).join(" · ");
+}
+function labelList(value) {
+  return Array.isArray(value) ? value.join("、") || "—" : typeof value === "string" ? value : "—";
+}
+function modalityOf(value) {
+  if (typeof value === "string") return value || "—";
+  if (value && typeof value === "object") {
+    const record = value;
+    const type = typeof record.type === "string" ? record.type : "";
+    const channels = labelList(record.channels);
+    return [type, channels === "—" ? "" : channels].filter(Boolean).join(" · ") || "—";
+  }
+  return "—";
 }
 
 // src/modules/jobs.tsx
@@ -1898,56 +2294,6 @@ function toIso(value) {
   return new Date(value).toISOString();
 }
 
-// src/ui/preview.tsx
-function PreviewModal(props) {
-  const [preview, setPreview] = useState(null);
-  const [error, setError] = useState("");
-  const { kind, path } = props.target;
-  useEffect(() => {
-    let alive = true;
-    setPreview(null);
-    setError("");
-    api.preview(props.jobId, props.taskId, props.attempt, kind, path).then((answer) => {
-      if (alive) setPreview(answer);
-    }).catch((err) => {
-      if (alive) setError(describeError(err).message);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [props.jobId, props.taskId, props.attempt, kind, path]);
-  const name = path.split("/").pop() || path;
-  function save() {
-    void download(api.fileUrl(props.jobId, props.taskId, props.attempt, kind, path), name);
-  }
-  return /* @__PURE__ */ __h(
-    Modal,
-    {
-      open: true,
-      width: 920,
-      onCancel: props.onClose,
-      title: /* @__PURE__ */ __h("div", { className: "pbe-preview__title" }, /* @__PURE__ */ __h("span", { className: "pbe-mono" }, path), preview ? /* @__PURE__ */ __h("span", { className: "pbe-cell-sub" }, bytes(preview.bytes)) : null),
-      footer: /* @__PURE__ */ __h(__Fragment, null, props.target.canDownload ? /* @__PURE__ */ __h(Button, { onClick: save, disabled: !preview }, "下载") : null, /* @__PURE__ */ __h(Button, { type: "primary", onClick: props.onClose }, "关闭"))
-    },
-    error ? /* @__PURE__ */ __h(Alert, { type: "error", showIcon: true, message: "读不到这个文件", description: error }) : null,
-    !error && !preview ? /* @__PURE__ */ __h(Skeleton, { active: true, paragraph: { rows: 6 } }) : null,
-    preview ? /* @__PURE__ */ __h(PreviewBody, { preview }) : null
-  );
-}
-function PreviewBody(props) {
-  const { preview } = props;
-  if (preview.kind === "binary") {
-    return /* @__PURE__ */ __h(EmptyHint, null, `${preview.media_type}，${bytes(preview.bytes)}，不能在页面里打开。下载后用本地程序查看。`);
-  }
-  if (preview.kind === "image") {
-    if (!preview.data_url) {
-      return /* @__PURE__ */ __h(EmptyHint, null, `图片 ${bytes(preview.bytes)}，超过内联预览的上限了，下载后查看。`);
-    }
-    return /* @__PURE__ */ __h("img", { className: "pbe-preview__image", src: preview.data_url, alt: preview.path });
-  }
-  return /* @__PURE__ */ __h(__Fragment, null, preview.truncated ? /* @__PURE__ */ __h("div", { className: "pbe-preview__note" }, `只显示前 ${bytes(preview.shown_bytes)}，全文 ${bytes(preview.bytes)}——下载可以拿到完整的。`) : null, /* @__PURE__ */ __h("pre", { className: "pbe-block pbe-preview" }, preview.text || "（空文件）"));
-}
-
 // src/modules/report.tsx
 var FORMATS = [
   { value: "md", label: "Markdown", hint: "一页读完，适合贴进 issue 或 wiki" },
@@ -2349,9 +2695,12 @@ function TaskDialog(props) {
     preview ? /* @__PURE__ */ __h(
       PreviewModal,
       {
-        jobId: props.jobId,
-        taskId: detail.task_id,
-        attempt: detail.attempt,
+        source: {
+          kind: "job",
+          jobId: props.jobId,
+          taskId: detail.task_id,
+          attempt: detail.attempt
+        },
         target: preview,
         onClose: () => setPreview(null)
       }
@@ -2522,11 +2871,13 @@ function store(key, value) {
   }
 }
 function Shell() {
-  const [view, setView] = useState("jobs");
-  const [jobId, setJobId] = useState(() => {
-    const query = new URLSearchParams(window.location.search);
-    return query.get("job") ?? "";
-  });
+  const boot = useMemo(() => new URLSearchParams(window.location.search), []);
+  const [view, setView] = useState(() => boot.get("dataset") ? "datasets" : "jobs");
+  const [jobId, setJobId] = useState(() => boot.get("job") ?? "");
+  const [datasetId, setDatasetId] = useState(() => boot.get("dataset") ?? "");
+  const [taskId, setTaskId] = useState(
+    () => boot.get("job") || !boot.get("dataset") ? "" : boot.get("task") ?? ""
+  );
   const [jobs, setJobs] = useState([]);
   const [jobsLoading, setJobsLoading] = useState(true);
   const [jobsError, setJobsError] = useState(null);
@@ -2564,20 +2915,56 @@ function Shell() {
     const timer = window.setInterval(() => void refreshJobs(), 5e3);
     return () => window.clearInterval(timer);
   }, [live, refreshJobs]);
-  const openReport = useCallback((id) => {
-    setView("jobs");
-    setJobId(id);
+  const setQuery = useCallback((next) => {
     const url = new URL(window.location.href);
-    url.searchParams.set("job", id);
+    for (const [key, value] of Object.entries(next)) {
+      if (value) url.searchParams.set(key, value);
+      else url.searchParams.delete(key);
+    }
     window.history.replaceState({}, "", url.toString());
   }, []);
+  const openReport = useCallback(
+    (id) => {
+      setView("jobs");
+      setJobId(id);
+      setDatasetId("");
+      setTaskId("");
+      setQuery({ job: id, dataset: "", task: "" });
+    },
+    [setQuery]
+  );
   const backToList = useCallback(() => {
     setJobId("");
-    const url = new URL(window.location.href);
-    url.searchParams.delete("job");
-    window.history.replaceState({}, "", url.toString());
-  }, []);
-  const surface = jobId ? "jobs" : view;
+    setDatasetId("");
+    setTaskId("");
+    setQuery({ job: "", dataset: "", task: "" });
+  }, [setQuery]);
+  const openDataset = useCallback(
+    (id) => {
+      setView("datasets");
+      setDatasetId(id);
+      setTaskId("");
+      setQuery({ job: "", dataset: id, task: "" });
+    },
+    [setQuery]
+  );
+  const openDatasetTask = useCallback(
+    (id) => {
+      setTaskId(id);
+      setQuery({ task: id });
+    },
+    [setQuery]
+  );
+  const backToDatasets = useCallback(() => {
+    setDatasetId("");
+    setTaskId("");
+    setQuery({ dataset: "", task: "" });
+  }, [setQuery]);
+  const backToDataset = useCallback(() => {
+    setTaskId("");
+    setQuery({ task: "" });
+  }, [setQuery]);
+  const surface = jobId ? "jobs" : datasetId ? "datasets" : view;
   const running = jobs.filter((job) => job.status === "running").length;
   const icon = icons();
   const Flask = icon.ExperimentOutlined;
@@ -2642,7 +3029,21 @@ function Shell() {
       description: /* @__PURE__ */ __h(__Fragment, null, jobsError.message, /* @__PURE__ */ __h("br", null), "去看「配置」里的服务地址与 token；也可以点左边连接卡重新探测。"),
       style: { marginBottom: "var(--spacer-16)" }
     }
-  ) : null, jobId ? /* @__PURE__ */ __h(ReportModule, { jobId, onBack: backToList }) : view === "jobs" ? /* @__PURE__ */ __h(
+  ) : null, jobId ? /* @__PURE__ */ __h(ReportModule, { jobId, onBack: backToList }) : datasetId && taskId ? /* @__PURE__ */ __h(
+    DatasetTaskModule,
+    {
+      datasetId,
+      taskId,
+      onBack: backToDataset
+    }
+  ) : datasetId ? /* @__PURE__ */ __h(
+    DatasetDetailModule,
+    {
+      datasetId,
+      onBack: backToDatasets,
+      onOpenTask: openDatasetTask
+    }
+  ) : view === "jobs" ? /* @__PURE__ */ __h(
     JobsModule,
     {
       jobs,
@@ -2652,7 +3053,7 @@ function Shell() {
       onRefresh: () => void refreshJobs(),
       onNew: () => setNewOpen(true)
     }
-  ) : view === "datasets" ? /* @__PURE__ */ __h(DatasetsModule, { subject: config?.subject ?? "" }) : /* @__PURE__ */ __h(
+  ) : view === "datasets" ? /* @__PURE__ */ __h(DatasetsModule, { subject: config?.subject ?? "", onOpen: openDataset }) : /* @__PURE__ */ __h(
     SettingsModule,
     {
       config,
