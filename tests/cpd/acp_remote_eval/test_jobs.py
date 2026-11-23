@@ -337,6 +337,30 @@ def test_a_fingerprint_is_stored_as_written(service: JobService, store: Store):
     assert store.get_job(result["job_id"])["env_fingerprint"] == {"os": "linux", "gpu": "none"}
 
 
+def test_a_submission_without_a_fingerprint_stores_none_and_not_an_empty_object(
+    service: JobService, store: Store
+):
+    """Absent stays absent -- the dashboard relies on it.
+
+    The submission form leaves the field out entirely when the textarea is
+    empty; the service must not turn that into ``{}``, which would reach the
+    report as a fingerprint nobody filled in.  An explicit empty value of any
+    shape lands in the same place, so the two paths cannot drift apart.
+    Nothing is derived from the endpoint either: a key the service made up
+    would be indistinguishable from evidence.
+    """
+    shapes = [
+        {},
+        {"env_fingerprint": {}},
+        {"env_fingerprint": ""},
+        {"env_fingerprint": []},
+    ]
+
+    for overrides in shapes:
+        result = service.submit(body(**overrides), SUBMITTER)
+        assert store.get_job(result["job_id"])["env_fingerprint"] is None, overrides
+
+
 def test_the_per_user_cap_is_answered_before_anything_is_written(
     service: JobService, store: Store
 ):

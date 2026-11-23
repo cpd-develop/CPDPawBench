@@ -697,3 +697,64 @@ BASELINE 23 passed。
 |---|---|---|---|
 | L43 | `console_agent.py` 的 `client`（`httpx.Limits`） | 池上限声明了、`PoolTimeout` 也单独识别了，但**没有**显式的并发闸门（`Semaphore`）：一次压测把 `max_concurrent_jobs` 调到 20 以上时，超出 32 条连接的 attempt 会等 30s 再收到 `console_capacity` | **不预防性加闸**：服务侧 `queue` 已经是并发闸（默认 4），桥里再加一层会造出第二个上限，而阻塞式等待没有任何反馈。真要跑 32 路以上，先定"桥的容量是多少、超了怎么退避"，与 L30 的上界同批 |
 | L44 | `console_agent.py` `_Turn.noted` / `message_types` | 一轮之内按 message 累积，不回收。一轮的消息数由 console 决定，理论上无上界 | 不单独修：`_Turn` 随轮次结束一起回收，单轮上万条 message 的对话不是评测形态。若将来出现长跑 agent，再按"每条 message 只留类型"收窄 |
+
+## 第十三轮：提交表单补上环境指纹（2026-11-23）
+
+- 检视者：新上下文 subagent（`reviewer-fingerprint-form`），只看 `git diff` + 改动文件 +
+  四份规范 + 服务端契约（`service/jobs.py` 的 `_checked_fingerprint`、`cli.py` 的 `_env_pairs`），
+  **未提供作者方案说明**，未运行 pytest / build，仓库零改动
+- 起因（用户原话）：`为啥最新的评测 环境指纹为空了`。查下来不是回归：29 条作业里 6 条有指纹，
+  提交人全是 `smoke` / `eval-run`（脚本带 `--env`），其余 23 条全是 `null`，提交人 `aaa` /
+  `anderson`（看板与手工 curl）。链路只有两处会写这个字段——CLI 的 `--env`，以及服务端
+  收到 `env_fingerprint` 时的原样存——而**看板表单没有这一栏**（`git log -S env_fingerprint
+  -- plugins/` 只有两次命中，都是读+展示，没有一次写）
+- 结论：0 条严重、1 条一般、若干建议。按建议处理的四条都改了。
+
+### 发现与处理
+
+| # | 严重度 | 位置 | 发现 | 处理 |
+|---|---|---|---|---|
+| 1 | 一般 | `new-job.tsx` 的 TextArea / Alert | `problems.join("；")` 全量渲染，且输入无上限：粘贴一段 500 行 env 会生成数百条"第 N 行不是 key=value"，弹窗卡顿且错误不可读 | **已修**：`shownProblems()` 只列前三条 + `另有 N 行`；`shownKeys()` 同理（`a、b、c 等 5 项`）。**不加 `maxLength`**：`maxLength` 会让浏览器静默截断粘贴，那正是这一栏要避免的"悄悄丢数据"；解析本身是 O(n)，钉住渲染就够了 |
+| 2 | 一般 | 同上 + manual §4.1 | manual 写"服务端既不校验也不补全"不成立：`_checked_fingerprint` 会拒非对象（`env_fingerprint_invalid`）与超 4 KB（`env_fingerprint_too_large`） | **已修**：文档改成"不按语义校验，但形式上拒非对象与超 4 KB"；表单空态 hint 末尾补"服务上限 4 KB"；**不在前端截断**，超限由服务端明确拒绝 |
+| 3 | 建议 | `parseFingerprint` | `pairs["__proto__"] = "x"` 对普通对象是空操作：`hasOwnProperty` 假、`Object.keys` 不含，于是这一行既不报错也不发出——**唯一一条会无声消失的路径**，与本栏"不默默丢一行"的承诺直接冲突 | **已修**：`Object.create(null)`。实测 `__proto__=x\nmodel=m` → `Object.keys` 两个都在，`JSON.stringify` 出 `{"__proto__":"x","model":"m"}`，服务端收到两个键 |
+| 4 | 建议 | 同上 | 值被 `trim()`，而注释/文档写的是"stored verbatim" / "原样存进报告" | **已修文字不改行为**：粘贴带进来的首尾空格不进报告是想要的，所以把说法改成"去掉首尾空白后存进"，并在 manual 的四条阅读规则里写明"整行先去掉首尾空白" |
+| 5 | 建议 | `test_plugin.py` 新用例 | **断言在改动前就为真**：`"env_fingerprint" in UI_BUNDLE` 因为报告面板 `report.tsx` 早就读这个字段，`git show HEAD:index.js` 已含它。所以那条断言根本发现不了"改了表单忘了 rebuild"，而 docstring 声称的主要目的正是这个 | **已修**：改钉提交行本身 `if (fingerprint.count) body.env_fingerprint = fingerprint.pairs;`，源码与产物各断言一次，另断言产物里仍有报告空态的文案。实测把旧产物放回去 → 该用例**判红**（`AssertionError`），恢复后绿 |
+| 6 | 建议 | `test_jobs.py` 新用例 | docstring 说 `{}`/`""`/`[]` 都折成 `None`，实际只断言了 `{}` 与缺省 | **已修**：改成四种形状的循环断言，任一种不再折成 `None` 都会红 |
+| — | 越界 | `pal_sdd/feat_siliconflow_local_eval/local_eval_report.md` | 工作区里有一份与本功能无关的表格对齐改动 | **未纳入本次提交**（它是另一条特性留下的，不在本批 diff 里），保持原样不碰 |
+
+### 与 CLI 的差异（检视者要求逐条给出判断）
+
+| 维度 | CLI `--env` | 表单 | 判断 |
+|---|---|---|---|
+| 切分 | 第一个 `=` | 第一个 `=` | 一致 |
+| 键 | trim，空键报错 | 同 | 一致 |
+| 值 | **原样保留** | 整行 trim 后取 | 有意不同，已写进 manual 与注释：表单是粘贴面，粘来的空格是噪声 |
+| 空行 | 参数不允许为空 | 跳过 | 有意不同（末尾换行不是错） |
+| 重复键 | 后者覆盖前者 | 报错拦截 | 有意不同：静默覆盖等于对报告说一句没人支持的话 |
+
+### 真实页面验证（不是用例）
+
+用 Playwright 驱动**真 console**（`http://127.0.0.1:8088/apps/pawbench-eval`）+ 已安装副本，
+把提交请求用 `route` 拦下来（只拦 POST，GET 放行）并回 400，所以**没有真的排一条作业**：
+
+- 填 `model=gpt-6-sol` + `agent_id=pawbench_eval` → 提交体
+  `{"acp_url":…,"product":"QwenPaw 2.2.2","purpose":…,"selector":…,"window":{"kind":"immediate"},"env_fingerprint":{"model":"gpt-6-sol","agent_id":"pawbench_eval"}}`
+- 填 `model=…` + `model=qwen3-max` → 弹窗前出现 `第 2 行的 model 与前面重复`，hint 变
+  `改好上面那几行才能提交`，提交被拦（截图 `/tmp/new-job-duplicate.png`）
+- 填 6 行非法 → `第 2 行…；第 3 行…；第 4 行…；另有 3 行`
+- 一次误把列表 GET 也拦了，页面左下角显示"服务不可用"；只拦 POST 后恢复"已连接"——
+  顺带证明那个徽标是真的在反映可达性，不是摆设
+
+### 复检
+
+- `tests/cpd` **695 → 697**（`test_plugin.py` 25、`test_jobs.py` 41）
+- `tsc --noEmit` 通过；`npm run build` 产物 176 196 B；旧产物回放可判红
+- 已装副本同步：`plugins/pawbench-eval/ui/index.js` 与 `~/.qwenpaw/plugins/pawbench-eval/ui/index.js`
+  逐字节一致（`qwenpaw plugin install --force` 会 `rmtree` 目标目录，把 `data/config.json`
+  一起删掉；这次是先备份、装完再恢复，sha256 与备份一致）
+
+### 登记遗留
+
+| # | 位置 | 发现 | 期限／处理 |
+|---|---|---|---|
+| L45 | 表单的环境指纹 | 4 KB 上限只由服务端拒绝（400），前端不做字节预估，粘贴超限时要提交一次才知道 | 不修：前端估算只能近似（Python `json.dumps` 的分隔符与 JS `JSON.stringify` 不同），估错会变成"前端说超了、服务端其实收得下"或反之；明确拒绝比猜上限好 |

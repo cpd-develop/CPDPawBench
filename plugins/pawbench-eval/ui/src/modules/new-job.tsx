@@ -13,10 +13,15 @@
  *   lines.  A single wall-clock time is how a "nightly" run silently starts at
  *   the wrong hour for anybody in another timezone — the service resolves in
  *   its own zone, so saying it plainly is cheaper than a post-mortem.
+ * - The fingerprint is the same `key=value` vocabulary the CLI's `--env` takes,
+ *   and it is optional in the same way: left empty it is not sent at all, so
+ *   the report says the submission carried none.  The service never invents or
+ *   renames a key — a made-up one would look like evidence — which is why this
+ *   form asks instead of guessing from the URL.
  */
 
 import { Alert, Button, DatePicker, Input, Modal, Select, Segmented, Spin } from "../host/antd";
-import { api, CategoryList, DatasetList, JobItem, ResolveResult } from "../api";
+import { api, CategoryList, DatasetList, JobItem, ResolveResult, SubmitBody } from "../api";
 import { describeError } from "../host/sdk";
 import { useEffect, useMemo, useState } from "../host/react";
 import { useFeedback } from "../ui/feedback";
@@ -34,6 +39,7 @@ export function NewJobModal(props: {
   const [acpUrl, setAcpUrl] = useState("");
   const [product, setProduct] = useState("");
   const [purpose, setPurpose] = useState("");
+  const [envText, setEnvText] = useState("");
   const [datasets, setDatasets] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [kind, setKind] = useState<WindowKind>("immediate");
@@ -45,6 +51,11 @@ export function NewJobModal(props: {
   const [resolved, setResolved] = useState<ResolveResult | null>(null);
   const [resolving, setResolving] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // Parsed on every keystroke, not on submit: a fingerprint whose second line
+  // does not read is the one case where submitting anyway would put a claim
+  // into the report that the run never supported.
+  const fingerprint = useMemo(() => parseFingerprint(envText), [envText]);
 
   useEffect(() => {
     if (!props.open) return;
@@ -89,6 +100,10 @@ export function NewJobModal(props: {
   }, [categories, datasets, props.open]);
 
   async function submit(): Promise<void> {
+    if (fingerprint.problems.length) {
+      feedback.message.error(fingerprint.problems[0]);
+      return;
+    }
     const window: Record<string, unknown> = { kind };
     if (kind === "custom") {
       if (!range || !range[0] || !range[1]) {
@@ -100,13 +115,19 @@ export function NewJobModal(props: {
     }
     setBusy(true);
     try {
-      const job = await api.submit({
+      const body: SubmitBody = {
         acp_url: acpUrl.trim(),
         product: product.trim(),
         purpose: purpose.trim(),
         selector: { categories, datasets },
         window: window as any,
-      });
+      };
+      // An empty textarea sends no field at all, the same shape as the CLI
+      // without `--env`.  (The service would fold `{}` into `null` anyway --
+      // `_checked_fingerprint` treats both as "none" -- but a field nobody
+      // filled in is not something to put in a request.)
+      if (fingerprint.count) body.env_fingerprint = fingerprint.pairs;
+      const job = await api.submit(body);
       feedback.message.success(`已提交 ${job.job_id}`);
       // Whoever submitted is the token's subject; remember it so the list can
       // offer "上移" on exactly the rows this person may touch.
@@ -117,6 +138,7 @@ export function NewJobModal(props: {
       setAcpUrl("");
       setProduct("");
       setPurpose("");
+      setEnvText("");
       setCategories([]);
       setDatasets([]);
       setKind("immediate");
@@ -179,6 +201,33 @@ export function NewJobModal(props: {
             onChange={(event: any) => setPurpose(event.target.value)}
             placeholder="如 夜间冒烟 / 回归 / 发版前"
           />
+        </Field>
+        <Field
+          label="环境指纹"
+          hint={
+            // A count under a warning would read as "these will be stored",
+            // which is the opposite of what the warning says.
+            fingerprint.problems.length
+              ? "改好上面那几行才能提交"
+              : fingerprint.count
+                ? `存进报告：${shownKeys(fingerprint.keys)}`
+                : "每行一个 key=value，如 model=gpt-6-sol。留空就不带——报告会写明这次提交没有带指纹。服务上限 4 KB"
+          }
+        >
+          <Input.TextArea
+            rows={3}
+            value={envText}
+            onChange={(event: any) => setEnvText(event.target.value)}
+            placeholder={"model=gpt-6-sol\nagent_id=pawbench_eval\nbuild=2.2.2"}
+          />
+          {fingerprint.problems.length ? (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginTop: "var(--spacer-8)" }}
+              message={shownProblems(fingerprint.problems)}
+            />
+          ) : null}
         </Field>
       </Fieldset>
 
@@ -266,6 +315,68 @@ export function NewJobModal(props: {
 
     </Modal>
   );
+}
+
+interface ParsedFingerprint {
+  pairs: Record<string, string>;
+  keys: string[];
+  count: number;
+  problems: string[];
+}
+
+/**
+ * The textarea's lines, as the object the service stores.
+ *
+ * Same reading rule as the CLI's `--env` (split on the *first* `=`, trim the
+ * key), with four differences that exist because this surface can be pasted
+ * into: the whole line is trimmed first, so neither the key nor the value
+ * keeps the spaces a paste brought along; blank lines are skipped instead of
+ * rejected; a line without a `=` is reported with its number; and a repeated
+ * key is reported instead of silently keeping the last one.  A fingerprint that
+ * quietly loses or overrides a line is worse than none at all: the report would
+ * make a claim about the build the run happened on that nothing supports.
+ */
+function parseFingerprint(text: string): ParsedFingerprint {
+  // A null-prototype object on purpose: with a plain literal, a line reading
+  // ``__proto__=x`` is accepted, counted nowhere, and then silently missing
+  // from the request -- the one way a line could vanish without a problem.
+  const pairs: Record<string, string> = Object.create(null);
+  const problems: string[] = [];
+  text.split("\n").forEach((raw, index) => {
+    const line = raw.trim();
+    if (!line) return;
+    const cut = line.indexOf("=");
+    const key = cut < 0 ? "" : line.slice(0, cut).trim();
+    if (!key) {
+      problems.push(`第 ${index + 1} 行不是 key=value`);
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(pairs, key)) {
+      problems.push(`第 ${index + 1} 行的 ${key} 与前面重复`);
+      return;
+    }
+    pairs[key] = line.slice(cut + 1).trim();
+  });
+  const keys = Object.keys(pairs);
+  return { pairs, keys, count: keys.length, problems };
+}
+
+/**
+ * The first few lines that did not read, plus how many more there are.
+ *
+ * A pasted 500-line env dump produces one problem per line; rendering all of
+ * them is both unreadable and the only part of this form that gets slow, so the
+ * count is what carries the rest.
+ */
+function shownProblems(problems: string[], limit = 3): string {
+  if (problems.length <= limit) return problems.join("；");
+  return `${problems.slice(0, limit).join("；")}；另有 ${problems.length - limit} 行`;
+}
+
+/** ``a、b、c 等 5 项`` -- the keys that will be stored, without the wall. */
+function shownKeys(keys: string[], limit = 3): string {
+  if (keys.length <= limit) return keys.join("、");
+  return `${keys.slice(0, limit).join("、")} 等 ${keys.length} 项`;
 }
 
 function toIso(value: any): string {

@@ -318,6 +318,26 @@ def test_the_shipped_bundle_is_self_contained() -> None:
         assert marker in source, marker
 
 
+def test_the_submission_form_offers_the_fingerprint_the_report_reads() -> None:
+    """The report has a 环境指纹 section; for a long time the form had no field.
+
+    So every job submitted from the dashboard stored ``null`` and that panel
+    could only ever say "no fingerprint was carried".  What is pinned is the
+    line that puts the pairs into the body, not the field name: the name has
+    been in the bundle all along (the report panel reads it), so a bare
+    ``"env_fingerprint" in bundle`` was true before this form existed and could
+    never catch the other half of the mistake -- editing the form and
+    forgetting to rebuild, which ships a control nobody can see.
+    """
+    carrier = "if (fingerprint.count) body.env_fingerprint = fingerprint.pairs;"
+    form = (UI_SRC / "modules" / "new-job.tsx").read_text(encoding="utf-8")
+    bundle = UI_BUNDLE.read_text(encoding="utf-8")
+    assert carrier in form
+    assert carrier in bundle, "the form changed but ui/index.js was not rebuilt"
+    # The other end: the panel that reads it still says what an empty one means.
+    assert "这次提交没有带指纹" in bundle
+
+
 def test_the_frontend_is_built_from_readable_sources() -> None:
     """The bundle is an artifact; the thing to review is ``ui/src``.
 

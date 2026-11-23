@@ -1016,6 +1016,29 @@ PYTHONPATH=$PWD <venv>/bin/python -m pytest tests/cpd -q --basetemp=./.tmp-py
 （`# noqa: SLF001`），因为造一次真实并发需要两个 prompt 抢同一 session，代价比收益大——
 它钉的是"这个分支在"，不是"这个分支会被走到"。
 
+### 4.31 看板表单补上环境指纹（695→697，2026-11-23）
+
+**为什么。** 报告页一直有"环境指纹"一节，但新建评测的表单从来没有这一栏：`SubmitBody`
+里没有这个字段，`new-job.tsx` 收的五项也没有。于是从看板提交的 23 条作业全是 `null`，只有
+脚本用 `--env` 提的 6 条有值。这一批把 `key=value` 的输入补进表单，语义与 CLI 的 `--env`
+对齐，并让"留空"与"没这一栏"在服务端落到同一个 `null`。
+
+新增两条用例（都在既有文件里）：
+
+| 用例 | 钉住的东西 |
+|---|---|
+| `test_a_submission_without_a_fingerprint_stores_none_and_not_an_empty_object`（`test_jobs.py`） | 缺省、`{}`、`""`、`[]` 四种形状都存成 `None`；任一种不再折成 `None` 就红 |
+| `test_the_submission_form_offers_the_fingerprint_the_report_reads`（`test_plugin.py`） | 提交行 `if (fingerprint.count) body.env_fingerprint = fingerprint.pairs;` 同时出现在源码与 `ui/index.js`；旧产物回放即红（这一条最初的版本断言的是字段名，而字段名因报告面板早就在产物里，改动前就为真——检视者指出后改成断言提交行） |
+
+前端另有 `tsc --noEmit` 通过，`npm run build` 产物 176 196 B。
+
+真实页面（Playwright + 真 console + 已安装副本，提交请求被 `route` 拦下回 400，不排作业）：
+填两行 → 提交体带
+`"env_fingerprint":{"model":"gpt-6-sol","agent_id":"pawbench_eval"}`；键重复 → 弹窗改前列出
+`第 2 行的 model 与前面重复` 并拦住提交；六行非法 → 只列三条 + `另有 3 行`。
+
+判据：`review_` 第十三轮（0 严重 / 1 一般 / 4 建议，全部处理或登记）。
+
 ## 5. 下一批要补的执行记录
 
 R 组（真机 QwenPaw + `openrouter/free` judge）与 G 组（插件 validate→install→看板）目前还没有可贴的输出，落地时按 §4.1 的格式记环境、命令与逐项结论，不要只写"已验证"。

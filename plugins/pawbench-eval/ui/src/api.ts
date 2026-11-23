@@ -257,6 +257,15 @@ export interface SubmitBody {
   purpose: string;
   selector: { categories: string[]; datasets: string[] };
   window: Window;
+  /**
+   * What the run's numbers should be read against -- model, build, machine.
+   *
+   * The submitter's own vocabulary, stored verbatim: the service renames
+   * nothing and requires nothing, and an omitted field stays omitted (the
+   * report then says the submission carried no fingerprint) rather than
+   * becoming an invented one.
+   */
+  env_fingerprint?: Record<string, string>;
 }
 
 const q = encodeURIComponent;

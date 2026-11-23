@@ -1640,6 +1640,7 @@ function NewJobModal(props) {
   const [acpUrl, setAcpUrl] = useState("");
   const [product, setProduct] = useState("");
   const [purpose, setPurpose] = useState("");
+  const [envText, setEnvText] = useState("");
   const [datasets, setDatasets] = useState([]);
   const [categories, setCategories] = useState([]);
   const [kind, setKind] = useState("immediate");
@@ -1651,6 +1652,7 @@ function NewJobModal(props) {
   const [resolved, setResolved] = useState(null);
   const [resolving, setResolving] = useState(false);
   const [busy, setBusy] = useState(false);
+  const fingerprint = useMemo(() => parseFingerprint(envText), [envText]);
   useEffect(() => {
     if (!props.open) return;
     let alive = true;
@@ -1685,6 +1687,10 @@ function NewJobModal(props) {
     };
   }, [categories, datasets, props.open]);
   async function submit() {
+    if (fingerprint.problems.length) {
+      feedback.message.error(fingerprint.problems[0]);
+      return;
+    }
     const window2 = { kind };
     if (kind === "custom") {
       if (!range || !range[0] || !range[1]) {
@@ -1696,18 +1702,21 @@ function NewJobModal(props) {
     }
     setBusy(true);
     try {
-      const job = await api.submit({
+      const body = {
         acp_url: acpUrl.trim(),
         product: product.trim(),
         purpose: purpose.trim(),
         selector: { categories, datasets },
         window: window2
-      });
+      };
+      if (fingerprint.count) body.env_fingerprint = fingerprint.pairs;
+      const job = await api.submit(body);
       feedback.message.success(`已提交 ${job.job_id}`);
       api.learnIdentity(job.job_id).then((result) => result.subject && props.onIdentity(result.subject)).catch(() => void 0);
       setAcpUrl("");
       setProduct("");
       setPurpose("");
+      setEnvText("");
       setCategories([]);
       setDatasets([]);
       setKind("immediate");
@@ -1766,7 +1775,35 @@ function NewJobModal(props) {
         onChange: (event) => setPurpose(event.target.value),
         placeholder: "如 夜间冒烟 / 回归 / 发版前"
       }
-    ))),
+    )), /* @__PURE__ */ __h(
+      Field,
+      {
+        label: "环境指纹",
+        hint: (
+          // A count under a warning would read as "these will be stored",
+          // which is the opposite of what the warning says.
+          fingerprint.problems.length ? "改好上面那几行才能提交" : fingerprint.count ? `存进报告：${shownKeys(fingerprint.keys)}` : "每行一个 key=value，如 model=gpt-6-sol。留空就不带——报告会写明这次提交没有带指纹。服务上限 4 KB"
+        )
+      },
+      /* @__PURE__ */ __h(
+        Input.TextArea,
+        {
+          rows: 3,
+          value: envText,
+          onChange: (event) => setEnvText(event.target.value),
+          placeholder: "model=gpt-6-sol\nagent_id=pawbench_eval\nbuild=2.2.2"
+        }
+      ),
+      fingerprint.problems.length ? /* @__PURE__ */ __h(
+        Alert,
+        {
+          type: "warning",
+          showIcon: true,
+          style: { marginTop: "var(--spacer-8)" },
+          message: shownProblems(fingerprint.problems)
+        }
+      ) : null
+    )),
     /* @__PURE__ */ __h(Fieldset, { title: "选题" }, /* @__PURE__ */ __h(Field, { label: "分类", hint: "选中一个分类等于选中它下面所有数据集" }, /* @__PURE__ */ __h(
       Select,
       {
@@ -1825,6 +1862,35 @@ function NewJobModal(props) {
       }
     ) : null)
   );
+}
+function parseFingerprint(text) {
+  const pairs = /* @__PURE__ */ Object.create(null);
+  const problems = [];
+  text.split("\n").forEach((raw, index) => {
+    const line = raw.trim();
+    if (!line) return;
+    const cut = line.indexOf("=");
+    const key = cut < 0 ? "" : line.slice(0, cut).trim();
+    if (!key) {
+      problems.push(`第 ${index + 1} 行不是 key=value`);
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(pairs, key)) {
+      problems.push(`第 ${index + 1} 行的 ${key} 与前面重复`);
+      return;
+    }
+    pairs[key] = line.slice(cut + 1).trim();
+  });
+  const keys = Object.keys(pairs);
+  return { pairs, keys, count: keys.length, problems };
+}
+function shownProblems(problems, limit = 3) {
+  if (problems.length <= limit) return problems.join("；");
+  return `${problems.slice(0, limit).join("；")}；另有 ${problems.length - limit} 行`;
+}
+function shownKeys(keys, limit = 3) {
+  if (keys.length <= limit) return keys.join("、");
+  return `${keys.slice(0, limit).join("、")} 等 ${keys.length} 项`;
 }
 function toIso(value) {
   if (value && typeof value.toISOString === "function") return value.toISOString();
