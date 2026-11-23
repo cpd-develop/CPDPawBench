@@ -758,3 +758,68 @@ BASELINE 23 passed。
 | # | 位置 | 发现 | 期限／处理 |
 |---|---|---|---|
 | L45 | 表单的环境指纹 | 4 KB 上限只由服务端拒绝（400），前端不做字节预估，粘贴超限时要提交一次才知道 | 不修：前端估算只能近似（Python `json.dumps` 的分隔符与 JS `JSON.stringify` 不同），估错会变成"前端说超了、服务端其实收得下"或反之；明确拒绝比猜上限好 |
+
+## 第十四轮：报告页不再把左侧导航的高亮抹掉（2026-11-23）
+
+- 检视者：新上下文 subagent（general-purpose），只给 `git diff` + 三个改动文件 + 两份只读
+  参考文件（`jobs.tsx`、`report.tsx`）+ 三份规范，**未提供作者方案说明**，仓库零改动
+- 起因（用户原话）：`在评测列表中，昨天菜单项"评测"是选中状态，但是当点击到报告页面，以及再往下钻的页面，"评测"菜单项就不是选中了呢`
+
+### 根因
+
+`shell.tsx` 的 `aria-current` 写成 `view === item.key && !jobId`。报告是用
+`openReport(jobId)` 打开的，`view` 一直还是 `"jobs"`——于是**只有 `jobId` 决定结果**：
+一进报告，三个导航项全部失去 `aria-current="page"`，`styles.css` 里那条
+`.pbe-nav-item[aria-current="page"]` 的高亮随之消失。报告内部的标签页（总览 / 题目 / 导出）
+与逐题面板都不改 `jobId`，所以再往下钻也不会恢复。
+
+### 修法
+
+- 新增 `surface`：`const surface: View = jobId ? "jobs" : view;`——报告是「评测」的下钻，
+  不是第四个模块；`aria-current` 改用 `surface === item.key`
+- `openReport` 里补 `setView("jobs")`（检视建议 1）：渲染分支判定的是 `jobId`，导航判定的是
+  `view`，两个问题原本靠"每个 `setView` 调用点都顺手 `backToList()`"这条不在类型里的约定维持
+  一致；补这一行之后 `jobId` 非空 ⇒ `view === "jobs"` 恒成立，两条判定同源
+
+### 发现与处理
+
+| # | 严重度 | 位置 | 发现 | 处理 |
+|---|---|---|---|---|
+| 1 | 建议 | `shell.tsx` 的 `surface` | `jobId ? "jobs" : view` 完全不管 `view`：若将来从数据集/配置页链到某个 `job_id`，左侧会高亮"评测"而用户是从别处进来的（组合 #4 / #6，当前不可达，只靠调用点约定守住） | **已修**：`openReport` 补 `setView("jobs")`，让"报告 ⇒ 评测"这条假设落在代码里，而不是落在约定里 |
+| 2 | 一般 | 新用例的负向断言 | 原来写 `'&& !jobId ? "page"' not in shell`，要求表达式在同一行；prettier 一折行该子串就消失，**而这是唯一约束"旧形态不得残留"的断言**——于是"保留新行、另加一处折行的旧行"能全绿，高亮仍被 `jobId` 抹掉 | **已修**：改成先 `re.sub(r"\s+", " ", …)` 归一空白，再对每个 `aria-current` 之后 70 字符的**取值窗口**判断是否出现 `jobId`；源码与产物各查一遍。实测把折行旧写法塞进同一文件 → 判红且报出窗口原文（`aria-current={ view === item.key && !jobId ? "page" : undefined } onClick={() => {`） |
+| 3 | 建议 | 同上 | 整文件匹配会把注释算进去：`shell.tsx` 第 117 行注释就抄了旧写法，谁把注释补全成完整表达式，测试会因一句注释假红，且失败信息指向"行为回归" | **已修**：随 #2 一起解决——只看 `aria-current` 的取值窗口，注释里怎么写都不影响 |
+| 4 | 建议 | 产物断言 | `'const surface = …'` 与 `… : void 0` 依赖 esbuild 不压缩、把 `undefined` 编成 `void 0`；换了 minify 或升级 bundler 会红，但失败信息写的是"没重新构建"，指向错误方向 | **已修**：失败信息改成"缺这条规则：重建，或构建产物形态变了"（`lacks the rail rule: rebuild (npm run build) or the build output changed shape`），保留双断言，因为产物形态变化时也确实需要人看一眼 |
+
+检视者另确认：**改用例在修复前的版本上是红的**（用 `git show HEAD:` 取出旧源码与旧产物逐条比对，
+四条正向断言全部 ABSENT、负向断言命中），不存在"原样回退仍绿"。五类必查（性能 / 未处理异常 /
+资源泄漏 / 阻塞卡顿 / 日志）全部"无发现"，理由：纯派生值，无异步、无 I/O、无新增监听。
+
+### 真实页面验证（不是用例）
+
+Playwright 驱动真 console（`http://127.0.0.1:8088/apps/pawbench-eval`）+ 已安装副本，
+读取三个导航按钮实际的 `aria-current`：
+
+| 深度 | 评测 | 数据集 | 配置 |
+|---|---|---|---|
+| 列表 | `page` | — | — |
+| 报告（`?job=job-098a5d91c37ebb27`） | `page` | — | — |
+| 报告 → 「题目」标签 | `page` | — | — |
+| 报告 → 单题目面板 | `page` | — | — |
+| 新页面直接开 `?job=…` | `page` | — | — |
+| 切到数据集 | — | `page` | — |
+
+截图 `/tmp/rail-report.png` 上「评测」一行带着整块底色。最后两行是反向验证：不能
+为了修这个把"切换模块"一起弄坏。
+
+### 复检
+
+- `tests/cpd` **697 → 698**（`test_plugin.py` 25 → 26）
+- `tsc --noEmit` 通过；`npm run build` 产物 sha256 `554beef3a5639d53c6df164f6d0c3b753d0b24f5607c37f42cc61f4025e9a4f9`
+- 已装副本同步：这次直接 `cp` 覆盖 `~/.qwenpaw/plugins/pawbench-eval/ui/index.js`（不跑
+  `plugin install --force`，那个会把 `data/config.json` 一起删掉），两侧 sha256 一致
+
+### 登记遗留
+
+| # | 位置 | 发现 | 期限／处理 |
+|---|---|---|---|
+| L46 | 新用例 | 断言仍是文本匹配，不验证渲染：若渲染分支将来改用另一个变量（如 `openReportId`）而 `surface` 仍用 `jobId`，用例仍全绿而高亮与模块脱节 | 不修：这类一致性由 `openReport` 里的 `setView("jobs")` 保证，再加一层"源码结构断言"只会把测试绑死在实现上；真要防，应该加一个跑真实页面的 e2e，见本轮验证脚本 `/tmp/check_rail_state.py`（未入库，因为它依赖本机 console） |

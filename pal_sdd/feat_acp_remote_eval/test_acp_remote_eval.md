@@ -1039,6 +1039,29 @@ PYTHONPATH=$PWD <venv>/bin/python -m pytest tests/cpd -q --basetemp=./.tmp-py
 
 判据：`review_` 第十三轮（0 严重 / 1 一般 / 4 建议，全部处理或登记）。
 
+### 4.32 报告页保留「评测」的选中态（697→698，2026-11-23）
+
+**为什么。** 左侧导航的 `aria-current` 原来是 `view === item.key && !jobId`。报告是用
+`openReport(jobId)` 打开的，`view` 还停在 `"jobs"`，于是**只剩 `jobId` 起作用**：一进报告，
+三个导航项全部失去 `page`，`styles.css` 里那条 `.pbe-nav-item[aria-current="page"]` 的高亮
+跟着消失；报告内部的标签页与逐题面板都不清 `jobId`，所以再往下钻也不恢复。用户报的就是这个。
+
+修法是把"当前在哪个模块"算成一个值 `surface = jobId ? "jobs" : view`——报告是「评测」的
+下钻；同时在 `openReport` 里补 `setView("jobs")`，让"报告 ⇒ 评测"落在代码里而不是落在
+"每个 `setView` 都顺手 `backToList()`"这条约定里。
+
+| 用例 | 钉住的东西 |
+|---|---|
+| `test_a_report_is_still_the_module_it_drilled_down_from`（`test_plugin.py`） | `surface` 的计算与 `aria-current={surface === item.key …}` 同时出现在源码与 `ui/index.js`；任何一个 `aria-current` 的取值窗口里出现 `jobId` 就红（窗口取 70 字符、空白归一，折行逃不掉；注释里抄旧写法不会假红） |
+
+回放验证：`git show HEAD:` 的旧源码 + 旧产物 → 该用例红；把折行的旧写法另塞一处进同一文件
+（模拟"新增第二个导航"）→ 也红，且报出窗口原文。`tests/cpd` 698、`tsc --noEmit` 通过。
+
+真实页面（Playwright + 真 console + 已安装副本）逐层读 `aria-current`：列表 / 报告 /
+「题目」标签 / 单题目面板 / 直接开 `?job=` 链接，五处「评测」都是 `page`；切到「数据集」后
+才是「数据集」`page`、「评测」无。判据：`review_` 第十四轮（0 严重 / 1 一般 / 3 建议，全部处理）。
+
 ## 5. 下一批要补的执行记录
+
 
 R 组（真机 QwenPaw + `openrouter/free` judge）与 G 组（插件 validate→install→看板）目前还没有可贴的输出，落地时按 §4.1 的格式记环境、命令与逐项结论，不要只写"已验证"。

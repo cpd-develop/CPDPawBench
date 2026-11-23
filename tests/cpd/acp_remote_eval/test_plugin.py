@@ -338,6 +338,49 @@ def test_the_submission_form_offers_the_fingerprint_the_report_reads() -> None:
     assert "这次提交没有带指纹" in bundle
 
 
+def _squashed(text: str) -> str:
+    """One-line form, so an assertion cannot be dodged by a line break."""
+    return re.sub(r"\s+", " ", text)
+
+
+def test_a_report_is_still_the_module_it_drilled_down_from() -> None:
+    """The rail un-highlighted all three rows the moment a report opened.
+
+    ``aria-current`` used to be ``view === item.key && !jobId``: a report is
+    opened with ``view`` still on "jobs", so the id alone blanked the rail at
+    the exact moment the reader is deepest inside 评测 -- and a tab or a task
+    panel inside the report kept it blank, because none of them clear the id.
+    What is pinned is the computed surface (a report belongs to 评测), in both
+    places a regression hides: the readable source and the shipped bundle.
+
+    The negative half is checked on the attribute's own window rather than on
+    the whole file, and on whitespace-normalised text: a comment may quote the
+    old spelling while explaining it, and a re-wrapped expression must not slip
+    through.  Bundlers re-print what they are given, so the two bundle strings
+    are shape-sensitive -- their failure message says "stale or reshaped" for
+    that reason, not "you forgot to rebuild".
+    """
+    shell = _squashed((UI_SRC / "shell.tsx").read_text(encoding="utf-8"))
+    bundle = _squashed(UI_BUNDLE.read_text(encoding="utf-8"))
+    assert 'const surface: View = jobId ? "jobs" : view;' in shell
+    assert 'aria-current={surface === item.key ? "page" : undefined}' in shell
+    assert 'const surface = jobId ? "jobs" : view;' in bundle, (
+        "ui/index.js lacks the rail rule: rebuild (`npm run build`) or the "
+        "build output changed shape"
+    )
+    assert '"aria-current": surface === item.key ? "page" : void 0' in bundle, (
+        "the built attribute does not match ui/src/shell.tsx"
+    )
+    # The behaviour, not the spelling: no attribute that decides the rail's
+    # state may consult the open job.  70 chars covers the whole attribute in
+    # both the source and the build output.
+    for label, text in (("ui/src/shell.tsx", shell), ("ui/index.js", bundle)):
+        windows = re.findall(r"aria-current.{0,70}", text)
+        assert windows, label
+        offenders = [window for window in windows if "jobId" in window]
+        assert not offenders, (label, offenders)
+
+
 def test_the_frontend_is_built_from_readable_sources() -> None:
     """The bundle is an artifact; the thing to review is ``ui/src``.
 

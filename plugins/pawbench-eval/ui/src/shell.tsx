@@ -98,6 +98,10 @@ export function Shell(): unknown {
   }, [live, refreshJobs]);
 
   const openReport = useCallback((id: string) => {
+    // A report belongs to 评测, so opening one puts the module there as well.
+    // Without this the rail's answer ("which module am I in") and the render
+    // branch's answer ("jobId or view") would be two different questions.
+    setView("jobs");
     setJobId(id);
     const url = new URL(window.location.href);
     url.searchParams.set("job", id);
@@ -110,6 +114,13 @@ export function Shell(): unknown {
     url.searchParams.delete("job");
     window.history.replaceState({}, "", url.toString());
   }, []);
+
+  // A report is a drill-down of 评测, not a fourth module: the rail keeps
+  // 评测 current while one is open, so somebody two clicks deep still knows
+  // which module they are in.  Computed rather than compared as
+  // `view === key && !jobId` -- that spelling un-highlights every row, because
+  // the report is reached with `view` still on "jobs".
+  const surface: View = jobId ? "jobs" : view;
 
   const running = jobs.filter((job) => job.status === "running").length;
 
@@ -140,9 +151,7 @@ export function Shell(): unknown {
                 key={item.key}
                 type="button"
                 className="pbe-nav-item"
-                aria-current={
-                  view === item.key && !jobId ? "page" : undefined
-                }
+                aria-current={surface === item.key ? "page" : undefined}
                 onClick={() => {
                   setView(item.key);
                   backToList();

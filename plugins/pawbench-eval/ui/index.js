@@ -2565,6 +2565,7 @@ function Shell() {
     return () => window.clearInterval(timer);
   }, [live, refreshJobs]);
   const openReport = useCallback((id) => {
+    setView("jobs");
     setJobId(id);
     const url = new URL(window.location.href);
     url.searchParams.set("job", id);
@@ -2576,6 +2577,7 @@ function Shell() {
     url.searchParams.delete("job");
     window.history.replaceState({}, "", url.toString());
   }, []);
+  const surface = jobId ? "jobs" : view;
   const running = jobs.filter((job) => job.status === "running").length;
   const icon = icons();
   const Flask = icon.ExperimentOutlined;
@@ -2593,7 +2595,7 @@ function Shell() {
       key: item.key,
       type: "button",
       className: "pbe-nav-item",
-      "aria-current": view === item.key && !jobId ? "page" : void 0,
+      "aria-current": surface === item.key ? "page" : void 0,
       onClick: () => {
         setView(item.key);
         backToList();
