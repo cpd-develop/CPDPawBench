@@ -56,6 +56,39 @@ export interface TaskArtifact {
   kind: string;
 }
 
+/**
+ * One file the task handed the agent, as declared by the task package.
+ *
+ * ``copy`` is which of the two copies answered: the dataset's own file
+ * (``dataset``) or the one this attempt laid into its session directory
+ * (``attempt``).  They are the same bytes unless something changed on disk
+ * since the run, and a reader is entitled to know which one they are looking at.
+ */
+export interface TaskAttachment {
+  path: string;
+  size: number | null;
+  copy: "dataset" | "attempt" | null;
+}
+
+/**
+ * What one preview shows.
+ *
+ * ``kind`` describes the *file*: ``text`` and ``image`` are inline, ``binary``
+ * is a name and a download link.  ``bytes`` is the file and ``shown_bytes`` is
+ * what came back -- they differ exactly when the service trimmed or declined to
+ * inline, which is what ``truncated`` reports.
+ */
+export interface FilePreview {
+  path: string;
+  kind: "text" | "image" | "binary";
+  media_type: string;
+  bytes: number;
+  shown_bytes: number;
+  truncated: boolean;
+  text?: string;
+  data_url?: string;
+}
+
 export interface TaskEntry {
   task_id: string;
   attempt: number;
@@ -77,9 +110,16 @@ export interface TaskEntry {
   name?: string;
   labels?: { scenario?: string; capabilities?: string[] } & Record<string, unknown>;
   has_attachments?: boolean;
+  attachments?: TaskAttachment[];
   prompt?: string | null;
   // Full tier only.
-  judge_notes?: string | null;
+  /**
+   * What the judge wrote.  A string when a model judged the task, an object
+   * when a rule did, and `{}` when it had nothing to add -- so it is typed as
+   * unknown and formatted on the way to the page.  Rendering the object
+   * straight into a `<pre>` is a React crash, not a formatting problem.
+   */
+  judge_notes?: unknown;
   judge_served_models?: string[] | null;
   workspace_path?: string | null;
   transcript_path?: string | null;
@@ -257,6 +297,34 @@ export const api = {
       "GET",
       `/v1/jobs/${q(jobId)}/transcript?task_id=${q(taskId)}&attempt=${attempt}&cursor=${cursor}`,
     ),
+
+  /**
+   * One file's contents, trimmed.
+   *
+   * Two paths rather than one with a `kind` query: an artifact and an
+   * attachment are two different files, and the caller always knows which one
+   * it is holding.
+   */
+  preview: (
+    jobId: string,
+    taskId: string,
+    attempt: number,
+    kind: "artifacts" | "attachments",
+    path: string,
+  ) =>
+    call<FilePreview>(
+      "GET",
+      `/v1/jobs/${q(jobId)}/tasks/${q(taskId)}/attempts/${attempt}/${kind}/preview?path=${q(path)}`,
+    ),
+
+  /** Where a download goes, so the proxy can add the token on the way out. */
+  fileUrl: (
+    jobId: string,
+    taskId: string,
+    attempt: number,
+    kind: "artifacts" | "attachments",
+    path: string,
+  ) => `/v1/jobs/${jobId}/tasks/${taskId}/attempts/${attempt}/${kind}?path=${q(path)}`,
   report: (jobId: string, format: ReportFormat, sensitivity: Sensitivity) =>
     call<ReportLink>(
       "GET",

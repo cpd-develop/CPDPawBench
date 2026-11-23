@@ -30,6 +30,7 @@ import { api, JobDetail, ReportFormat, Sensitivity, TaskEntry, TranscriptEvent, 
 import { describeError, download, saveBlob } from "../host/sdk";
 import { useEffect, useMemo, useState } from "../host/react";
 import { useFeedback } from "../ui/feedback";
+import { PreviewModal, PreviewTarget } from "../ui/preview";
 import {
   CopyId,
   EmptyHint,
@@ -586,6 +587,7 @@ function TaskDialog(props: {
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<TaskEntry>(props.task);
   const [error, setError] = useState<string>("");
+  const [preview, setPreview] = useState<PreviewTarget | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -625,6 +627,20 @@ function TaskDialog(props: {
   }
 
   const breakdown = Object.entries(detail.automated_breakdown ?? {});
+  const attachments = detail.attachments ?? [];
+  /**
+   * The judge's notes, as text.
+   *
+   * A judge task stores a sentence; a rule-based task stores `{}` -- and an
+   * empty object rendered into `<pre>` is a React crash, which is exactly how
+   * one automated task at the full tier used to take the whole page down.  An
+   * empty note is no note: the section is skipped rather than printing `{}`.
+   */
+  const notes = detail.judge_notes;
+  const judgeText =
+    notes === null || notes === undefined || (typeof notes === "object" && !Object.keys(notes).length)
+      ? ""
+      : json(notes);
   const meta = taskStatus(detail.status, detail.failure_reason);
 
   return (
@@ -649,6 +665,26 @@ function TaskDialog(props: {
 
       <SectionTitle>题干</SectionTitle>
       <pre className="pbe-block pbe-prompt">{detail.prompt || "（这次运行没有记录题干）"}</pre>
+
+      {attachments.length ? (
+        <>
+          <div style={{ height: "var(--spacer-20)" }} />
+          <SectionTitle>附件</SectionTitle>
+          <div className="pbe-rows">
+            {attachments.map((item) => (
+              <FileRow
+                key={item.path}
+                path={item.path}
+                size={item.size}
+                note={item.copy === "attempt" ? "运行时副本" : undefined}
+                onOpen={() =>
+                  setPreview({ kind: "attachments", path: item.path, canDownload: true })
+                }
+              />
+            ))}
+          </div>
+        </>
+      ) : null}
 
       <div style={{ height: "var(--spacer-20)" }} />
       <SectionTitle>这次执行</SectionTitle>
@@ -688,42 +724,34 @@ function TaskDialog(props: {
       {detail.artifacts.length ? (
         <div className="pbe-rows">
           {detail.artifacts.map((artifact) => (
-            <div className="pbe-row" key={artifact.path}>
-              <span className="pbe-row__grow pbe-mono">{artifact.path}</span>
-              <span className="pbe-cell-sub">{bytes(artifact.size)}</span>
-              <Tooltip title={artifact.sha256}>
-                <span className="pbe-cell-sub pbe-mono">{artifact.sha256.slice(0, 12)}</span>
-              </Tooltip>
-              {props.sensitivity === "full" ? (
-                <Button
-                  type="link"
-                  size="small"
-                  style={{ padding: 0 }}
-                  onClick={() => {
-                    void download(
-                      `/v1/jobs/${props.jobId}/tasks/${detail.task_id}/attempts/${detail.attempt}/artifacts?path=${encodeURIComponent(artifact.path)}`,
-                      artifact.path.split("/").pop() || "artifact",
-                    );
-                  }}
-                >
-                  下载
-                </Button>
-              ) : null}
-            </div>
+            <FileRow
+              key={artifact.path}
+              path={artifact.path}
+              size={artifact.size}
+              digest={artifact.sha256}
+              // The list is in both tiers and the bytes are not: a shared
+              // report names the files the agent wrote and says nothing about
+              // what is in them, which is the same line the download obeys.
+              onOpen={
+                props.sensitivity === "full"
+                  ? () => setPreview({ kind: "artifacts", path: artifact.path, canDownload: true })
+                  : undefined
+              }
+            />
           ))}
         </div>
       ) : (
         <EmptyHint>这次没有产物</EmptyHint>
       )}
 
-      {detail.rubric_excerpt || detail.judge_notes ? (
+      {detail.rubric_excerpt || judgeText ? (
         <>
           <div style={{ height: "var(--spacer-20)" }} />
           <SectionTitle>评分依据（完整版）</SectionTitle>
           {detail.rubric_excerpt ? <pre className="pbe-block">{detail.rubric_excerpt}</pre> : null}
-          {detail.judge_notes ? (
+          {judgeText ? (
             <pre className="pbe-block" style={{ marginTop: "var(--spacer-8)" }}>
-              {detail.judge_notes}
+              {judgeText}
             </pre>
           ) : null}
         </>
@@ -751,7 +779,58 @@ function TaskDialog(props: {
         ))}
         {page && !page.events.length ? <EmptyHint>没有轨迹事件</EmptyHint> : null}
       </div>
+
+      {/* Above this dialog rather than replacing it: reading a file is a
+          detour on the way to a judgement, not a different place to be. */}
+      {preview ? (
+        <PreviewModal
+          jobId={props.jobId}
+          taskId={detail.task_id}
+          attempt={detail.attempt}
+          target={preview}
+          onClose={() => setPreview(null)}
+        />
+      ) : null}
     </Modal>
+  );
+}
+
+/**
+ * One file in a list: a name, a size, and — when the bytes are readable — the
+ * row *is* the button.
+ *
+ * A trailing "预览" link on every row would be four identical links in a
+ * column; the row itself is the thing a reader points at anyway.  The row is a
+ * `<button>` rather than a `div` with an onClick so it can be reached with the
+ * keyboard and announced as something that opens.
+ */
+function FileRow(props: {
+  path: string;
+  size: number | null;
+  digest?: string;
+  note?: string;
+  onOpen?: () => void;
+}): unknown {
+  const body = (
+    <>
+      <span className="pbe-row__grow pbe-mono">{props.path}</span>
+      {props.note ? <span className="pbe-pill pbe-pill--muted">{props.note}</span> : null}
+      <span className="pbe-cell-sub">{props.size === null ? "—" : bytes(props.size)}</span>
+      {props.digest ? (
+        <Tooltip title={props.digest}>
+          <span className="pbe-cell-sub pbe-mono">{props.digest.slice(0, 12)}</span>
+        </Tooltip>
+      ) : null}
+      {props.onOpen ? <span className="pbe-cell-sub">预览</span> : null}
+    </>
+  );
+  if (!props.onOpen) {
+    return <div className="pbe-row">{body}</div>;
+  }
+  return (
+    <button type="button" className="pbe-row pbe-row--file" onClick={props.onOpen}>
+      {body}
+    </button>
   );
 }
 

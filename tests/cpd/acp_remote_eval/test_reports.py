@@ -23,6 +23,7 @@ test a file layout the service never produces.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import itertools
 import json
@@ -74,6 +75,18 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 #: rubric text exists to be leaked -- see
 #: :func:`test_the_rubric_text_only_ever_reaches_the_full_tier`.
 RUBRIC_MAIL_B = "Award 1.0 when the reply is polite."
+
+#: The two fixtures ``mail_a`` hands over, and the bytes of the one that is not
+#: text.  A one-pixel PNG is enough: the preview decides by extension, and an
+#: image the browser could not draw would prove nothing about the route.
+NOTE_DEST = "fixtures/note.txt"
+NOTE_TEXT = "content of note.txt"
+SHOT_DEST = "fixtures/shot.png"
+PNG_BYTES = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+    "890000000a49444154789c6300010000050001"
+    "0d0a2db40000000049454e44ae426082"
+)
 
 #: The 23 keys every recorded leaderboard document in ``submissions/`` carries.
 #: Spelled out rather than read from one file, because it is the contract a
@@ -130,6 +143,11 @@ def builtin_root(tmp_path: Path) -> Path:
     channel is ``image`` and its type ``multimodal`` because that is the real
     taxonomy (``references/taxonomy.md``) -- and because a task carrying both is
     the only way to see the two slices stay apart.
+
+    ``mail_a`` also carries two fixtures, one of each shape the preview has to
+    answer for: a text file to show, and a PNG to draw.  ``chart_c`` carries
+    none, so every attachment test has a task that must report nothing rather
+    than an empty section.
     """
     root = tmp_path / "builtin"
     write_task(
@@ -141,7 +159,12 @@ def builtin_root(tmp_path: Path) -> Path:
         channels=("image",),
         subcategory="GitHub",
         grading_type="automated",
+        fixtures=("note.txt", "shot.png"),
     )
+    # The helper writes text into every fixture; the extension is what the
+    # preview sniffs for an image, and a real PNG header keeps the file honest
+    # for anything downstream that looks at the bytes.
+    (root / "fixtures" / "shot.png").write_bytes(PNG_BYTES)
     write_task(
         root,
         "mail_b",
@@ -1207,6 +1230,149 @@ def test_a_missing_artifact_is_not_found_rather_than_empty(env: Env) -> None:
     assert refused.value.code == "artifact_not_found"
 
 
+# ── the question's own files, and what a preview shows of either kind ─────────
+
+
+def test_a_task_lists_the_attachments_it_handed_the_agent(env: Env) -> None:
+    detail = env.reports.task_detail(JOB, "mail_a")
+
+    assert detail["has_attachments"] is True
+    assert detail["attachments"] == [
+        {"path": NOTE_DEST, "size": len(NOTE_TEXT), "copy": "dataset"},
+        {"path": SHOT_DEST, "size": len(PNG_BYTES), "copy": "dataset"},
+    ]
+
+
+def test_a_task_without_attachments_reports_a_list_and_not_a_section(env: Env) -> None:
+    detail = env.reports.task_detail(JOB, "chart_c")
+
+    assert detail["has_attachments"] is False
+    assert detail["attachments"] == []
+
+
+def test_the_attachment_list_is_in_the_shared_tier_too(env: Env) -> None:
+    """The attachment *is* part of the question, and shared already prints it.
+
+    The bytes are the same door as an artifact download -- token only -- but the
+    list of what was handed over cannot be a full-tier secret: a reader holding
+    a shared report would be reading an answer to a question they cannot see.
+    """
+    shared = env.reports.task_detail(JOB, "mail_a", SENSITIVITY_SHARED)
+    full = env.reports.task_detail(JOB, "mail_a", SENSITIVITY_FULL)
+
+    assert shared["attachments"] == full["attachments"]
+
+
+def test_a_text_attachment_previews_as_the_file_that_was_handed_over(env: Env) -> None:
+    preview = env.reports.preview(JOB, "mail_a", 1, "attachment", NOTE_DEST)
+
+    assert preview["kind"] == "text"
+    assert preview["text"] == NOTE_TEXT
+    assert preview["bytes"] == len(NOTE_TEXT)
+    assert preview["shown_bytes"] == len(NOTE_TEXT)
+    assert preview["truncated"] is False
+
+
+def test_an_image_attachment_comes_back_drawable(env: Env) -> None:
+    preview = env.reports.preview(JOB, "mail_a", 1, "attachment", SHOT_DEST)
+
+    assert preview["kind"] == "image"
+    assert preview["media_type"] == "image/png"
+    prefix, _, encoded = preview["data_url"].partition(",")
+    assert prefix == "data:image/png;base64"
+    assert base64.b64decode(encoded) == PNG_BYTES
+
+
+def test_an_attachment_the_task_never_declared_cannot_be_opened(env: Env) -> None:
+    """The session directory also holds what the agent wrote there.
+
+    A route that served any path under it would be a file browser over somebody
+    else's run, so only the task's own declared fixtures are reachable -- even
+    when the file is sitting right there.
+    """
+    written = env.exchange.session_file(JOB, "mail_a", 1, "output/answer.txt")
+    written.parent.mkdir(parents=True, exist_ok=True)
+    written.write_text("the agent's own file", encoding="utf-8")
+
+    with pytest.raises(ReportError) as refused:
+        env.reports.preview(JOB, "mail_a", 1, "attachment", "output/answer.txt")
+
+    assert refused.value.code == "attachment_not_found"
+
+
+def test_a_text_artifact_is_trimmed_at_the_cap_and_says_so(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Half a log still explains the failure; 64 MB in a dialog does not.
+
+    The cap is patched down rather than the file patched up: the exchange in
+    this fixture refuses artifacts over 4 KB, and what is under test is that the
+    route stops at whatever the cap says -- not the size of the cap.
+    """
+    monkeypatch.setattr(reports_mod, "PREVIEW_TEXT_BYTES", 200)
+    oversized = ("FATAL: it broke\n" * 40).encode()
+    upload(env, "mail_b", "output/run.txt", oversized)
+
+    preview = env.reports.preview(JOB, "mail_b", 1, "artifact", "output/run.txt")
+
+    assert preview["kind"] == "text"
+    assert preview["bytes"] == len(oversized)
+    assert preview["shown_bytes"] == 200
+    assert preview["truncated"] is True
+    assert preview["text"].startswith("FATAL: it broke")
+
+
+def test_a_binary_artifact_is_named_rather_than_dumped(env: Env) -> None:
+    """A spreadsheet is neither text nor drawable, and mojibake is a worse
+    answer than the download link a reader can act on."""
+    upload(env, "mail_b", "output/book.xlsx", b"PK\x03\x04\x00\x00\x00binary")
+
+    preview = env.reports.preview(JOB, "mail_b", 1, "artifact", "output/book.xlsx")
+
+    assert preview["kind"] == "binary"
+    assert preview["shown_bytes"] == 0
+    assert "text" not in preview
+    assert "data_url" not in preview
+
+
+def test_a_preview_of_an_artifact_that_is_not_there_is_not_found(env: Env) -> None:
+    with pytest.raises(ReportError) as refused:
+        env.reports.preview(JOB, "mail_b", 1, "artifact", "output/never-uploaded.csv")
+
+    assert refused.value.code == "artifact_not_found"
+
+
+def test_a_preview_of_a_kind_that_does_not_exist_names_the_two_that_do(env: Env) -> None:
+    with pytest.raises(ReportError) as refused:
+        env.reports.preview(JOB, "mail_a", 1, "transcript", NOTE_DEST)
+
+    assert refused.value.code == "preview_kind_unsupported"
+    assert refused.value.details["allowed"] == ["artifact", "attachment"]
+
+
+def test_the_session_copy_answers_when_the_dataset_lost_the_file(env: Env) -> None:
+    """A pruned package is not a reason to lose the question.
+
+    The attempt's own copy was made before the agent ran, so it is the file that
+    was actually in front of it -- and the only survivor once the fixture is
+    gone from the dataset.  The row says which one it served, because "the
+    dataset's file" and "the run's copy" are not the same claim.
+    """
+    (env.builtin_root / NOTE_DEST).unlink()
+    laid_down = env.exchange.session_file(JOB, "mail_a", 1, NOTE_DEST)
+    laid_down.parent.mkdir(parents=True, exist_ok=True)
+    laid_down.write_text(NOTE_TEXT, encoding="utf-8")
+
+    detail = env.reports.task_detail(JOB, "mail_a")
+    assert detail["attachments"][0] == {
+        "path": NOTE_DEST,
+        "size": len(NOTE_TEXT),
+        "copy": "attempt",
+    }
+    preview = env.reports.preview(JOB, "mail_a", 1, "attachment", NOTE_DEST)
+    assert preview["text"] == NOTE_TEXT
+
+
 # ── the same guarantees through HTTP ──────────────────────────────────────────
 
 
@@ -1390,3 +1556,67 @@ def test_the_exported_report_states_the_task_before_scoring_it(env: Env) -> None
 
     assert "Write output/result.txt with the answer." in document
     assert "artifacts:" in document
+
+
+# ── the two file doors, through HTTP ──────────────────────────────────────────
+
+
+def test_the_preview_and_attachment_routes_answer_what_the_reader_asked_for(
+    client: TestClient, tokens: dict[str, str], env: Env
+) -> None:
+    """Both files a task has, over the route the dialog actually calls."""
+    upload(env, "mail_b", "output/result.txt", b"the answer")
+    base = f"/v1/jobs/{JOB}/tasks"
+
+    attachment = client.get(
+        f"{base}/mail_a/attempts/1/attachments/preview",
+        params={"path": NOTE_DEST},
+        headers=auth(tokens),
+    )
+    raw = client.get(
+        f"{base}/mail_a/attempts/1/attachments",
+        params={"path": NOTE_DEST},
+        headers=auth(tokens),
+    )
+    artifact = client.get(
+        f"{base}/mail_b/attempts/1/artifacts/preview",
+        params={"path": "output/result.txt"},
+        headers=auth(tokens),
+    )
+
+    assert attachment.status_code == 200
+    assert attachment.json()["text"] == NOTE_TEXT
+    assert raw.status_code == 200
+    assert raw.content == NOTE_TEXT.encode()
+    assert artifact.status_code == 200
+    assert artifact.json()["text"] == "the answer"
+
+
+def test_the_file_routes_answer_404_for_a_file_that_is_not_there(
+    client: TestClient, tokens: dict[str, str]
+) -> None:
+    base = f"/v1/jobs/{JOB}/tasks/mail_a/attempts/1"
+
+    missing_attachment = client.get(
+        f"{base}/attachments", params={"path": "fixtures/nope.txt"}, headers=auth(tokens)
+    )
+    escaped = client.get(
+        f"{base}/attachments",
+        params={"path": "../../etc/passwd"},
+        headers=auth(tokens),
+    )
+    missing_artifact = client.get(
+        f"/v1/jobs/{JOB}/tasks/mail_b/attempts/1/artifacts/preview",
+        params={"path": "output/never-uploaded.csv"},
+        headers=auth(tokens),
+    )
+
+    assert missing_attachment.status_code == 404
+    assert missing_attachment.json()["error"] == "attachment_not_found"
+    # A traversal is answered as "not one of this task's files", which is the
+    # stronger refusal: the declaration list decides before any path is joined,
+    # so there is no second place where an escape could be let through.
+    assert escaped.status_code == 404
+    assert escaped.json()["error"] == "attachment_not_found"
+    assert missing_artifact.status_code == 404
+    assert missing_artifact.json()["error"] == "artifact_not_found"

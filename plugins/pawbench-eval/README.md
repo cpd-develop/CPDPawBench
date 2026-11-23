@@ -106,6 +106,18 @@ The task's own prompt is in the report for the same reason: a reader who cannot
 see the question cannot argue with the answer, and sending them to another
 system to find it is how a report stops being read.
 
+The files follow the same rule, so both of them can be opened from the task
+view: the attachments the task handed the agent (`…/attachments`), and what the
+agent wrote back (`…/artifacts`).  Each has a `preview` twin that answers "what
+is inside" with text or a data URL, capped at 256 KB / 2 MB -- an artifact can
+be 64 MB, and the point of the route is that the bytes never cross the wire in
+full.  The service, not the browser, decides whether a file is text: a `.txt`
+that is really a zip is named a binary rather than decoded into mojibake.
+
+The attachment route only serves a path the task *declares*.  The session
+directory beside an attempt also holds whatever the agent wrote there, so "any
+path under it" would be a file browser over somebody else's working directory.
+
 ## Notes for whoever edits this
 
 Third-party dependencies, if this plugin ever needs any, go in

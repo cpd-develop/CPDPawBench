@@ -215,6 +215,27 @@ export function DesignScope(props: {
   const [element, setElement] = useState<HTMLDivElement | null>(null);
   const [tokens, setTokens] = useState<DesignTokens | null>(null);
 
+  /**
+   * The attribute goes on `<html>` as well as on our own root.
+   *
+   * antd portals every modal, drawer and toast to `<body>` -- one layer above
+   * this subtree -- so a dialog opened in dark mode was inheriting the light
+   * `:root` tokens and printing a white panel on a dark screen.  The design
+   * system's own instruction is to set `data-theme` on the root element, which
+   * is exactly the boundary a portal respects.  Removed on unmount, but only
+   * when we are the ones who put it there: if the console had already themed
+   * itself, taking it away would blank the page we are sitting in.
+   */
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const had = root.getAttribute("data-theme");
+    root.setAttribute("data-theme", attribute);
+    return () => {
+      if (had === null) root.removeAttribute("data-theme");
+      else root.setAttribute("data-theme", had);
+    };
+  }, [attribute]);
+
   useLayoutEffect(() => {
     if (!element) return;
     setTokens(readTokens(element));

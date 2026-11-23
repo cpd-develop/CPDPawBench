@@ -167,6 +167,11 @@ _CONTROL_STATUS: dict[str, int] = {
     "package_not_zip": 400,
     "package_unsafe_path": 400,
     "report_format_unsupported": 400,
+    # A preview of something that is not one of the two kinds of file a job has.
+    # Only reachable from code that calls ``Reports.preview`` directly, since the
+    # two routes spell their kind themselves -- mapped anyway so that a
+    # mislabelled call reads like the other shape refusals instead of a bug.
+    "preview_kind_unsupported": 400,
     "sensitivity_unknown": 400,
     # A zip bundles other people's result files, so it is only rendered at the
     # tier that is not forwarded.  400 and not 403: both tiers are open to every
@@ -185,6 +190,7 @@ _CONTROL_STATUS: dict[str, int] = {
     "category_not_found": 404,
     "task_not_found": 404,
     "artifact_not_found": 404,
+    "attachment_not_found": 404,
     # 409: the row exists and is not in a state for this.
     "job_not_reorderable": 409,
     "job_already_finished": 409,
@@ -885,6 +891,69 @@ def _add_control_routes(app: FastAPI, control: ControlPlane) -> None:
             # stays what an upload of the same path would have answered.
             raise ReportError(exc.code, exc.message) from exc
         return FileResponse(path, media_type="application/octet-stream", filename=path.name)
+
+    @app.get("/v1/jobs/{job_id}/tasks/{task_id}/attempts/{attempt}/artifacts/preview")
+    async def job_artifact_preview(
+        job_id: str, task_id: str, attempt: int, request: Request
+    ) -> JSONResponse:
+        """What is inside one result file, trimmed to what a dialog can show."""
+        authenticate(request)
+        return await _preview("artifact", job_id, task_id, attempt, request)
+
+    @app.get("/v1/jobs/{job_id}/tasks/{task_id}/attempts/{attempt}/attachments")
+    async def job_attachment(
+        job_id: str, task_id: str, attempt: int, request: Request
+    ) -> FileResponse:
+        """One of the files the task handed the agent, as it was handed over.
+
+        Same door as an artifact and for the same reason: an attachment is part
+        of the question, the shared tier already prints the prompt, and a reader
+        arguing with an answer about a spreadsheet has to be able to open it.
+        Only a path the task *declares* is reachable -- see
+        :meth:`Reports.attachment_file`.
+        """
+        authenticate(request)
+        try:
+            path = await asyncio.to_thread(
+                control.reports.attachment_file,
+                job_id,
+                task_id,
+                attempt,
+                request.query_params.get("path", ""),
+            )
+        except ExchangeError as exc:
+            raise ReportError(exc.code, exc.message) from exc
+        return FileResponse(path, media_type="application/octet-stream", filename=path.name)
+
+    @app.get("/v1/jobs/{job_id}/tasks/{task_id}/attempts/{attempt}/attachments/preview")
+    async def job_attachment_preview(
+        job_id: str, task_id: str, attempt: int, request: Request
+    ) -> JSONResponse:
+        """What is inside one attachment."""
+        authenticate(request)
+        return await _preview("attachment", job_id, task_id, attempt, request)
+
+    async def _preview(
+        kind: str, job_id: str, task_id: str, attempt: int, request: Request
+    ) -> JSONResponse:
+        """The shared body of the two preview routes.
+
+        One function because the answer is one shape: the dialog that renders a
+        log and the dialog that renders a screenshot are the same dialog, and
+        the kind of *file* is what differs, not the kind of route.
+        """
+        try:
+            payload = await asyncio.to_thread(
+                control.reports.preview,
+                job_id,
+                task_id,
+                attempt,
+                kind,
+                request.query_params.get("path", ""),
+            )
+        except ExchangeError as exc:
+            raise ReportError(exc.code, exc.message) from exc
+        return JSONResponse(content=payload)
 
 
 def _checked_name(value: Any, label: str) -> str:

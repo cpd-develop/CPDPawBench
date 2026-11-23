@@ -23,10 +23,12 @@ own, renders report files on demand, and hands links to
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
 import logging
+import mimetypes
 import secrets
 import threading
 import zipfile
@@ -35,7 +37,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from ..redact import url_without_credentials
 from .datasets import DatasetService, TaskSummary
-from .exchange import Exchange
+from .exchange import Exchange, ExchangeError
 from .runner import STATUS_FAILED, STATUS_MISSING, STATUS_PENDING, STATUS_SKIPPED
 from .schedule import Clock, SystemClock
 from .store import Store
@@ -89,6 +91,38 @@ _REPORT_PROMPT_CHARS = 1200
 #: a second copy of that knowledge.
 _SLICE_KEYS = ("scenario", "capability", "complexity", "environment", "modality", "source")
 
+#: How much one preview may carry.  An artifact can be 64 MB (the exchange cap),
+#: and this answer is rendered inline in a dialog, so the ceiling lives here
+#: rather than in the browser: the point of the route is that the bytes never
+#: cross the wire in full.  Text is cut, not refused -- half a log still explains
+#: the failure -- and the answer says which it is.
+PREVIEW_TEXT_BYTES = 256 * 1024
+PREVIEW_IMAGE_BYTES = 2 * 1024 * 1024
+
+#: The three shapes a preview can take.  ``binary`` is a real answer, not a
+#: failure: a spreadsheet is neither text nor drawable, and "download it" is
+#: what a reader can act on.
+PREVIEW_TEXT = "text"
+PREVIEW_IMAGE = "image"
+PREVIEW_BINARY = "binary"
+
+#: Extensions the browser can draw, as a whitelist rather than by sniffing every
+#: format: an ``<img>`` handed bytes it cannot decode shows a broken icon, which
+#: is a worse answer than naming the file and offering the download.
+_IMAGE_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+    ".svg": "image/svg+xml",
+}
+
+#: How much of a file is read to decide whether it is text at all.  Small enough
+#: that a wrong guess costs nothing, large enough to clear a header.
+_SNIFF_BYTES = 4096
+
 
 class ReportError(ValueError):
     """A detail view that cannot be built, with the code the boundary maps."""
@@ -131,6 +165,7 @@ class Reports:
         job = self._job(job_id)
         rows = self.store.list_job_tasks(job_id)
         bodies = self._bodies(job_id)
+        roots = self._fixture_roots(job_id)
         artifacts = _artifacts_by_task(self.store, job_id)
         progress = _progress(rows)
         return {
@@ -156,7 +191,14 @@ class Reports:
             "score": _score(rows),
             "slices": _slices(rows, bodies),
             "tasks": [
-                self._task_entry(job_id, row, tier, bodies, artifacts.get(str(row["task_id"]), []))
+                self._task_entry(
+                    job_id,
+                    row,
+                    tier,
+                    bodies,
+                    roots,
+                    artifacts.get(str(row["task_id"]), []),
+                )
                 for row in rows
             ],
             "full_only": tier == SENSITIVITY_FULL,
@@ -178,6 +220,7 @@ class Reports:
             row,
             tier,
             self._bodies(job_id),
+            self._fixture_roots(job_id),
             self.store.list_artifacts(job_id, task_id=task_id),
         )
         entry["transcript"] = self.transcript(job_id, task_id, attempt=int(row["attempt"]))
@@ -400,6 +443,149 @@ class Reports:
             )
         return path
 
+    # ── the question's own files, and what is inside either kind ──────────────
+
+    def attachment_file(
+        self, job_id: str, task_id: str, attempt: int, raw_path: str
+    ) -> Path:
+        """One attachment of a task, for the route that hands the bytes over.
+
+        Only a file the task *declares* can be asked for.  The session directory
+        beside an attempt also holds whatever the agent wrote there, and a route
+        that served any path under it would be a file browser over somebody
+        else's working directory.
+        """
+        if not str(raw_path or "").strip():
+            raise ReportError("empty_path", "an attachment needs a path", path=raw_path)
+        summary, root = self._task_fixtures(job_id, task_id)
+        declared = {str(item.get("dest", "")) for item in summary.workspace_files}
+        if str(raw_path) not in declared:
+            raise ReportError(
+                "attachment_not_found",
+                f"task {task_id} declares no attachment '{raw_path}'",
+                path=raw_path,
+            )
+        path, _ = self._locate_fixture(job_id, task_id, attempt, summary, root, str(raw_path))
+        return path
+
+    def preview(
+        self, job_id: str, task_id: str, attempt: int, kind: str, raw_path: str
+    ) -> dict[str, Any]:
+        """What is inside one file, as much of it as a dialog can show.
+
+        Both kinds come through the same two lookups the downloads use, so a
+        path refused there is refused here -- there is no second, looser way to
+        reach a file.  The answer says what the file *is* (``text``, ``image``,
+        ``binary``) rather than only what it says: a reader looking at a
+        spreadsheet needs to be told to download it, not shown mojibake.
+        """
+        if kind == "artifact":
+            target = self.artifact_file(job_id, task_id, attempt, raw_path)
+        elif kind == "attachment":
+            target = self.attachment_file(job_id, task_id, attempt, raw_path)
+        else:
+            raise ReportError(
+                "preview_kind_unsupported",
+                f"{kind!r} is not previewable; artifacts and attachments are",
+                allowed=["artifact", "attachment"],
+            )
+        return _preview_of(target, raw_path)
+
+    def _attachment_row(
+        self,
+        job_id: str,
+        summary: TaskSummary,
+        root: Path | None,
+        attempt: int,
+        item: Mapping[str, str],
+    ) -> dict[str, Any]:
+        """One line of the attachment list: what it is, how big, which copy."""
+        dest = str(item.get("dest", ""))
+        try:
+            path, copy_from = self._locate_fixture(
+                job_id, summary.task_id, attempt, summary, root, dest
+            )
+        except ReportError:
+            # Declared but not on disk.  Listed anyway -- the manifest says the
+            # agent was given it, and hiding the row would hide that fact.
+            return {"path": dest, "size": None, "copy": None}
+        return {"path": dest, "size": path.stat().st_size, "copy": copy_from}
+
+    def _locate_fixture(
+        self,
+        job_id: str,
+        task_id: str,
+        attempt: int,
+        summary: TaskSummary,
+        root: Path | None,
+        dest: str,
+    ) -> tuple[Path, str]:
+        """The dataset's own file, else the copy this attempt laid down.
+
+        The dataset first, because that is the question as it was written.  The
+        per-attempt copy second, because it is what the agent actually had in
+        front of it -- and the only survivor when a package has been pruned or a
+        fixture edited away since the run.
+        """
+        if root is not None:
+            try:
+                source = self.exchange.fixture_for(summary, root, dest)
+            except ExchangeError:
+                source = None
+            if source is not None and source.is_file():
+                return source, "dataset"
+        laid_down = self.exchange.session_file(job_id, task_id, attempt, dest)
+        if laid_down.is_file():
+            return laid_down, "attempt"
+        raise ReportError(
+            "attachment_not_found",
+            f"task {task_id} attempt {attempt} has no attachment '{dest}'",
+            path=dest,
+        )
+
+    def _task_fixtures(self, job_id: str, task_id: str) -> tuple[TaskSummary, Path | None]:
+        """The summary that declares this task's attachments, and its dataset root."""
+        for row in self.store.list_job_datasets(job_id):
+            dataset_id = str(row["dataset_id"])
+            try:
+                record = self.datasets.get(dataset_id)
+                for summary in self.datasets.task_summaries(record):
+                    if summary.task_id == task_id:
+                        return summary, self.datasets.root_for(dataset_id)
+            except Exception as exc:  # same tolerance as _bodies, same reason
+                logger.warning(
+                    "attachment lookup skipped a dataset",
+                    extra={"job_id": job_id, "dataset_id": dataset_id, "error": repr(exc)},
+                )
+                continue
+        raise ReportError(
+            "attachment_not_found",
+            f"no dataset this job ran with still declares '{task_id}'",
+            task_id=task_id,
+        )
+
+    def _fixture_roots(self, job_id: str) -> dict[str, Path]:
+        """Task id -> the dataset root its ``workspace_files`` are relative to.
+
+        Built once per detail view: the alternative is a dataset scan per task
+        per attachment, and a 200-task report would do that two hundred times.
+        """
+        roots: dict[str, Path] = {}
+        for row in self.store.list_job_datasets(job_id):
+            dataset_id = str(row["dataset_id"])
+            try:
+                record = self.datasets.get(dataset_id)
+                root = self.datasets.root_for(dataset_id)
+                for summary in self.datasets.task_summaries(record):
+                    roots.setdefault(summary.task_id, root)
+            except Exception as exc:
+                logger.warning(
+                    "fixture roots incomplete",
+                    extra={"job_id": job_id, "dataset_id": dataset_id, "error": repr(exc)},
+                )
+                continue
+        return roots
+
     def _render(
         self,
         fmt: str,
@@ -425,6 +611,7 @@ class Reports:
         row: Mapping[str, Any],
         tier: str,
         bodies: Mapping[str, tuple[TaskSummary, Any]],
+        roots: Mapping[str, Path],
         recorded: Sequence[Mapping[str, Any]],
     ) -> dict[str, Any]:
         task_id = str(row["task_id"])
@@ -468,6 +655,14 @@ class Reports:
             entry["name"] = summary.name
             entry["labels"] = dict(summary.labels)
             entry["has_attachments"] = summary.has_attachments
+            # The question's own files.  Listed at both tiers, like the prompt
+            # and the artifact list: what was handed to the agent is part of
+            # what was asked, and a reader who cannot see the attachment cannot
+            # judge an answer about it.
+            entry["attachments"] = [
+                self._attachment_row(job_id, summary, roots.get(task_id), attempt, item)
+                for item in summary.workspace_files
+            ]
         if task is not None:
             entry["prompt"] = task.prompt
         if tier == SENSITIVITY_FULL:
@@ -942,6 +1137,88 @@ def _digest_and_size(path: Path) -> tuple[str, int]:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest(), path.stat().st_size
+
+
+def _preview_of(target: Path, raw_path: str) -> dict[str, Any]:
+    """One file, as much of it as a dialog can show, and what it is.
+
+    Three answers, decided in this order: an image extension is drawn, anything
+    else that reads as UTF-8 is shown as text, and the rest is named a binary so
+    the reader is sent to the download instead of to a wall of replacement
+    characters.  ``shown_bytes`` is what came back, not what the file is --
+    those differ whenever a cap applied, and a reader who sees the two numbers
+    can tell whether they are looking at the whole file.
+    """
+    size = target.stat().st_size
+    suffix = target.suffix.lower()
+    if suffix in _IMAGE_TYPES:
+        media_type = _IMAGE_TYPES[suffix]
+        if size > PREVIEW_IMAGE_BYTES:
+            # ``image`` is still the truth about the file; nothing is inlined.
+            return {
+                "path": raw_path,
+                "kind": PREVIEW_IMAGE,
+                "media_type": media_type,
+                "bytes": size,
+                "shown_bytes": 0,
+                "truncated": True,
+            }
+        data = target.read_bytes()
+        return {
+            "path": raw_path,
+            "kind": PREVIEW_IMAGE,
+            "media_type": media_type,
+            "bytes": size,
+            "shown_bytes": len(data),
+            "truncated": False,
+            "data_url": f"data:{media_type};base64,{base64.b64encode(data).decode('ascii')}",
+        }
+    if not _decodes_as_text(_head_of(target, _SNIFF_BYTES)):
+        return {
+            "path": raw_path,
+            "kind": PREVIEW_BINARY,
+            "media_type": mimetypes.guess_type(target.name)[0] or "application/octet-stream",
+            "bytes": size,
+            "shown_bytes": 0,
+            "truncated": False,
+        }
+    trimmed = size > PREVIEW_TEXT_BYTES
+    data = _head_of(target, PREVIEW_TEXT_BYTES) if trimmed else target.read_bytes()
+    return {
+        "path": raw_path,
+        "kind": PREVIEW_TEXT,
+        "media_type": "text/plain; charset=utf-8",
+        "bytes": size,
+        "shown_bytes": len(data),
+        "truncated": trimmed,
+        # ``replace`` rather than refusing: the alternative is answering
+        # "binary" for a file that is text with one bad byte in it.
+        "text": data.decode("utf-8", "replace"),
+    }
+
+
+def _head_of(path: Path, limit: int) -> bytes:
+    with path.open("rb") as handle:
+        return handle.read(limit)
+
+
+def _decodes_as_text(head: bytes) -> bool:
+    """Whether a file's opening bytes read as UTF-8.
+
+    Sniffed rather than taken from the suffix: a ``.txt`` that is really a zip
+    decoded into mojibake is a worse answer than being told it is a binary.  A
+    character straddling the sniff window is not evidence of anything, which is
+    what the last-few-bytes allowance is for -- ``unexpected end of data`` is
+    what a cut multi-byte sequence raises.
+    """
+    if b"\x00" in head:
+        return False
+    try:
+        head.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        if exc.reason != "unexpected end of data" or exc.start < len(head) - 3:
+            return False
+    return True
 
 
 def _write(path: Path, data: bytes) -> None:

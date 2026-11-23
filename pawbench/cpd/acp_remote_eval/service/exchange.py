@@ -444,6 +444,26 @@ class Exchange:
                 return self.fixture_source(dataset_root, str(entry.get("source", "")))
         raise ExchangeError("asset_unknown_dest", f"{dest} is not an asset of this task")
 
+    def session_file(self, job_id: str, task_id: str, attempt: int, dest: str) -> Path:
+        """Where a fixture was laid down for one attempt, as the agent saw it.
+
+        The copy, not the dataset: this is the file that was in the working
+        directory while the run happened, so it is the one to answer "what did
+        the agent actually have in front of it" -- and the only one left when
+        the dataset has since been edited or deleted.  A path the upload rules
+        would refuse escapes here as the data plane's own error, exactly as a
+        download of it would.
+
+        Returns the location whether or not anything is there; the caller
+        checks ``is_file`` because "this attempt never lay that fixture down"
+        is its answer to give, not this one's.
+        """
+        return _safe_join(
+            self.attempt_dir(job_id, task_id, attempt) / "session",
+            _checked_dest(dest),
+            create_parent=False,
+        )
+
     # ── artifacts in ──────────────────────────────────────────────────────────
 
     def check_run_token(self, token: str, job_id: str, task_id: str, attempt: int) -> None:
