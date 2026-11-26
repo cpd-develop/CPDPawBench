@@ -288,8 +288,9 @@ def test_no_control_route_answers_without_a_token(client):
             checked += 1
 
     # 28: the catalogue drill-down added four GETs (one task, its markdown, and
-    # a fixture with its preview).
-    assert checked == 28, "one call per control route; a wrong count is a typo here"
+    # a fixture with its preview).  Two more are the beat page and its full
+    # content, both authenticated and both read on demand.
+    assert checked == 30, "one call per control route; a wrong count is a typo here"
 
 
 def test_revoking_in_the_file_takes_effect_without_a_restart(client, tokens, allowlist):

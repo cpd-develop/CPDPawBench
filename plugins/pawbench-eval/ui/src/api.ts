@@ -170,6 +170,17 @@ export interface JobDetail {
   tasks: TaskEntry[];
 }
 
+/**
+ * One line of the transcript, as the timeline draws it.
+ *
+ * The default page answers sizes: ``chars`` and ``result_chars`` say how much
+ * went past, ``tool`` says which tool ran, and the subject's own words stay on
+ * the server.  ``detail`` (the dashboard asks for it, the judge and the MCP
+ * tools never do) adds the fields below the line: ``text`` is the opening of
+ * what was said, ``output`` the opening of what came back, ``tool_call_id`` the
+ * handle that pairs a call with the updates that finish it.  Every added field
+ * is absent rather than empty when there is nothing to say.
+ */
 export interface TranscriptEvent {
   kind: string;
   at: string;
@@ -178,7 +189,13 @@ export interface TranscriptEvent {
   status?: string;
   args?: Record<string, unknown>;
   result_chars?: number;
+  name?: string;
+  tool_call_id?: string;
   text?: string;
+  text_truncated?: boolean;
+  output?: string;
+  output_truncated?: boolean;
+  steps?: number;
 }
 
 export interface TranscriptPage {
@@ -195,6 +212,77 @@ export interface TranscriptPage {
 
 export interface TaskDetail extends TaskEntry {
   transcript: TranscriptPage;
+}
+
+/**
+ * One fold of the transcript: the thing a person would name as one beat.
+ *
+ * ``from``/``to`` are the service's private line handles.  They travel with
+ * the beat so opening it can fetch its full content, but are never drawn as a
+ * cursor: the reader pages by ``index`` in the filtered list, not by raw line.
+ */
+export interface Beat {
+  key: string;
+  index: number;
+  voice: "user" | "assistant" | "thought" | "tool" | "plan" | "system";
+  label: string;
+  at: string;
+  from: number;
+  to: number;
+  events: number;
+  text: string;
+  text_truncated: boolean;
+  chars: number;
+  tool: string;
+  name: string;
+  status: string;
+  args: Record<string, string>;
+  result_chars: number;
+  output: string;
+  output_truncated: boolean;
+  steps: number;
+  kinds: string[];
+}
+
+export type BeatFilter = "all" | "talk" | "tool" | "thought" | "plan";
+
+export const BeatFilters: { value: BeatFilter; label: string }[] = [
+  { value: "all", label: "全部" },
+  { value: "talk", label: "对话" },
+  { value: "tool", label: "工具" },
+  { value: "thought", label: "思考" },
+  { value: "plan", label: "计划" },
+];
+
+export interface BeatsPage {
+  task_id: string;
+  attempt: number;
+  page: number;
+  size: number;
+  voice: BeatFilter;
+  total_beats: number;
+  next_page: number | null;
+  beats: Beat[];
+  counts: Record<BeatFilter, number>;
+  transcript_state: string;
+  damaged_events: number;
+  total_events: number;
+}
+
+/** The whole words of one beat, fetched only when a reader opens it. */
+export interface BeatContent {
+  task_id: string;
+  attempt: number;
+  index: number;
+  voice: BeatFilter;
+  kind?: string;
+  text: string;
+  args: Record<string, string>;
+  output: string;
+  text_truncated: boolean;
+  output_truncated: boolean;
+  transcript_state: string;
+  found: boolean;
 }
 
 export interface DatasetItem {
@@ -365,10 +453,54 @@ export const api = {
     ),
   results: (jobId: string) =>
     call<Record<string, unknown>>("GET", `/v1/jobs/${q(jobId)}/results`),
-  transcript: (jobId: string, taskId: string, attempt: number, cursor: number) =>
+  /**
+   * One page of a task's timeline.
+   *
+   * ``detail`` asks for the readable version -- bounded previews of speech and
+   * tool results -- because the dashboard is where a person argues with a score
+   * and "340 chars" cannot be argued with.  The judge-facing callers leave it
+   * off and keep the size-only page.
+   */
+  transcript: (jobId: string, taskId: string, attempt: number, cursor: number, detail = false) =>
     call<TranscriptPage>(
       "GET",
-      `/v1/jobs/${q(jobId)}/transcript?task_id=${q(taskId)}&attempt=${attempt}&cursor=${cursor}`,
+      `/v1/jobs/${q(jobId)}/transcript?task_id=${q(taskId)}&attempt=${attempt}&cursor=${cursor}` +
+        (detail ? "&detail=1" : ""),
+    ),
+
+  /**
+   * One page of the run's beats, folded on the service.
+   *
+   * The reader pages by beat -- ten sentences, not ten notifications -- and
+   * filters on the same folded list, so a page of "工具" holds ten tool calls
+   * rather than ten lines of which none may be a tool.  Raw line cursors stay
+   * behind the service; a beat is named by its index in the filtered list.
+   */
+  beats: (
+    jobId: string,
+    taskId: string,
+    attempt: number,
+    page: number,
+    size: number,
+    voice: BeatFilter,
+  ) =>
+    call<BeatsPage>(
+      "GET",
+      `/v1/jobs/${q(jobId)}/beats?task_id=${q(taskId)}&attempt=${attempt}` +
+        `&page=${page}&size=${size}&voice=${q(voice)}`,
+    ),
+  /** Complete text, arguments and result of one opened beat. */
+  beatContent: (
+    jobId: string,
+    taskId: string,
+    attempt: number,
+    index: number,
+    voice: BeatFilter,
+  ) =>
+    call<BeatContent>(
+      "GET",
+      `/v1/jobs/${q(jobId)}/beats/content?task_id=${q(taskId)}&attempt=${attempt}` +
+        `&index=${index}&voice=${q(voice)}`,
     ),
 
   /**

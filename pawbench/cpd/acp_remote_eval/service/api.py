@@ -49,7 +49,14 @@ from .datasets import DatasetError, DatasetService
 from .exchange import Exchange, ExchangeError
 from .jobs import JobService, SubmissionError
 from .queue import ALL_STATUSES, QueueError
-from .reports import DEFAULT_TRANSCRIPT_PAGE, ReportError, Reports
+from .reports import (
+    BEAT_PAGE_SIZES,
+    BEAT_VOICES,
+    DEFAULT_BEAT_PAGE,
+    DEFAULT_TRANSCRIPT_PAGE,
+    ReportError,
+    Reports,
+)
 from .schedule import WindowError
 
 logger = logging.getLogger(__name__)
@@ -141,6 +148,9 @@ _CONTROL_STATUS: dict[str, int] = {
     "env_fingerprint_invalid": 400,
     "env_fingerprint_too_large": 400,
     "limit_invalid": 400,
+    "page_invalid": 400,
+    "size_invalid": 400,
+    "voice_invalid": 400,
     "queue_pos_invalid": 400,
     "reorder_field_unknown": 400,
     "reorder_needs_one_target": 400,
@@ -927,7 +937,15 @@ def _add_control_routes(app: FastAPI, control: ControlPlane) -> None:
 
     @app.get("/v1/jobs/{job_id}/transcript")
     async def job_transcript(job_id: str, request: Request) -> JSONResponse:
-        """One page of one task's timeline (requirement 8's paging rule)."""
+        """One page of one task's timeline (requirement 8's paging rule).
+
+        ``detail=1`` is the dashboard asking for the readable version of the same
+        page -- bounded previews of what was said and what came back, instead of
+        only sizes.  It is a query flag rather than a second route because it is
+        the same file, the same window and the same rules; only the summariser's
+        ceiling changes, and a caller that does not ask reads exactly what it read
+        before.
+        """
         authenticate(request)
         query = request.query_params
         task_id = query.get("task_id") or ""
@@ -945,6 +963,61 @@ def _add_control_routes(app: FastAPI, control: ControlPlane) -> None:
                 attempt=_attempt_of(query.get("attempt")) or 1,
                 cursor=_cursor_of(query.get("cursor")),
                 limit=_limit_of(query.get("limit")) or DEFAULT_TRANSCRIPT_PAGE,
+                detail=_flag_of(query.get("detail")),
+            )
+        )
+
+    @app.get("/v1/jobs/{job_id}/beats")
+    async def job_beats(job_id: str, request: Request) -> JSONResponse:
+        """One page of the run folded into beats, the way a reader tells it.
+
+        Paging by beat rather than by raw notification is the whole point: a
+        run of twenty thought chunks is one thought, and the reader's "next"
+        should land on the next thing said, not the next fragment of the same
+        sentence.  The raw line cursor stays inside the service; the only
+        handle a client holds is the beat's index in its filtered list.
+        """
+        authenticate(request)
+        query = request.query_params
+        task_id = query.get("task_id") or ""
+        if not task_id:
+            raise SubmissionError(
+                "field_type_invalid",
+                "a trace is per task: pass task_id",
+                field="task_id",
+            )
+        return JSONResponse(
+            content=await asyncio.to_thread(
+                control.reports.trace,
+                job_id,
+                task_id,
+                attempt=_attempt_of(query.get("attempt")) or 1,
+                page=_page_of(query.get("page")),
+                size=_beat_size_of(query.get("size")),
+                voice=_voice_filter_of(query.get("voice")),
+            )
+        )
+
+    @app.get("/v1/jobs/{job_id}/beats/content")
+    async def job_beat_content(job_id: str, request: Request) -> JSONResponse:
+        """The complete words of one beat, fetched only when it is opened."""
+        authenticate(request)
+        query = request.query_params
+        task_id = query.get("task_id") or ""
+        if not task_id:
+            raise SubmissionError(
+                "field_type_invalid",
+                "a trace is per task: pass task_id",
+                field="task_id",
+            )
+        return JSONResponse(
+            content=await asyncio.to_thread(
+                control.reports.trace_content,
+                job_id,
+                task_id,
+                attempt=_attempt_of(query.get("attempt")) or 1,
+                index=_cursor_of(query.get("index")),
+                voice=_voice_filter_of(query.get("voice")),
             )
         )
 
@@ -1113,6 +1186,49 @@ def _attempt_of(raw: str | None) -> int | None:
     if not raw.isdigit() or int(raw) < 1:
         raise SubmissionError("attempt_invalid", f"attempt must be 1 or more, got {raw!r}")
     return int(raw)
+
+
+def _page_of(raw: str | None) -> int:
+    """A one-based page number for the beat view."""
+    if raw in (None, ""):
+        return 1
+    if not raw.isdigit() or int(raw) < 1:
+        raise SubmissionError("page_invalid", f"page must be a positive integer, got {raw!r}")
+    return int(raw)
+
+
+def _beat_size_of(raw: str | None) -> int:
+    """Beats per page: only the three sizes the segmented control offers."""
+    if raw in (None, ""):
+        return DEFAULT_BEAT_PAGE
+    if not raw.isdigit() or int(raw) not in BEAT_PAGE_SIZES:
+        raise SubmissionError(
+            "size_invalid",
+            f"size must be one of {', '.join(str(n) for n in BEAT_PAGE_SIZES)}, got {raw!r}",
+        )
+    return int(raw)
+
+
+def _voice_filter_of(raw: str | None) -> str:
+    if raw in (None, ""):
+        return "all"
+    value = str(raw).strip().casefold()
+    if value not in BEAT_VOICES:
+        raise SubmissionError(
+            "voice_invalid",
+            f"voice must be one of {', '.join(BEAT_VOICES)}, got {raw!r}",
+        )
+    return value
+
+
+def _flag_of(raw: str | None) -> bool:
+    """A query flag that has to be asked for.
+
+    Deliberately not "anything but ``0`` is true": a typo'd value would then
+    widen a payload nobody meant to widen, and widening is the direction that
+    costs bytes and carries the subject's own words.
+    """
+    return str(raw or "").strip().casefold() in {"1", "true", "yes", "on"}
 
 
 def _position_of(raw: Any) -> float | None:

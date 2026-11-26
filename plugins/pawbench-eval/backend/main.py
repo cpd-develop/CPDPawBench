@@ -20,6 +20,7 @@ dashboard is broken" rather than "the mapping is stale".
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import logging
 import os
@@ -122,6 +123,57 @@ def _token_hint(token: str) -> str:
     if len(token) <= 8:
         return "*" * len(token)
     return f"{token[:4]}…{token[-4:]}"
+
+
+# ── MCP client: derived from the settings above ───────────────────────────
+
+_SYNC_MODULE: Any = None
+
+
+def _mcp_sync() -> Any:
+    """Load ``mcp_sync.py`` from beside this file, once.
+
+    ``import mcp_sync`` would be resolved by whatever the host's plugin loader
+    happens to leave on ``sys.path``, which is not the same thing the test
+    harness that imports this module off disk sets up.  ``__file__`` is the one
+    anchor both agree on -- it is also how ``data/config.json`` is found.
+    """
+    global _SYNC_MODULE
+    if _SYNC_MODULE is None:
+        spec = importlib.util.spec_from_file_location(
+            "pawbench_eval_mcp_sync",
+            Path(__file__).resolve().parent / "mcp_sync.py",
+        )
+        if spec is None or spec.loader is None:
+            raise ImportError("mcp_sync.py is missing beside the backend")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _SYNC_MODULE = module
+    return _SYNC_MODULE
+
+
+async def _sync_mcp(*, force: bool) -> dict[str, str]:
+    """Point the host's ``pawbench-eval`` MCP client at our service.
+
+    The ``pawbench-datasets`` skill is gated on that client, so "the skill is
+    missing" and "MCP was never configured" are the same problem with two names.
+    Saving 配置 settles both: this runs on every save, on startup, and for each
+    workspace an agent gets created in, and :mod:`mcp_sync` does the writing.
+
+    Never raises.  A dashboard that cannot write an MCP card is still a working
+    dashboard, and a 500 on save would say otherwise.
+    """
+    base, token, _ = _effective()
+    if not (base and token):
+        logger.info(
+            "[pawbench-eval] MCP client not configured yet: no service address or token",
+        )
+        return {}
+    try:
+        return await _mcp_sync().sync_all(base, token, force=force)
+    except Exception as exc:  # noqa: BLE001 - see the docstring
+        logger.warning("[pawbench-eval] MCP client sync skipped: %s", exc)
+        return {}
 
 
 # ── upstream ──────────────────────────────────────────────────────────────
@@ -283,6 +335,9 @@ async def write_config(request: Request) -> dict[str, Any]:
         stored = _write_file_config({"subject": ""})
     base, token, subject = _effective()
     logger.info("[pawbench-eval] connection saved (base=%s, token=%s)", base, bool(token))
+    # The saved token has to reach the MCP client too, or rotating it would
+    # leave the skill authenticating with the previous one until a restart.
+    await _sync_mcp(force=True)
     return {
         "base_url": base,
         "has_token": bool(token),
@@ -478,6 +533,63 @@ async def check_service_on_launch() -> None:
         base,
         "configured" if token else "MISSING",
     )
+
+
+@app.hook("startup", priority=90)
+async def configure_mcp_on_startup() -> None:
+    """Reconcile the MCP client from the settings already on disk.
+
+    This is the install path: ``qwenpaw plugin install`` copies the tree and
+    loads it, so a plugin that only wrote the client when somebody saved the
+    form would need that click before the skill existed.  A machine configured
+    through ``PAWBENCH_EVAL_BASE_URL`` / ``PAWBENCH_EVAL_TOKEN`` has no click at
+    all and is covered here and nowhere else.
+
+    Runs before the page's own probe (priority 90 vs 100) so the log reads in
+    the order somebody debugging it would ask: is the client configured, then
+    is the service up.
+    """
+    await _sync_mcp(force=False)
+
+
+@app.on_workspace_created
+async def configure_mcp_for_new_workspace(workspace_info: dict) -> None:
+    """Newly created agents get the client too, without a restart.
+
+    Skills ship per workspace; an MCP client registered in the ones that
+    existed at install time leaves the skill gated in every agent added later,
+    and the gate is silent -- the skill is simply absent from the list.
+    """
+    base, token, _ = _effective()
+    if not (base and token):
+        return
+    try:
+        workspace = _mcp_sync().workspace_for(workspace_info or {})
+    except Exception as exc:  # noqa: BLE001 - resolving is best effort
+        logger.warning("[pawbench-eval] could not resolve the new workspace: %s", exc)
+        return
+    if workspace is None:
+        # The next startup reconciles every workspace anyway; this hook is the
+        # "without a restart" path, not the only one.
+        logger.info("[pawbench-eval] new workspace not resolvable yet, leaving it to startup")
+        return
+    try:
+        await _mcp_sync().sync_workspace(workspace, base, token, force=True)
+    except Exception as exc:  # noqa: BLE001 - one workspace is not the app
+        logger.warning("[pawbench-eval] could not configure MCP for new workspace: %s", exc)
+
+
+@app.on_uninstall
+async def remove_mcp_on_uninstall() -> None:
+    """Leave no client behind pointing at a service nobody is watching.
+
+    A card that outlives its dashboard keeps a skill gated on a dead endpoint
+    and keeps an HTTP driver retrying it at every startup.
+    """
+    try:
+        await _mcp_sync().remove_all()
+    except Exception as exc:  # noqa: BLE001 - uninstall must not fail on this
+        logger.warning("[pawbench-eval] could not remove MCP client: %s", exc)
 
 
 #: What the plugin loader looks for.

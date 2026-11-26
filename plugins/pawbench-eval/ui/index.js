@@ -496,7 +496,7 @@ pre {
 `;
 
 // src/styles.css
-var styles_default = "/**\n * Page-local layout, on top of the design system's atoms.\n *\n * Nothing here names a colour: every value is a semantic token from\n * `designsys/colors_and_type.css`, which carries both themes.  A rule that\n * needed a colour the tokens do not offer would be a signal that the rule is\n * wrong, not that a literal is missing.\n *\n * The one deviation from `.ds-card` is deliberate: `.ds-card` lights up on\n * hover, which is right for a card you can click and wrong for a panel you\n * read.  Static surfaces therefore use `.pbe-panel`, and interactive ones add\n * `.pbe-panel--link`.\n */\n\n/* ── shell ─────────────────────────────────────────────────────────────── */\n\n.pbe-root {\n  display: block;\n  min-height: 100%;\n  background: var(--bg-base-secondary);\n  color: var(--text-default);\n  font-family: var(--body-base-font-family);\n  font-size: var(--body-base-font-size);\n  line-height: var(--body-base-line-height);\n  -webkit-font-smoothing: antialiased;\n}\n\n/*\n * The rail and the module sit in one row that this file owns.\n *\n * Deliberately not expressed on `.pbe-root`: between the two there is antd's\n * `App` wrapper, whose display is the host build's business.  Relying on it\n * being a pass-through produced a page whose content started 100vh down the\n * screen — one row for the rail, another for everything else.\n */\n.pbe-shell {\n  display: flex;\n  flex-wrap: nowrap;\n  align-items: flex-start;\n  min-height: 100%;\n}\n\n.pbe-rail {\n  position: sticky;\n  top: 0;\n  display: flex;\n  flex: 0 0 var(--layout-sidebar);\n  flex-direction: column;\n  gap: var(--spacer-16);\n  width: var(--layout-sidebar);\n  height: 100vh;\n  padding: var(--spacer-16) var(--spacer-12);\n  border-right: 1px solid var(--border-neutral-l1);\n  background: var(--bg-menu);\n  box-sizing: border-box;\n}\n\n.pbe-rail__brand {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-8);\n  padding: 0 var(--spacer-8);\n  color: var(--text-default);\n  font-family: var(--font-family-heading);\n  font-size: var(--body-lg-font-size);\n  font-weight: 600;\n}\n\n.pbe-rail__nav {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n}\n\n.pbe-nav-item {\n  display: flex;\n  align-items: center;\n  gap: var(--sb-item-gap);\n  width: 100%;\n  height: var(--nav-item-h);\n  padding: 0 var(--sb-item-pad-x);\n  border: 0;\n  border-radius: var(--radius-8);\n  background: transparent;\n  color: var(--text-default);\n  font-family: inherit;\n  font-size: var(--body-base-font-size);\n  text-align: left;\n  cursor: pointer;\n}\n\n.pbe-nav-item:hover {\n  background: var(--bg-overlay-l1);\n}\n\n.pbe-nav-item[aria-current=\"page\"] {\n  background: var(--bg-overlay-l2);\n  font-weight: 500;\n}\n\n.pbe-nav-item__count {\n  margin-left: auto;\n  color: var(--text-tertiary);\n  font-family: var(--code-editor-font-family);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-rail__foot {\n  margin-top: auto;\n  padding: var(--spacer-12);\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-12);\n  background: var(--bg-base-default);\n  text-align: left;\n  cursor: pointer;\n  font: inherit;\n  color: inherit;\n  width: 100%;\n}\n\n.pbe-rail__foot:hover {\n  background: var(--bg-card-hover);\n}\n\n.pbe-main {\n  flex: 1 1 auto;\n  min-width: 0;\n  padding: var(--spacer-24) var(--spacer-32) var(--spacer-32);\n}\n\n/* ── page heading ──────────────────────────────────────────────────────── */\n\n.pbe-head {\n  display: flex;\n  align-items: flex-start;\n  gap: var(--spacer-16);\n  margin-bottom: var(--spacer-24);\n  /* The host parks a floating control (… and collapse) in the top-right corner\n     of every route; without this the primary button sits under it. */\n  padding-right: 76px;\n}\n\n.pbe-head__text {\n  min-width: 0;\n}\n\n.pbe-head__title {\n  margin: 0;\n  color: var(--text-default);\n  font-family: var(--font-family-heading);\n  font-size: var(--heading-lg-font-size);\n  font-weight: 600;\n  line-height: var(--heading-lg-line-height);\n}\n\n.pbe-head__sub {\n  margin-top: var(--spacer-4);\n  color: var(--text-secondary);\n  font-size: var(--body-base-font-size);\n}\n\n.pbe-head__actions {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin-left: auto;\n}\n\n/* ── surfaces ──────────────────────────────────────────────────────────── */\n\n.pbe-panel {\n  background: var(--bg-base-default);\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-12);\n}\n\n.pbe-panel--pad {\n  padding: var(--spacer-20);\n}\n\n.pbe-panel--link {\n  cursor: pointer;\n  transition: background-color 0.15s ease;\n}\n\n.pbe-panel--link:hover {\n  background: var(--bg-card-hover);\n}\n\n.pbe-grid {\n  display: grid;\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n  gap: var(--spacer-16);\n  align-items: start;\n}\n\n.pbe-grid--wide {\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n}\n\n@media (max-width: 1000px) {\n  .pbe-grid,\n  .pbe-grid--wide {\n    grid-template-columns: minmax(0, 1fr);\n  }\n}\n\n.pbe-span-all {\n  grid-column: 1 / -1;\n}\n\n/* ── metric row (C2 tier) ──────────────────────────────────────────────── */\n\n.pbe-metrics {\n  display: grid;\n  grid-template-columns: repeat(3, minmax(0, 1fr));\n  gap: var(--spacer-16);\n  margin-bottom: var(--spacer-24);\n}\n\n@media (max-width: 1000px) {\n  .pbe-metrics {\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n  }\n}\n\n@media (max-width: 680px) {\n  .pbe-metrics {\n    grid-template-columns: minmax(0, 1fr);\n  }\n}\n\n.pbe-metric {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-12);\n  height: 72px;\n  padding: var(--spacer-16);\n  box-sizing: border-box;\n}\n\n.pbe-tile {\n  display: inline-flex;\n  flex: 0 0 44px;\n  align-items: center;\n  justify-content: center;\n  width: 44px;\n  height: 44px;\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-8);\n  background: transparent;\n  color: var(--text-secondary);\n}\n\n.pbe-metric__body {\n  min-width: 0;\n}\n\n.pbe-metric__title {\n  color: var(--text-default);\n  font-size: var(--body-base-font-size);\n  font-weight: 600;\n  line-height: 20px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.pbe-metric__desc {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-6);\n  height: 20px;\n  color: var(--text-secondary);\n  font-size: var(--body-sm-font-size);\n  line-height: 20px;\n}\n\n.pbe-figure {\n  color: var(--text-default);\n  font-family: var(--font-family-metric);\n  font-variant-numeric: tabular-nums;\n  font-weight: 500;\n}\n\n.pbe-mono {\n  font-family: var(--code-editor-font-family);\n  font-variant-numeric: tabular-nums;\n}\n\n/* ── toolbar (filter / search, single row, labels inline) ──────────────── */\n\n.pbe-toolbar {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: var(--spacer-12);\n  margin-bottom: var(--spacer-16);\n}\n\n.pbe-toolbar__label {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  white-space: nowrap;\n}\n\n.pbe-toolbar__right {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin-left: auto;\n}\n\n/* ── table ─────────────────────────────────────────────────────────────── */\n\n.pbe-table-wrap {\n  overflow: hidden;\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-12);\n  background: var(--bg-base-default);\n}\n\n.pbe-table .ant-table {\n  background: transparent;\n}\n\n.pbe-table .ant-table-thead > tr > th {\n  background: transparent;\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  font-weight: 500;\n  letter-spacing: var(--body-sm-letter-spacing);\n  border-bottom: 1px solid var(--border-neutral-l1);\n}\n\n.pbe-table .ant-table-thead > tr > th::before {\n  display: none;\n}\n\n.pbe-table .ant-table-tbody > tr > td {\n  border-bottom: 1px solid var(--border-neutral-l1);\n}\n\n.pbe-table .ant-table-tbody > tr:last-child > td {\n  border-bottom: 0;\n}\n\n.pbe-table .ant-table-tbody > tr {\n  cursor: pointer;\n}\n\n/* The row itself is the drill-down's link; a keyboard user must be able to\n   see where they are before pressing Enter on it. */\n.pbe-table .ant-table-tbody > tr:focus-visible {\n  outline: 2px solid var(--border-brand);\n  outline-offset: -2px;\n}\n\n.pbe-table__foot {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: var(--spacer-12);\n  padding: var(--spacer-12) var(--spacer-16);\n  border-top: 1px solid var(--border-neutral-l1);\n  color: var(--text-secondary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-cell-title {\n  color: var(--text-default);\n  font-weight: 500;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.pbe-cell-sub {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  line-height: var(--body-sm-line-height);\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n/* ── disclosure ────────────────────────────────────────────────────────── */\n\n/* A long block that opens closed.  The whole row is the button -- a 12px\n   chevron is a mean target -- and the state sits at the right end, after the\n   reader has decided the block is worth opening.  The label stays flush left\n   with the other sub-labels it sits among. */\n.pbe-disclosure {\n  display: flex;\n  width: 100%;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin: 0;\n  padding: var(--spacer-4) 0;\n  border: 0;\n  background: transparent;\n  color: var(--text-tertiary);\n  font-family: inherit;\n  font-size: var(--body-sm-font-size);\n  line-height: var(--body-sm-line-height);\n  text-align: left;\n  cursor: pointer;\n}\n\n.pbe-disclosure:focus-visible {\n  outline: 2px solid var(--border-brand);\n  outline-offset: 2px;\n  border-radius: var(--radius-4);\n}\n\n.pbe-disclosure__label {\n  color: var(--text-secondary);\n}\n\n.pbe-disclosure__note {\n  margin-left: auto;\n  color: var(--text-tertiary);\n  font-variant-numeric: tabular-nums;\n}\n\n.pbe-disclosure__act {\n  color: var(--text-tertiary);\n}\n\n.pbe-disclosure__chevron {\n  flex: none;\n  color: var(--text-tertiary);\n  transition: transform 140ms ease;\n}\n\n.pbe-disclosure:hover .pbe-disclosure__label,\n.pbe-disclosure:hover .pbe-disclosure__act,\n.pbe-disclosure:hover .pbe-disclosure__chevron {\n  color: var(--text-default);\n}\n\n.pbe-disclosure[aria-expanded=\"true\"] .pbe-disclosure__chevron {\n  transform: rotate(90deg);\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .pbe-disclosure__chevron {\n    transition: none;\n  }\n}\n\n/* ── report ────────────────────────────────────────────────────────────── */\n\n.pbe-meta {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin-top: var(--spacer-8);\n  color: var(--text-secondary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-meta__sep {\n  color: var(--text-tertiary);\n}\n\n.pbe-scoreboard {\n  display: grid;\n  grid-template-columns: repeat(4, minmax(0, 1fr));\n  margin-bottom: var(--spacer-24);\n}\n\n@media (max-width: 900px) {\n  .pbe-scoreboard {\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n  }\n}\n\n.pbe-scoreboard__cell {\n  padding: 0 var(--spacer-16);\n  border-left: 1px solid var(--border-neutral-l1);\n}\n\n.pbe-scoreboard__cell:first-child {\n  border-left: 0;\n  padding-left: 0;\n}\n\n.pbe-scoreboard__label {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-scoreboard__value {\n  margin-top: var(--spacer-4);\n  color: var(--text-default);\n  font-family: var(--font-family-metric);\n  font-variant-numeric: tabular-nums;\n  font-size: var(--heading-md-font-size, 20px);\n  font-weight: 600;\n}\n\n.pbe-block {\n  padding: var(--spacer-12) var(--spacer-16);\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-8);\n  background: var(--bg-base-tertiary);\n  color: var(--text-default);\n  font-family: var(--code-editor-font-family);\n  font-size: var(--body-sm-font-size);\n  line-height: 1.6;\n  white-space: pre-wrap;\n  word-break: break-word;\n  overflow-x: auto;\n}\n\n.pbe-prompt {\n  max-height: 320px;\n  overflow-y: auto;\n  margin: 0;\n}\n\n.pbe-facts {\n  display: grid;\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n  gap: var(--spacer-12) var(--spacer-24);\n}\n\n@media (max-width: 760px) {\n  .pbe-facts {\n    grid-template-columns: minmax(0, 1fr);\n  }\n}\n\n.pbe-fact__label {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-fact__value {\n  margin-top: 2px;\n  color: var(--text-default);\n  word-break: break-word;\n}\n\n.pbe-rows {\n  display: flex;\n  flex-direction: column;\n}\n\n.pbe-row {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-12);\n  padding: var(--spacer-8) 0;\n  border-bottom: 1px solid var(--border-neutral-l1);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-row:last-child {\n  border-bottom: 0;\n}\n\n.pbe-row__grow {\n  flex: 1 1 auto;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/*\n * A row whose bytes can be opened.  It is a real `<button>` -- so it takes\n * focus and answers the keyboard -- which means undoing the browser's default\n * chrome rather than decorating a div, and keeping the row's own box so the\n * list does not jump when only some rows are openable.\n */\n.pbe-row--file {\n  width: calc(100% + var(--spacer-16));\n  margin: 0 calc(var(--spacer-8) * -1);\n  border: 0;\n  border-bottom: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-4);\n  background: none;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n  padding-left: var(--spacer-8);\n  padding-right: var(--spacer-8);\n}\n\n.pbe-row--file:hover {\n  background: var(--bg-card-hover);\n}\n\n.pbe-row--file:focus-visible {\n  outline: 2px solid var(--border-brand);\n  outline-offset: -2px;\n}\n\n.pbe-section-title {\n  margin: 0 0 var(--spacer-12);\n  color: var(--text-default);\n  font-size: var(--body-base-font-size);\n  font-weight: 600;\n}\n\n.pbe-timeline {\n  display: flex;\n  flex-direction: column;\n}\n\n.pbe-timeline__item {\n  display: grid;\n  grid-template-columns: 88px 96px minmax(0, 1fr);\n  gap: var(--spacer-12);\n  padding: var(--spacer-8) 0;\n  border-bottom: 1px solid var(--border-neutral-l1);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-timeline__item:last-child {\n  border-bottom: 0;\n}\n\n.pbe-timeline__at {\n  color: var(--text-tertiary);\n  font-family: var(--code-editor-font-family);\n}\n\n@media (max-width: 760px) {\n  .pbe-timeline__item {\n    grid-template-columns: minmax(0, 1fr);\n    gap: var(--spacer-4);\n  }\n}\n\n/* ── form (label left, control right — the system default) ─────────────── */\n\n.pbe-field {\n  display: flex;\n  align-items: flex-start;\n  gap: var(--spacer-12);\n  margin-bottom: var(--spacer-16);\n}\n\n.pbe-field__label {\n  flex: none;\n  width: 92px;\n  padding-top: var(--spacer-6);\n  color: var(--text-secondary);\n  font-size: var(--body-base-font-size);\n  text-align: right;\n}\n\n.pbe-field__control {\n  flex: 1 1 auto;\n  min-width: 0;\n}\n\n.pbe-field__hint {\n  margin-top: var(--spacer-4);\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-fieldset {\n  margin-bottom: var(--spacer-24);\n}\n\n.pbe-fieldset__title {\n  margin-bottom: var(--spacer-12);\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  letter-spacing: 0.04em;\n}\n\n.pbe-empty {\n  padding: var(--spacer-32);\n  color: var(--text-tertiary);\n  text-align: center;\n}\n\n.pbe-copy {\n  display: inline-flex;\n  align-items: center;\n  gap: var(--spacer-6);\n  max-width: 100%;\n  padding: 0;\n  border: 0;\n  background: transparent;\n  color: var(--text-secondary);\n  font-family: var(--code-editor-font-family);\n  font-size: var(--body-sm-font-size);\n  cursor: pointer;\n}\n\n.pbe-copy:hover {\n  color: var(--text-default);\n}\n\n.pbe-copy__value {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/* ── status pill ───────────────────────────────────────────────────────── */\n\n.pbe-pill {\n  display: inline-flex;\n  align-items: center;\n  gap: var(--spacer-6);\n  height: 20px;\n  padding: 0 var(--spacer-8);\n  border: 1px solid transparent;\n  border-radius: var(--radius-4);\n  font-size: var(--body-xs-font-size);\n  line-height: 20px;\n  white-space: nowrap;\n}\n\n.pbe-pill__dot {\n  width: 6px;\n  height: 6px;\n  border-radius: 999px;\n  background: currentColor;\n}\n\n.pbe-pill--ok {\n  background: var(--status-success-surface-l1);\n  color: var(--status-success-default);\n}\n\n.pbe-pill--warn {\n  background: var(--status-warning-surface-l1);\n  color: var(--status-warning-default);\n}\n\n.pbe-pill--err {\n  background: var(--status-error-surface-l1);\n  color: var(--status-error-default);\n}\n\n.pbe-pill--info {\n  background: var(--status-primary-surface-l1);\n  color: var(--status-primary-default);\n}\n\n.pbe-pill--muted {\n  background: var(--bg-overlay-l1);\n  color: var(--text-secondary);\n}\n\n/* ── one file, opened ──────────────────────────────────────────────────── */\n\n.pbe-preview__title {\n  display: flex;\n  align-items: baseline;\n  gap: var(--spacer-12);\n  min-width: 0;\n}\n\n.pbe-preview__title > .pbe-mono {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/*\n * The height is a ceiling, not a size: a short file should make a short\n * dialog, and a long one should scroll inside this box instead of pushing the\n * footer off the screen.\n */\n.pbe-preview {\n  max-height: 58vh;\n  margin: 0;\n  overflow: auto;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n\n.pbe-preview__image {\n  display: block;\n  max-width: 100%;\n  max-height: 58vh;\n  margin: 0 auto;\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-8);\n  background: var(--bg-base-tertiary);\n  object-fit: contain;\n}\n\n/* Why the text below stops where it stops.  Above the block, because a reader\n   who starts scrolling should meet it before the scrollbar, not after. */\n.pbe-preview__note {\n  margin-bottom: var(--spacer-8);\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n";
+var styles_default = '/**\n * Page-local layout, on top of the design system\'s atoms.\n *\n * Nothing here names a colour: every value is a semantic token from\n * `designsys/colors_and_type.css`, which carries both themes.  A rule that\n * needed a colour the tokens do not offer would be a signal that the rule is\n * wrong, not that a literal is missing.\n *\n * The one deviation from `.ds-card` is deliberate: `.ds-card` lights up on\n * hover, which is right for a card you can click and wrong for a panel you\n * read.  Static surfaces therefore use `.pbe-panel`, and interactive ones add\n * `.pbe-panel--link`.\n */\n\n/* ── shell ─────────────────────────────────────────────────────────────── */\n\n.pbe-root {\n  display: block;\n  min-height: 100%;\n  background: var(--bg-base-secondary);\n  color: var(--text-default);\n  font-family: var(--body-base-font-family);\n  font-size: var(--body-base-font-size);\n  line-height: var(--body-base-line-height);\n  -webkit-font-smoothing: antialiased;\n}\n\n/*\n * The rail and the module sit in one row that this file owns.\n *\n * Deliberately not expressed on `.pbe-root`: between the two there is antd\'s\n * `App` wrapper, whose display is the host build\'s business.  Relying on it\n * being a pass-through produced a page whose content started 100vh down the\n * screen — one row for the rail, another for everything else.\n */\n.pbe-shell {\n  display: flex;\n  flex-wrap: nowrap;\n  align-items: flex-start;\n  min-height: 100%;\n}\n\n.pbe-rail {\n  position: sticky;\n  top: 0;\n  display: flex;\n  flex: 0 0 var(--layout-sidebar);\n  flex-direction: column;\n  gap: var(--spacer-16);\n  width: var(--layout-sidebar);\n  height: 100vh;\n  padding: var(--spacer-16) var(--spacer-12);\n  border-right: 1px solid var(--border-neutral-l1);\n  background: var(--bg-menu);\n  box-sizing: border-box;\n}\n\n.pbe-rail__brand {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-8);\n  padding: 0 var(--spacer-8);\n  color: var(--text-default);\n  font-family: var(--font-family-heading);\n  font-size: var(--body-lg-font-size);\n  font-weight: 600;\n}\n\n.pbe-rail__nav {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n}\n\n.pbe-nav-item {\n  display: flex;\n  align-items: center;\n  gap: var(--sb-item-gap);\n  width: 100%;\n  height: var(--nav-item-h);\n  padding: 0 var(--sb-item-pad-x);\n  border: 0;\n  border-radius: var(--radius-8);\n  background: transparent;\n  color: var(--text-default);\n  font-family: inherit;\n  font-size: var(--body-base-font-size);\n  text-align: left;\n  cursor: pointer;\n}\n\n.pbe-nav-item:hover {\n  background: var(--bg-overlay-l1);\n}\n\n.pbe-nav-item[aria-current="page"] {\n  background: var(--bg-overlay-l2);\n  font-weight: 500;\n}\n\n.pbe-nav-item__count {\n  margin-left: auto;\n  color: var(--text-tertiary);\n  font-family: var(--code-editor-font-family);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-rail__foot {\n  margin-top: auto;\n  padding: var(--spacer-12);\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-12);\n  background: var(--bg-base-default);\n  text-align: left;\n  cursor: pointer;\n  font: inherit;\n  color: inherit;\n  width: 100%;\n}\n\n.pbe-rail__foot:hover {\n  background: var(--bg-card-hover);\n}\n\n.pbe-main {\n  flex: 1 1 auto;\n  min-width: 0;\n  padding: var(--spacer-24) var(--spacer-32) var(--spacer-32);\n}\n\n/* ── page heading ──────────────────────────────────────────────────────── */\n\n.pbe-head {\n  display: flex;\n  align-items: flex-start;\n  gap: var(--spacer-16);\n  margin-bottom: var(--spacer-24);\n  /* The host parks a floating control (… and collapse) in the top-right corner\n     of every route; without this the primary button sits under it. */\n  padding-right: 76px;\n}\n\n.pbe-head__text {\n  min-width: 0;\n}\n\n.pbe-head__title {\n  margin: 0;\n  color: var(--text-default);\n  font-family: var(--font-family-heading);\n  font-size: var(--heading-lg-font-size);\n  font-weight: 600;\n  line-height: var(--heading-lg-line-height);\n}\n\n.pbe-head__sub {\n  margin-top: var(--spacer-4);\n  color: var(--text-secondary);\n  font-size: var(--body-base-font-size);\n}\n\n.pbe-head__actions {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin-left: auto;\n}\n\n/* ── surfaces ──────────────────────────────────────────────────────────── */\n\n.pbe-panel {\n  background: var(--bg-base-default);\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-12);\n}\n\n.pbe-panel--pad {\n  padding: var(--spacer-20);\n}\n\n.pbe-panel--link {\n  cursor: pointer;\n  transition: background-color 0.15s ease;\n}\n\n.pbe-panel--link:hover {\n  background: var(--bg-card-hover);\n}\n\n.pbe-grid {\n  display: grid;\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n  gap: var(--spacer-16);\n  align-items: start;\n}\n\n.pbe-grid--wide {\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n}\n\n@media (max-width: 1000px) {\n  .pbe-grid,\n  .pbe-grid--wide {\n    grid-template-columns: minmax(0, 1fr);\n  }\n}\n\n.pbe-span-all {\n  grid-column: 1 / -1;\n}\n\n/* ── metric row (C2 tier) ──────────────────────────────────────────────── */\n\n.pbe-metrics {\n  display: grid;\n  grid-template-columns: repeat(3, minmax(0, 1fr));\n  gap: var(--spacer-16);\n  margin-bottom: var(--spacer-24);\n}\n\n@media (max-width: 1000px) {\n  .pbe-metrics {\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n  }\n}\n\n@media (max-width: 680px) {\n  .pbe-metrics {\n    grid-template-columns: minmax(0, 1fr);\n  }\n}\n\n.pbe-metric {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-12);\n  height: 72px;\n  padding: var(--spacer-16);\n  box-sizing: border-box;\n}\n\n.pbe-tile {\n  display: inline-flex;\n  flex: 0 0 44px;\n  align-items: center;\n  justify-content: center;\n  width: 44px;\n  height: 44px;\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-8);\n  background: transparent;\n  color: var(--text-secondary);\n}\n\n.pbe-metric__body {\n  min-width: 0;\n}\n\n.pbe-metric__title {\n  color: var(--text-default);\n  font-size: var(--body-base-font-size);\n  font-weight: 600;\n  line-height: 20px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.pbe-metric__desc {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-6);\n  height: 20px;\n  color: var(--text-secondary);\n  font-size: var(--body-sm-font-size);\n  line-height: 20px;\n}\n\n.pbe-figure {\n  color: var(--text-default);\n  font-family: var(--font-family-metric);\n  font-variant-numeric: tabular-nums;\n  font-weight: 500;\n}\n\n.pbe-mono {\n  font-family: var(--code-editor-font-family);\n  font-variant-numeric: tabular-nums;\n}\n\n/* ── toolbar (filter / search, single row, labels inline) ──────────────── */\n\n.pbe-toolbar {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: var(--spacer-12);\n  margin-bottom: var(--spacer-16);\n}\n\n.pbe-toolbar__label {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  white-space: nowrap;\n}\n\n.pbe-toolbar__right {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin-left: auto;\n}\n\n/* ── table ─────────────────────────────────────────────────────────────── */\n\n.pbe-table-wrap {\n  overflow: hidden;\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-12);\n  background: var(--bg-base-default);\n}\n\n.pbe-table .ant-table {\n  background: transparent;\n}\n\n.pbe-table .ant-table-thead > tr > th {\n  background: transparent;\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  font-weight: 500;\n  letter-spacing: var(--body-sm-letter-spacing);\n  border-bottom: 1px solid var(--border-neutral-l1);\n}\n\n.pbe-table .ant-table-thead > tr > th::before {\n  display: none;\n}\n\n.pbe-table .ant-table-tbody > tr > td {\n  border-bottom: 1px solid var(--border-neutral-l1);\n}\n\n.pbe-table .ant-table-tbody > tr:last-child > td {\n  border-bottom: 0;\n}\n\n.pbe-table .ant-table-tbody > tr {\n  cursor: pointer;\n}\n\n/* The row itself is the drill-down\'s link; a keyboard user must be able to\n   see where they are before pressing Enter on it. */\n.pbe-table .ant-table-tbody > tr:focus-visible {\n  outline: 2px solid var(--border-brand);\n  outline-offset: -2px;\n}\n\n.pbe-table__foot {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: var(--spacer-12);\n  padding: var(--spacer-12) var(--spacer-16);\n  border-top: 1px solid var(--border-neutral-l1);\n  color: var(--text-secondary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-cell-title {\n  color: var(--text-default);\n  font-weight: 500;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.pbe-cell-sub {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  line-height: var(--body-sm-line-height);\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n/* ── disclosure ────────────────────────────────────────────────────────── */\n\n/* A long block that opens closed.  The whole row is the button -- a 12px\n   chevron is a mean target -- and the state sits at the right end, after the\n   reader has decided the block is worth opening.  The label stays flush left\n   with the other sub-labels it sits among. */\n.pbe-disclosure {\n  display: flex;\n  width: 100%;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin: 0;\n  padding: var(--spacer-4) 0;\n  border: 0;\n  background: transparent;\n  color: var(--text-tertiary);\n  font-family: inherit;\n  font-size: var(--body-sm-font-size);\n  line-height: var(--body-sm-line-height);\n  text-align: left;\n  cursor: pointer;\n}\n\n.pbe-disclosure:focus-visible {\n  outline: 2px solid var(--border-brand);\n  outline-offset: 2px;\n  border-radius: var(--radius-4);\n}\n\n.pbe-disclosure__label {\n  color: var(--text-secondary);\n}\n\n.pbe-disclosure__note {\n  margin-left: auto;\n  color: var(--text-tertiary);\n  font-variant-numeric: tabular-nums;\n}\n\n.pbe-disclosure__act {\n  color: var(--text-tertiary);\n}\n\n.pbe-disclosure__chevron {\n  flex: none;\n  color: var(--text-tertiary);\n  transition: transform 140ms ease;\n}\n\n.pbe-disclosure:hover .pbe-disclosure__label,\n.pbe-disclosure:hover .pbe-disclosure__act,\n.pbe-disclosure:hover .pbe-disclosure__chevron {\n  color: var(--text-default);\n}\n\n.pbe-disclosure[aria-expanded="true"] .pbe-disclosure__chevron {\n  transform: rotate(90deg);\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .pbe-disclosure__chevron {\n    transition: none;\n  }\n}\n\n/* ── report ────────────────────────────────────────────────────────────── */\n\n.pbe-meta {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin-top: var(--spacer-8);\n  color: var(--text-secondary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-meta__sep {\n  color: var(--text-tertiary);\n}\n\n.pbe-scoreboard {\n  display: grid;\n  grid-template-columns: repeat(4, minmax(0, 1fr));\n  margin-bottom: var(--spacer-24);\n}\n\n@media (max-width: 900px) {\n  .pbe-scoreboard {\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n  }\n}\n\n.pbe-scoreboard__cell {\n  padding: 0 var(--spacer-16);\n  border-left: 1px solid var(--border-neutral-l1);\n}\n\n.pbe-scoreboard__cell:first-child {\n  border-left: 0;\n  padding-left: 0;\n}\n\n.pbe-scoreboard__label {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-scoreboard__value {\n  margin-top: var(--spacer-4);\n  color: var(--text-default);\n  font-family: var(--font-family-metric);\n  font-variant-numeric: tabular-nums;\n  font-size: var(--heading-md-font-size, 20px);\n  font-weight: 600;\n}\n\n.pbe-block {\n  padding: var(--spacer-12) var(--spacer-16);\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-8);\n  background: var(--bg-base-tertiary);\n  color: var(--text-default);\n  font-family: var(--code-editor-font-family);\n  font-size: var(--body-sm-font-size);\n  line-height: 1.6;\n  white-space: pre-wrap;\n  word-break: break-word;\n  overflow-x: auto;\n}\n\n.pbe-prompt {\n  max-height: 320px;\n  overflow-y: auto;\n  margin: 0;\n}\n\n.pbe-facts {\n  display: grid;\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n  gap: var(--spacer-12) var(--spacer-24);\n}\n\n@media (max-width: 760px) {\n  .pbe-facts {\n    grid-template-columns: minmax(0, 1fr);\n  }\n}\n\n.pbe-fact__label {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-fact__value {\n  margin-top: 2px;\n  color: var(--text-default);\n  word-break: break-word;\n}\n\n.pbe-rows {\n  display: flex;\n  flex-direction: column;\n}\n\n.pbe-row {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-12);\n  padding: var(--spacer-8) 0;\n  border-bottom: 1px solid var(--border-neutral-l1);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-row:last-child {\n  border-bottom: 0;\n}\n\n.pbe-row__grow {\n  flex: 1 1 auto;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/*\n * A row whose bytes can be opened.  It is a real `<button>` -- so it takes\n * focus and answers the keyboard -- which means undoing the browser\'s default\n * chrome rather than decorating a div, and keeping the row\'s own box so the\n * list does not jump when only some rows are openable.\n */\n.pbe-row--file {\n  width: calc(100% + var(--spacer-16));\n  margin: 0 calc(var(--spacer-8) * -1);\n  border: 0;\n  border-bottom: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-4);\n  background: none;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n  padding-left: var(--spacer-8);\n  padding-right: var(--spacer-8);\n}\n\n.pbe-row--file:hover {\n  background: var(--bg-card-hover);\n}\n\n.pbe-row--file:focus-visible {\n  outline: 2px solid var(--border-brand);\n  outline-offset: -2px;\n}\n\n.pbe-section-title {\n  margin: 0 0 var(--spacer-12);\n  color: var(--text-default);\n  font-size: var(--body-base-font-size);\n  font-weight: 600;\n}\n\n/* ── trace (one run, read in order) ────────────────────────────────────── */\n\n/*\n * A console, not a page section: the toolbar and the position stay put while\n * the run scrolls under them.  That is the one thing the old table got right by\n * accident (its rows were short) and the thing a 200-row page needs most.\n */\n.pbe-trace {\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-12);\n  background: var(--bg-base-default);\n  overflow: hidden;\n}\n\n.pbe-trace__bar {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: var(--spacer-12);\n  padding: var(--spacer-8) var(--spacer-12);\n  border-bottom: 1px solid var(--border-neutral-l1);\n  background: var(--bg-base-secondary);\n}\n\n.pbe-trace__nav {\n  display: flex;\n  align-items: center;\n  gap: var(--spacer-8);\n  margin-left: auto;\n}\n\n.pbe-trace__pos {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  font-variant-numeric: tabular-nums;\n  white-space: nowrap;\n}\n\n.pbe-trace__error {\n  padding: var(--spacer-6) var(--spacer-12);\n  border-bottom: 1px solid var(--border-neutral-l1);\n  color: var(--status-error-default);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-trace__scroll {\n  max-height: min(56vh, 560px);\n  padding: var(--spacer-16) var(--spacer-16) var(--spacer-8);\n  overflow-y: auto;\n  overscroll-behavior: contain;\n}\n\n.pbe-trace__scroll[aria-busy="true"] {\n  opacity: 0.5;\n  transition: opacity 120ms ease;\n}\n\n.pbe-trace__quiet {\n  max-width: 62ch;\n  padding: var(--spacer-24) var(--spacer-8);\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  line-height: 1.8;\n}\n\n.pbe-trace__foot {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: var(--spacer-12);\n  padding: var(--spacer-8) var(--spacer-12);\n  border-top: 1px solid var(--border-neutral-l1);\n  background: var(--bg-base-secondary);\n}\n\n/* one beat on the rail */\n\n.pbe-beat {\n  display: grid;\n  grid-template-columns: 16px minmax(0, 1fr);\n  gap: 0 var(--spacer-12);\n}\n\n.pbe-beat__rail {\n  position: relative;\n  display: flex;\n  justify-content: center;\n}\n\n/*\n * The line is drawn per beat and runs the full height of the gutter, so two\n * adjacent beats join without a seam.  The first starts below its dot and the\n * last stops at it, which is what keeps the rail from overshooting the run.\n * At the hairline weight the lighter border token is invisible once the page is\n * scrolled -- the spine is what tells a reader these rows are one run.\n */\n.pbe-beat__rail::before {\n  content: "";\n  position: absolute;\n  top: -2px;\n  bottom: 0;\n  left: 50%;\n  width: 1px;\n  margin-left: -0.5px;\n  background: var(--border-neutral-l3);\n}\n\n.pbe-beat:first-child .pbe-beat__rail::before {\n  top: 9px;\n}\n\n.pbe-beat:last-child .pbe-beat__rail::before {\n  bottom: auto;\n  height: 9px;\n}\n\n.pbe-beat:only-child .pbe-beat__rail::before {\n  display: none;\n}\n\n.pbe-beat__dot {\n  position: relative;\n  z-index: 1;\n  width: 7px;\n  height: 7px;\n  margin-top: 7px;\n  border-radius: 2px;\n  background: var(--text-disabled);\n  box-shadow: 0 0 0 3px var(--bg-base-default);\n}\n\n.pbe-beat__rail--user .pbe-beat__dot {\n  background: var(--text-secondary);\n}\n\n.pbe-beat__rail--assistant .pbe-beat__dot {\n  background: var(--bg-brand);\n}\n\n.pbe-beat__rail--tool .pbe-beat__dot {\n  box-sizing: border-box;\n  background: var(--bg-base-default);\n  border: 1.5px solid var(--border-neutral-l3);\n}\n\n.pbe-beat__rail--thought .pbe-beat__dot {\n  width: 5px;\n  height: 5px;\n  margin-top: 8px;\n}\n\n.pbe-beat__rail--plan .pbe-beat__dot {\n  background: var(--accent-teal);\n}\n\n.pbe-beat__rail--system .pbe-beat__dot {\n  width: 5px;\n  height: 5px;\n  margin-top: 8px;\n  background: var(--border-neutral-l3);\n}\n\n.pbe-beat__body {\n  min-width: 0;\n  padding-bottom: var(--spacer-16);\n}\n\n.pbe-beat__meta {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: var(--spacer-8);\n  min-height: 20px;\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  line-height: 20px;\n}\n\n.pbe-beat__who {\n  color: var(--text-secondary);\n  font-weight: 500;\n}\n\n.pbe-beat__quiet {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  line-height: 1.7;\n}\n\n/* words: prose on the page, not a box per turn */\n\n.pbe-speech {\n  max-width: 74ch;\n  color: var(--text-default);\n  font-size: var(--body-base-font-size);\n  line-height: 1.72;\n  letter-spacing: -0.01em;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n\n.pbe-thought {\n  max-width: 74ch;\n  max-height: 3.4em;\n  overflow: hidden;\n  color: var(--text-tertiary);\n  font-size: var(--body-md-font-size, 12px);\n  line-height: 1.75;\n  white-space: pre-wrap;\n  word-break: break-word;\n  /* A fade on the text of a collapsed thought, not a colour: the mask only\n     reads alpha, so `black` here is "opaque" and takes no value from the tokens. */\n  -webkit-mask-image: linear-gradient(180deg, black 55%, transparent);\n  mask-image: linear-gradient(180deg, black 55%, transparent);\n}\n\n.pbe-thought--open {\n  max-height: none;\n  -webkit-mask-image: none;\n  mask-image: none;\n}\n\n/* a tool call: identity on the head, arguments as fields, result attached */\n\n.pbe-tool {\n  /* One column for every label in the card: argument names and "结果".  Wide\n     enough for a field like ``command``, narrow enough that a short one is not\n     stranded in the middle of the card. */\n  --pbe-tool-key: 84px;\n  padding: var(--spacer-10) var(--spacer-12);\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-8);\n  background: var(--bg-base-secondary);\n}\n\n.pbe-tool__head {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: var(--spacer-8);\n  min-height: 22px;\n}\n\n/* A failed call is the one thing in a run that must survive a skim. */\n.pbe-tool--failed {\n  border-color: var(--status-error-surface-l3);\n  background: var(--status-error-surface-l1);\n}\n\n.pbe-tool__title {\n  color: var(--text-default);\n  font-size: var(--body-base-font-size);\n  font-weight: 500;\n}\n\n.pbe-tool__name {\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-tool__size {\n  margin-left: auto;\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  font-variant-numeric: tabular-nums;\n}\n\n.pbe-tool__args {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  margin-top: var(--spacer-6);\n}\n\n.pbe-tool__arg {\n  display: grid;\n  grid-template-columns: var(--pbe-tool-key) minmax(0, 1fr);\n  gap: var(--spacer-8);\n  font-size: var(--body-sm-font-size);\n  line-height: 18px;\n}\n\n.pbe-tool__key {\n  overflow: hidden;\n  color: var(--text-tertiary);\n  text-align: right;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.pbe-tool__value {\n  overflow: hidden;\n  color: var(--text-secondary);\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.pbe-tool__value--wrap {\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n\n/* Arguments and the result share one left column, so the card reads as a single\n   key/value table rather than as two blocks indented differently. */\n\n.pbe-tool__out {\n  display: grid;\n  grid-template-columns: var(--pbe-tool-key) minmax(0, 1fr);\n  gap: var(--spacer-8);\n  margin-top: var(--spacer-8);\n}\n\n.pbe-tool__out-label {\n  padding-top: var(--spacer-6);\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  line-height: 18px;\n  text-align: right;\n}\n\n.pbe-tool__out-text {\n  min-width: 0;\n  max-height: 84px;\n  margin: 0;\n  padding: var(--spacer-6) var(--spacer-10);\n  overflow: hidden;\n  border-left: 2px solid var(--border-neutral-l2);\n  border-radius: 0 var(--radius-4) var(--radius-4) 0;\n  background: var(--bg-base-default);\n  color: var(--text-secondary);\n  font-family: var(--code-editor-font-family);\n  font-size: 11px;\n  line-height: 1.65;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n\n/* Once opened the reader asked for the whole result: no clamp, no scroll box\n   hiding the tail behind a scrollbar that looks like "the end". */\n.pbe-tool__out--open .pbe-tool__out-text {\n  max-height: none;\n  overflow: visible;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n\n/* The control lives in one slot on every meta row, so "展开" and "收起" keep\n   the same baseline and the same right edge no matter how long the content is. */\n.pbe-beat__more-slot {\n  display: inline-flex;\n  margin-left: auto;\n  justify-content: flex-end;\n}\n\n.pbe-beat__more {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 96px;\n  min-height: 20px;\n  margin: 0;\n  padding: 0 var(--spacer-8);\n  border: 0;\n  border-radius: var(--radius-4);\n  background: none;\n  color: var(--text-brand);\n  font: inherit;\n  font-size: var(--body-sm-font-size);\n  line-height: 18px;\n  white-space: nowrap;\n  cursor: pointer;\n}\n\n.pbe-beat__more--open,\n.pbe-beat__more:disabled {\n  color: var(--text-tertiary);\n}\n\n.pbe-beat__more:disabled {\n  cursor: default;\n}\n\n.pbe-beat__more:hover:not(:disabled) {\n  text-decoration: underline;\n}\n\n.pbe-beat__more:focus-visible {\n  outline: 2px solid var(--border-brand);\n  outline-offset: 2px;\n}\n\n/* a plan is a checklist, because that is what the agent wrote */\n\n.pbe-plan {\n  display: flex;\n  flex-direction: column;\n  gap: var(--spacer-4);\n  max-width: 74ch;\n  margin: var(--spacer-6) 0 0;\n  padding: 0;\n  list-style: none;\n  font-size: var(--body-base-font-size);\n  line-height: 1.6;\n}\n\n.pbe-plan__item {\n  display: grid;\n  grid-template-columns: 16px minmax(0, 1fr);\n  gap: var(--spacer-6);\n  color: var(--text-secondary);\n}\n\n.pbe-plan__mark {\n  color: var(--text-tertiary);\n  text-align: center;\n}\n\n.pbe-plan__item--completed {\n  color: var(--text-tertiary);\n  text-decoration: line-through;\n  text-decoration-color: var(--border-neutral-l3);\n}\n\n.pbe-plan__item--completed .pbe-plan__mark {\n  color: var(--status-success-default);\n}\n\n.pbe-plan__item--in_progress {\n  color: var(--text-default);\n}\n\n.pbe-plan__item--in_progress .pbe-plan__mark {\n  color: var(--text-brand);\n}\n\n/* UI chatter folds into one line */\n\n.pbe-system {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: var(--spacer-8);\n  padding: 0;\n  border: 0;\n  border-radius: var(--radius-4);\n  background: none;\n  color: var(--text-tertiary);\n  font: inherit;\n  font-size: var(--body-sm-font-size);\n  cursor: pointer;\n}\n\n.pbe-system:hover {\n  color: var(--text-secondary);\n}\n\n.pbe-system:focus-visible {\n  outline: 2px solid var(--border-brand);\n  outline-offset: 2px;\n}\n\n.pbe-system__act {\n  margin-left: auto;\n  color: var(--text-brand);\n}\n\n.pbe-system__list {\n  margin: var(--spacer-4) 0 0;\n  padding-left: var(--spacer-16);\n  color: var(--text-tertiary);\n  font-size: 11px;\n  line-height: 1.7;\n}\n\n@media (max-width: 760px) {\n  .pbe-trace__bar {\n    align-items: stretch;\n  }\n\n  .pbe-trace__nav {\n    width: 100%;\n    margin-left: 0;\n    justify-content: space-between;\n  }\n\n  .pbe-trace__scroll {\n    max-height: 60vh;\n    padding: var(--spacer-12);\n  }\n\n  .pbe-tool__arg {\n    grid-template-columns: minmax(0, 1fr);\n    gap: 0;\n  }\n\n  .pbe-tool__key {\n    text-align: left;\n  }\n\n  /* No room for a label column: the label goes above its value, and the result\n     block keeps the full width it needs to be readable. */\n  .pbe-tool__out {\n    grid-template-columns: minmax(0, 1fr);\n    gap: var(--spacer-4);\n  }\n\n  .pbe-tool__out-label {\n    padding-top: 0;\n    text-align: left;\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .pbe-trace__scroll[aria-busy="true"] {\n    transition: none;\n  }\n}\n\n/* ── form (label left, control right — the system default) ─────────────── */\n\n.pbe-field {\n  display: flex;\n  align-items: flex-start;\n  gap: var(--spacer-12);\n  margin-bottom: var(--spacer-16);\n}\n\n.pbe-field__label {\n  flex: none;\n  width: 92px;\n  padding-top: var(--spacer-6);\n  color: var(--text-secondary);\n  font-size: var(--body-base-font-size);\n  text-align: right;\n}\n\n.pbe-field__control {\n  flex: 1 1 auto;\n  min-width: 0;\n}\n\n.pbe-field__hint {\n  margin-top: var(--spacer-4);\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n\n.pbe-fieldset {\n  margin-bottom: var(--spacer-24);\n}\n\n.pbe-fieldset__title {\n  margin-bottom: var(--spacer-12);\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n  letter-spacing: 0.04em;\n}\n\n.pbe-empty {\n  padding: var(--spacer-32);\n  color: var(--text-tertiary);\n  text-align: center;\n}\n\n.pbe-copy {\n  display: inline-flex;\n  align-items: center;\n  gap: var(--spacer-6);\n  max-width: 100%;\n  padding: 0;\n  border: 0;\n  background: transparent;\n  color: var(--text-secondary);\n  font-family: var(--code-editor-font-family);\n  font-size: var(--body-sm-font-size);\n  cursor: pointer;\n}\n\n.pbe-copy:hover {\n  color: var(--text-default);\n}\n\n.pbe-copy__value {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/* ── status pill ───────────────────────────────────────────────────────── */\n\n.pbe-pill {\n  display: inline-flex;\n  align-items: center;\n  gap: var(--spacer-6);\n  height: 20px;\n  padding: 0 var(--spacer-8);\n  border: 1px solid transparent;\n  border-radius: var(--radius-4);\n  font-size: var(--body-xs-font-size);\n  line-height: 20px;\n  white-space: nowrap;\n}\n\n.pbe-pill__dot {\n  width: 6px;\n  height: 6px;\n  border-radius: 999px;\n  background: currentColor;\n}\n\n.pbe-pill--ok {\n  background: var(--status-success-surface-l1);\n  color: var(--status-success-default);\n}\n\n.pbe-pill--warn {\n  background: var(--status-warning-surface-l1);\n  color: var(--status-warning-default);\n}\n\n.pbe-pill--err {\n  background: var(--status-error-surface-l1);\n  color: var(--status-error-default);\n}\n\n.pbe-pill--info {\n  background: var(--status-primary-surface-l1);\n  color: var(--status-primary-default);\n}\n\n.pbe-pill--muted {\n  background: var(--bg-overlay-l1);\n  color: var(--text-secondary);\n}\n\n/* ── one file, opened ──────────────────────────────────────────────────── */\n\n.pbe-preview__title {\n  display: flex;\n  align-items: baseline;\n  gap: var(--spacer-12);\n  min-width: 0;\n}\n\n.pbe-preview__title > .pbe-mono {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/*\n * The height is a ceiling, not a size: a short file should make a short\n * dialog, and a long one should scroll inside this box instead of pushing the\n * footer off the screen.\n */\n.pbe-preview {\n  max-height: 58vh;\n  margin: 0;\n  overflow: auto;\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n\n.pbe-preview__image {\n  display: block;\n  max-width: 100%;\n  max-height: 58vh;\n  margin: 0 auto;\n  border: 1px solid var(--border-neutral-l1);\n  border-radius: var(--radius-8);\n  background: var(--bg-base-tertiary);\n  object-fit: contain;\n}\n\n/* Why the text below stops where it stops.  Above the block, because a reader\n   who starts scrolling should meet it before the scrollbar, not after. */\n.pbe-preview__note {\n  margin-bottom: var(--spacer-8);\n  color: var(--text-tertiary);\n  font-size: var(--body-sm-font-size);\n}\n';
 
 // src/host/sdk.ts
 var API_BASE = "/pawbench-eval";
@@ -630,6 +630,13 @@ var Title = Typography.Title;
 var Paragraph = Typography.Paragraph;
 
 // src/api.ts
+var BeatFilters = [
+  { value: "all", label: "全部" },
+  { value: "talk", label: "对话" },
+  { value: "tool", label: "工具" },
+  { value: "thought", label: "思考" },
+  { value: "plan", label: "计划" }
+];
 var q = encodeURIComponent;
 var api = {
   config: () => call("GET", "/config"),
@@ -647,9 +654,34 @@ var api = {
     `/v1/jobs/${q(jobId)}/tasks/${q(taskId)}/detail?attempt=${attempt}`
   ),
   results: (jobId) => call("GET", `/v1/jobs/${q(jobId)}/results`),
-  transcript: (jobId, taskId, attempt, cursor) => call(
+  /**
+   * One page of a task's timeline.
+   *
+   * ``detail`` asks for the readable version -- bounded previews of speech and
+   * tool results -- because the dashboard is where a person argues with a score
+   * and "340 chars" cannot be argued with.  The judge-facing callers leave it
+   * off and keep the size-only page.
+   */
+  transcript: (jobId, taskId, attempt, cursor, detail = false) => call(
     "GET",
-    `/v1/jobs/${q(jobId)}/transcript?task_id=${q(taskId)}&attempt=${attempt}&cursor=${cursor}`
+    `/v1/jobs/${q(jobId)}/transcript?task_id=${q(taskId)}&attempt=${attempt}&cursor=${cursor}` + (detail ? "&detail=1" : "")
+  ),
+  /**
+   * One page of the run's beats, folded on the service.
+   *
+   * The reader pages by beat -- ten sentences, not ten notifications -- and
+   * filters on the same folded list, so a page of "工具" holds ten tool calls
+   * rather than ten lines of which none may be a tool.  Raw line cursors stay
+   * behind the service; a beat is named by its index in the filtered list.
+   */
+  beats: (jobId, taskId, attempt, page, size, voice) => call(
+    "GET",
+    `/v1/jobs/${q(jobId)}/beats?task_id=${q(taskId)}&attempt=${attempt}&page=${page}&size=${size}&voice=${q(voice)}`
+  ),
+  /** Complete text, arguments and result of one opened beat. */
+  beatContent: (jobId, taskId, attempt, index, voice) => call(
+    "GET",
+    `/v1/jobs/${q(jobId)}/beats/content?task_id=${q(taskId)}&attempt=${attempt}&index=${index}&voice=${q(voice)}`
   ),
   /**
    * One file's contents, trimmed.
@@ -2294,6 +2326,202 @@ function toIso(value) {
   return new Date(value).toISOString();
 }
 
+// src/ui/trace.tsx
+var SIZES = [10, 20, 50];
+function clock(at) {
+  const text = String(at ?? "");
+  return text.includes("T") ? text.slice(11, 19) : text;
+}
+function num(value) {
+  return Number(value ?? 0).toLocaleString("en-US");
+}
+function Trace(props) {
+  const page = props.page;
+  const size = page?.size ?? 10;
+  const voice = page?.voice ?? "all";
+  const beats = page?.beats ?? [];
+  function go(next) {
+    props.onPage(next, size, voice);
+  }
+  return /* @__PURE__ */ __h("div", { className: "pbe-trace" }, /* @__PURE__ */ __h("div", { className: "pbe-trace__bar" }, /* @__PURE__ */ __h(
+    Segmented,
+    {
+      size: "small",
+      value: voice,
+      onChange: (value) => props.onPage(1, size, value),
+      options: BeatFilters.map((item) => ({
+        value: item.value,
+        label: `${item.label} ${num(page?.counts[item.value])}`
+      }))
+    }
+  ), /* @__PURE__ */ __h("div", { className: "pbe-trace__nav" }, /* @__PURE__ */ __h("span", { className: "pbe-trace__pos" }, page && page.total_beats ? `第 ${num((page.page - 1) * size + 1)}–${num((page.page - 1) * size + beats.length)} 步 · 共 ${num(page.total_beats)} 步` : page ? "没有可显示的步骤" : "读取中", page && page.damaged_events ? ` · ${num(page.damaged_events)} 行读不出` : ""), /* @__PURE__ */ __h(
+    Segmented,
+    {
+      size: "small",
+      value: size,
+      onChange: (value) => props.onPage(1, Number(value), voice),
+      options: SIZES.map((value) => ({ value, label: `${value}/页` }))
+    }
+  ), /* @__PURE__ */ __h(Button, { size: "small", disabled: !page || page.page === 1 || props.loading, onClick: () => go(1) }, "回到开头"), /* @__PURE__ */ __h(Button, { size: "small", disabled: !page || page.page <= 1 || props.loading, onClick: () => go(page.page - 1) }, "上一页"), /* @__PURE__ */ __h(
+    Button,
+    {
+      size: "small",
+      type: "primary",
+      ghost: true,
+      disabled: !page || page.next_page === null || props.loading,
+      onClick: () => page?.next_page !== null && page && go(page.next_page)
+    },
+    "下一页"
+  ))), props.error ? /* @__PURE__ */ __h("div", { className: "pbe-trace__error" }, props.error) : null, /* @__PURE__ */ __h("div", { className: "pbe-trace__scroll", "aria-busy": props.loading }, page?.transcript_state === "absent" ? /* @__PURE__ */ __h("div", { className: "pbe-trace__quiet" }, "这次运行没有留下轨迹。可能是 agent 一句没说就退出了，也可能是轨迹文件在运行后被清理掉了。") : page?.transcript_state === "unreadable" ? /* @__PURE__ */ __h("div", { className: "pbe-trace__quiet" }, "轨迹文件在，但读不出来。", " ", /* @__PURE__ */ __h("span", { className: "pbe-mono" }, "transcript.jsonl"), " 可能被占用或权限变了。") : beats.length === 0 ? /* @__PURE__ */ __h("div", { className: "pbe-trace__quiet" }, page && page.total_beats ? "这一页没有符合筛选的步骤。" : "这次运行没有可显示的步骤。") : beats.map((beat) => /* @__PURE__ */ __h(
+    BeatRow,
+    {
+      key: beat.key,
+      beat,
+      opened: props.opened[beat.index],
+      onOpen: () => props.onOpen(beat.index)
+    }
+  ))), page && page.next_page !== null ? /* @__PURE__ */ __h("div", { className: "pbe-trace__foot" }, /* @__PURE__ */ __h("span", { className: "pbe-trace__pos" }, "还有 ", num(page.total_beats - (page.page - 1) * size - beats.length), " 步"), /* @__PURE__ */ __h(Button, { size: "small", onClick: () => page.next_page !== null && go(page.next_page) }, "继续看下一页")) : null);
+}
+function BeatRow(props) {
+  const beat = props.beat;
+  if (beat.voice === "system") return /* @__PURE__ */ __h(SystemRow, { beat });
+  if (beat.voice === "tool")
+    return /* @__PURE__ */ __h(ToolRow, { beat, opened: props.opened, onOpen: props.onOpen });
+  if (beat.voice === "plan") return /* @__PURE__ */ __h(PlanRow, { beat });
+  if (beat.voice === "thought")
+    return /* @__PURE__ */ __h(ThoughtRow, { beat, opened: props.opened, onOpen: props.onOpen });
+  return /* @__PURE__ */ __h(SpeechRow, { beat, opened: props.opened, onOpen: props.onOpen });
+}
+function Rail(props) {
+  return /* @__PURE__ */ __h("span", { className: `pbe-beat__rail pbe-beat__rail--${props.voice}`, "aria-hidden": "true" }, /* @__PURE__ */ __h("span", { className: "pbe-beat__dot" }));
+}
+function Meta(props) {
+  const beat = props.beat;
+  return /* @__PURE__ */ __h("div", { className: "pbe-beat__meta" }, /* @__PURE__ */ __h("span", { className: "pbe-beat__who" }, beat.label), /* @__PURE__ */ __h("span", { className: "pbe-mono" }, clock(beat.at)), beat.events > 1 && beat.voice !== "tool" ? /* @__PURE__ */ __h("span", null, beat.events, " 段") : null, props.extra, props.more ? /* @__PURE__ */ __h("span", { className: "pbe-beat__more-slot" }, props.more) : null);
+}
+function MoreButton(props) {
+  const loading = Boolean(props.opened?.loading);
+  const open = Boolean(props.opened) && !loading;
+  const label = loading ? "读取完整内容…" : open ? "收起" : props.collapsedLabel;
+  return /* @__PURE__ */ __h(
+    "button",
+    {
+      type: "button",
+      className: `pbe-beat__more${open ? " pbe-beat__more--open" : ""}`,
+      "aria-expanded": open,
+      disabled: loading,
+      onClick: props.onOpen
+    },
+    label
+  );
+}
+function SpeechRow(props) {
+  const beat = props.beat;
+  const open = Boolean(props.opened);
+  const full = props.opened?.content;
+  const text = open && full ? full.text : beat.text;
+  const expandable = Boolean(beat.text_truncated || open);
+  return /* @__PURE__ */ __h("div", { className: `pbe-beat pbe-beat--${beat.voice}` }, /* @__PURE__ */ __h(Rail, { voice: beat.voice }), /* @__PURE__ */ __h("div", { className: "pbe-beat__body" }, /* @__PURE__ */ __h(
+    Meta,
+    {
+      beat,
+      extra: beat.chars ? /* @__PURE__ */ __h("span", null, num(beat.chars), " 字符") : null,
+      more: expandable ? /* @__PURE__ */ __h(
+        MoreButton,
+        {
+          opened: props.opened,
+          onOpen: props.onOpen,
+          collapsedLabel: "展开完整内容"
+        }
+      ) : null
+    }
+  ), text ? /* @__PURE__ */ __h("div", { className: "pbe-speech" }, text) : /* @__PURE__ */ __h("div", { className: "pbe-beat__quiet" }, "这一条只有长度，没有正文（", num(beat.chars), " 字符）。")));
+}
+function ThoughtRow(props) {
+  const beat = props.beat;
+  const open = Boolean(props.opened);
+  const full = props.opened?.content;
+  const text = open && full ? full.text : beat.text;
+  return /* @__PURE__ */ __h("div", { className: "pbe-beat pbe-beat--thought" }, /* @__PURE__ */ __h(Rail, { voice: beat.voice }), /* @__PURE__ */ __h("div", { className: "pbe-beat__body" }, /* @__PURE__ */ __h(
+    Meta,
+    {
+      beat,
+      more: /* @__PURE__ */ __h(
+        MoreButton,
+        {
+          opened: props.opened,
+          onOpen: props.onOpen,
+          collapsedLabel: `${beat.text_truncated ? "展开完整内容" : "展开"} · ${num(beat.chars)} 字符`
+        }
+      )
+    }
+  ), /* @__PURE__ */ __h("div", { className: `pbe-thought${open ? " pbe-thought--open" : ""}` }, text || "（这次运行没有记录思考内容）")));
+}
+function ToolRow(props) {
+  const beat = props.beat;
+  const open = Boolean(props.opened);
+  const full = props.opened?.content;
+  const sourceArgs = open && full ? full.args : beat.args;
+  const args = Object.entries(sourceArgs ?? {}).map(([key, value]) => {
+    const lines = String(value).split("\n");
+    const long = lines.length > 1 || value.length > 80;
+    return {
+      key,
+      value: String(value),
+      // A heredoc collapsed into one nowrap line reads as a run-on sentence.
+      // On an opened card the value is already full, so it wraps in full too.
+      preview: lines.length > 1 ? `${lines[0]} …（还有 ${lines.length - 1} 行）` : String(value),
+      long
+    };
+  });
+  const shown = open ? args : args.slice(0, 3);
+  const hidden = args.length - shown.length;
+  const output = open && full ? full.output : beat.output;
+  const failed = beat.status === "failed" || beat.status === "error";
+  const tone = failed ? "err" : beat.status === "completed" ? "ok" : "warn";
+  const label = beat.status === "completed" ? "完成" : failed ? "失败" : beat.status || "进行中";
+  const clipped = args.some((arg) => arg.long) || output.split("\n").length > 4 || output.length > 260;
+  const expandable = args.length > 3 || clipped || beat.output_truncated || beat.text_truncated;
+  return /* @__PURE__ */ __h("div", { className: "pbe-beat pbe-beat--tool" }, /* @__PURE__ */ __h(Rail, { voice: beat.voice }), /* @__PURE__ */ __h("div", { className: "pbe-beat__body" }, /* @__PURE__ */ __h(
+    Meta,
+    {
+      beat,
+      more: expandable || open ? /* @__PURE__ */ __h(
+        MoreButton,
+        {
+          opened: props.opened,
+          onOpen: props.onOpen,
+          collapsedLabel: hidden > 0 ? `展开其余 ${hidden} 个参数${clipped ? "与完整结果" : ""}` : "展开完整内容"
+        }
+      ) : null
+    }
+  ), /* @__PURE__ */ __h("div", { className: `pbe-tool${failed ? " pbe-tool--failed" : ""}` }, /* @__PURE__ */ __h("div", { className: "pbe-tool__head" }, /* @__PURE__ */ __h("span", { className: "pbe-tool__title" }, beat.tool || beat.name || "工具调用"), beat.name && beat.name !== beat.tool ? /* @__PURE__ */ __h("span", { className: "pbe-tool__name pbe-mono" }, beat.name) : null, /* @__PURE__ */ __h(StatusPill, { tone, label }), beat.result_chars ? /* @__PURE__ */ __h("span", { className: "pbe-tool__size" }, num(beat.result_chars), " 字符") : null), shown.length ? /* @__PURE__ */ __h("div", { className: "pbe-tool__args" }, shown.map((arg) => /* @__PURE__ */ __h("div", { className: "pbe-tool__arg", key: arg.key }, /* @__PURE__ */ __h("span", { className: "pbe-tool__key" }, arg.key), /* @__PURE__ */ __h(
+    "span",
+    {
+      className: `pbe-tool__value pbe-mono${open ? " pbe-tool__value--wrap" : ""}`,
+      title: open ? arg.value : void 0
+    },
+    open ? arg.value : arg.preview
+  )))) : null, output ? /* @__PURE__ */ __h("div", { className: `pbe-tool__out${open ? " pbe-tool__out--open" : ""}` }, /* @__PURE__ */ __h("span", { className: "pbe-tool__out-label" }, "结果"), /* @__PURE__ */ __h("pre", { className: "pbe-tool__out-text" }, output)) : null)));
+}
+function PlanRow(props) {
+  const beat = props.beat;
+  const lines = (beat.text || "").split("\n").filter(Boolean);
+  return /* @__PURE__ */ __h("div", { className: "pbe-beat pbe-beat--plan" }, /* @__PURE__ */ __h(Rail, { voice: beat.voice }), /* @__PURE__ */ __h("div", { className: "pbe-beat__body" }, /* @__PURE__ */ __h(Meta, { beat, extra: beat.steps ? /* @__PURE__ */ __h("span", null, beat.steps, " 步") : null }), lines.length ? /* @__PURE__ */ __h("ul", { className: "pbe-plan" }, lines.map((line, index) => {
+    const matched = /^\[([a-z_]+)\]\s*(.*)$/.exec(line);
+    const status = matched ? matched[1] : "pending";
+    const text = matched ? matched[2] : line;
+    return /* @__PURE__ */ __h("li", { className: `pbe-plan__item pbe-plan__item--${status}`, key: `${index}-${text}` }, /* @__PURE__ */ __h("span", { className: "pbe-plan__mark", "aria-hidden": "true" }, status === "completed" ? "✓" : status === "in_progress" ? "▸" : "·"), /* @__PURE__ */ __h("span", null, text));
+  })) : /* @__PURE__ */ __h("div", { className: "pbe-beat__quiet" }, "计划更新了 ", beat.steps, " 步，但这次没有带内容。")));
+}
+function SystemRow(props) {
+  const beat = props.beat;
+  const [open, setOpen] = useState(false);
+  const kinds = Array.from(new Set(beat.kinds));
+  const summary = kinds.map((kind) => kind).join(" / ");
+  return /* @__PURE__ */ __h("div", { className: "pbe-beat pbe-beat--system" }, /* @__PURE__ */ __h(Rail, { voice: beat.voice }), /* @__PURE__ */ __h("div", { className: "pbe-beat__body" }, /* @__PURE__ */ __h("button", { type: "button", className: "pbe-system", "aria-expanded": open, onClick: () => setOpen(!open) }, /* @__PURE__ */ __h("span", { className: "pbe-mono" }, clock(beat.at)), /* @__PURE__ */ __h("span", null, beat.events, " 条", summary || "系统", "事件"), /* @__PURE__ */ __h("span", { className: "pbe-system__act" }, open ? "收起" : "看是哪几条")), open ? /* @__PURE__ */ __h("ul", { className: "pbe-system__list" }, beat.kinds.map((kind, index) => /* @__PURE__ */ __h("li", { key: `${index}-${kind}`, className: "pbe-mono" }, kind))) : null));
+}
+
 // src/modules/report.tsx
 var FORMATS = [
   { value: "md", label: "Markdown", hint: "一页读完，适合贴进 issue 或 wiki" },
@@ -2595,42 +2823,71 @@ function taskColumns() {
   ];
 }
 function TaskDialog(props) {
-  const [page, setPage] = useState(null);
-  const [cursor, setCursor] = useState(0);
-  const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState(props.task);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState(null);
+  const [tracePage, setTracePage] = useState(null);
+  const [traceLoading, setTraceLoading] = useState(false);
+  const [traceError, setTraceError] = useState("");
+  const [opened, setOpened] = useState({});
+  const [nav, setNav] = useState({ page: 1, size: 10, voice: "all" });
   useEffect(() => {
     let alive = true;
-    setLoading(true);
     api.taskDetail(props.jobId, props.task.task_id, props.task.attempt).then((next) => {
-      if (!alive) return;
-      setDetail(next);
-      setPage(next.transcript);
-      setCursor(next.transcript.cursor);
-      setError("");
+      if (alive) setDetail(next);
     }).catch((err) => {
-      if (!alive) return;
-      setError(describeError(err).message);
-    }).finally(() => {
-      if (alive) setLoading(false);
+      if (alive) setError(describeError(err).message);
     });
     return () => {
       alive = false;
     };
   }, [props.jobId, props.task.task_id, props.task.attempt]);
-  async function goPage(next) {
-    setLoading(true);
-    try {
-      const pageOut = await api.transcript(props.jobId, props.task.task_id, props.task.attempt, next);
-      setPage(pageOut);
-      setCursor(pageOut.cursor);
-    } catch (err) {
-      setError(describeError(err).message);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    let alive = true;
+    setTraceLoading(true);
+    setOpened({});
+    api.beats(
+      props.jobId,
+      props.task.task_id,
+      props.task.attempt,
+      nav.page,
+      nav.size,
+      nav.voice
+    ).then((next) => {
+      if (!alive) return;
+      setTracePage(next);
+      setTraceError("");
+    }).catch((err) => {
+      if (alive) setTraceError(describeError(err).message);
+    }).finally(() => {
+      if (alive) setTraceLoading(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [props.jobId, props.task.task_id, props.task.attempt, nav.page, nav.size, nav.voice]);
+  function goPage(page, size, voice) {
+    setNav({ page, size, voice });
+  }
+  function toggleBeat(index) {
+    const current = opened[index];
+    if (current) {
+      const next = { ...opened };
+      delete next[index];
+      setOpened(next);
+      return;
     }
+    const voice = tracePage?.voice ?? "all";
+    setOpened({
+      ...opened,
+      [index]: { content: null, loading: true }
+    });
+    api.beatContent(props.jobId, props.task.task_id, props.task.attempt, index, voice).then((content) => {
+      setOpened((prev) => ({ ...prev, [index]: { content, loading: false } }));
+    }).catch(() => {
+      setOpened((prev) => ({ ...prev, [index]: { content: null, loading: false } }));
+      setTraceError("读不到这一段的完整内容。");
+    });
   }
   const breakdown = Object.entries(detail.automated_breakdown ?? {});
   const attachments = detail.attachments ?? [];
@@ -2690,8 +2947,20 @@ function TaskDialog(props) {
     detail.rubric_excerpt || judgeText ? /* @__PURE__ */ __h(__Fragment, null, /* @__PURE__ */ __h("div", { style: { height: "var(--spacer-20)" } }), /* @__PURE__ */ __h(SectionTitle, null, "评分依据"), detail.rubric_excerpt ? /* @__PURE__ */ __h("pre", { className: "pbe-block" }, detail.rubric_excerpt) : null, judgeText ? /* @__PURE__ */ __h("pre", { className: "pbe-block", style: { marginTop: "var(--spacer-8)" } }, judgeText) : null) : null,
     /* @__PURE__ */ __h("div", { style: { height: "var(--spacer-20)" } }),
     /* @__PURE__ */ __h(SectionTitle, null, "轨迹"),
-    /* @__PURE__ */ __h("div", { className: "pbe-toolbar" }, /* @__PURE__ */ __h("span", { className: "pbe-toolbar__label" }, page ? `${page.cursor + 1}–${page.cursor + page.events.length} / ${page.total_events} 步` : "读取中", page && page.damaged_events ? ` · ${page.damaged_events} 条损坏` : ""), /* @__PURE__ */ __h("div", { className: "pbe-toolbar__right" }, /* @__PURE__ */ __h(Button, { size: "small", disabled: !page || page.cursor === 0 || loading, onClick: () => goPage(0) }, "回到开头"), /* @__PURE__ */ __h(Button, { size: "small", disabled: !page || !page.next_cursor || loading, onClick: () => page && page.next_cursor !== null && goPage(page.next_cursor) }, "下一页"))),
-    /* @__PURE__ */ __h("div", { className: "pbe-timeline" }, (page?.events ?? []).map((event, index) => /* @__PURE__ */ __h(TimelineRow, { key: `${cursor}-${index}`, event })), page && !page.events.length ? /* @__PURE__ */ __h(EmptyHint, null, "没有轨迹事件") : null),
+    /* @__PURE__ */ __h(
+      Trace,
+      {
+        jobId: props.jobId,
+        taskId: detail.task_id,
+        attempt: detail.attempt,
+        page: tracePage,
+        loading: traceLoading,
+        error: traceError,
+        opened,
+        onPage: goPage,
+        onOpen: toggleBeat
+      }
+    ),
     preview ? /* @__PURE__ */ __h(
       PreviewModal,
       {
@@ -2713,27 +2982,6 @@ function FileRow(props) {
     return /* @__PURE__ */ __h("div", { className: "pbe-row" }, body);
   }
   return /* @__PURE__ */ __h("button", { type: "button", className: "pbe-row pbe-row--file", onClick: props.onOpen }, body);
-}
-var KIND = {
-  agent_message_chunk: "输出",
-  agent_thought_chunk: "思考",
-  tool_call: "调用",
-  tool_call_update: "结果",
-  plan: "计划",
-  plan_update: "计划",
-  user_message_chunk: "输入",
-  available_commands_update: "命令",
-  usage_update: "用量",
-  current_mode_update: "模式",
-  session_info_update: "会话",
-  config_option_update: "配置"
-};
-function TimelineRow(props) {
-  const event = props.event;
-  const label = KIND[event.kind] ?? event.kind;
-  const args = event.args && Object.keys(event.args).length ? Object.keys(event.args).join("、") : "";
-  const summary = event.tool || args || (event.chars ? `${event.chars} 字符` : "") || (event.result_chars ? `${event.result_chars} 字符` : "");
-  return /* @__PURE__ */ __h("div", { className: "pbe-timeline__item" }, /* @__PURE__ */ __h("span", { className: "pbe-timeline__at" }, String(event.at).replace("T", " ").slice(11, 19)), /* @__PURE__ */ __h("span", null, /* @__PURE__ */ __h(StatusPill, { tone: event.status === "completed" ? "ok" : "muted", label })), /* @__PURE__ */ __h("span", { className: "pbe-cell-sub", style: { whiteSpace: "normal" } }, summary || "—"));
 }
 function secondsBetween2(detail) {
   if (!detail?.started_at || !detail.finished_at) return null;

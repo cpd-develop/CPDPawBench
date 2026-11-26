@@ -27,11 +27,19 @@ import {
   Tabs,
   Tooltip,
 } from "../host/antd";
-import { api, JobDetail, ReportFormat, TaskEntry, TranscriptEvent, TranscriptPage } from "../api";
+import {
+  api,
+  BeatsPage,
+  BeatFilter,
+  JobDetail,
+  ReportFormat,
+  TaskEntry,
+} from "../api";
 import { describeError, download, saveBlob } from "../host/sdk";
 import { useEffect, useMemo, useState } from "../host/react";
 import { useFeedback } from "../ui/feedback";
 import { PreviewModal, PreviewTarget } from "../ui/preview";
+import { Opened, Trace } from "../ui/trace";
 import {
   CopyId,
   EmptyHint,
@@ -547,48 +555,85 @@ function TaskDialog(props: {
   task: TaskEntry;
   onClose: () => void;
 }): unknown {
-  const [page, setPage] = useState<TranscriptPage | null>(null);
-  const [cursor, setCursor] = useState(0);
-  const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<TaskEntry>(props.task);
   const [error, setError] = useState<string>("");
   const [preview, setPreview] = useState<PreviewTarget | null>(null);
+  const [tracePage, setTracePage] = useState<BeatsPage | null>(null);
+  const [traceLoading, setTraceLoading] = useState(false);
+  const [traceError, setTraceError] = useState("");
+  const [opened, setOpened] = useState<Record<number, Opened>>({});
+  const [nav, setNav] = useState({ page: 1, size: 10, voice: "all" as BeatFilter });
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
     api
       .taskDetail(props.jobId, props.task.task_id, props.task.attempt)
       .then((next) => {
-        if (!alive) return;
-        setDetail(next);
-        setPage(next.transcript);
-        setCursor(next.transcript.cursor);
-        setError("");
+        if (alive) setDetail(next);
       })
       .catch((err) => {
-        if (!alive) return;
-        setError(describeError(err).message);
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
+        if (alive) setError(describeError(err).message);
       });
     return () => {
       alive = false;
     };
   }, [props.jobId, props.task.task_id, props.task.attempt]);
 
-  async function goPage(next: number): Promise<void> {
-    setLoading(true);
-    try {
-      const pageOut = await api.transcript(props.jobId, props.task.task_id, props.task.attempt, next);
-      setPage(pageOut);
-      setCursor(pageOut.cursor);
-    } catch (err) {
-      setError(describeError(err).message);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    let alive = true;
+    setTraceLoading(true);
+    setOpened({});
+    api
+      .beats(
+        props.jobId,
+        props.task.task_id,
+        props.task.attempt,
+        nav.page,
+        nav.size,
+        nav.voice,
+      )
+      .then((next) => {
+        if (!alive) return;
+        setTracePage(next);
+        setTraceError("");
+      })
+      .catch((err) => {
+        if (alive) setTraceError(describeError(err).message);
+      })
+      .finally(() => {
+        if (alive) setTraceLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [props.jobId, props.task.task_id, props.task.attempt, nav.page, nav.size, nav.voice]);
+
+  function goPage(page: number, size: number, voice: BeatFilter): void {
+    setNav({ page, size, voice });
+  }
+
+  function toggleBeat(index: number): void {
+    const current = opened[index];
+    if (current) {
+      const next = { ...opened };
+      delete next[index];
+      setOpened(next);
+      return;
     }
+    const voice = tracePage?.voice ?? "all";
+    setOpened({
+      ...opened,
+      [index]: { content: null, loading: true },
+    });
+    api
+      .beatContent(props.jobId, props.task.task_id, props.task.attempt, index, voice)
+      .then((content) => {
+        setOpened((prev) => ({ ...prev, [index]: { content, loading: false } }));
+      })
+      .catch(() => {
+        setOpened((prev) => ({ ...prev, [index]: { content: null, loading: false } }));
+        setTraceError("读不到这一段的完整内容。");
+      });
   }
 
   const breakdown = Object.entries(detail.automated_breakdown ?? {});
@@ -719,26 +764,17 @@ function TaskDialog(props: {
 
       <div style={{ height: "var(--spacer-20)" }} />
       <SectionTitle>轨迹</SectionTitle>
-      <div className="pbe-toolbar">
-        <span className="pbe-toolbar__label">
-          {page ? `${page.cursor + 1}–${page.cursor + page.events.length} / ${page.total_events} 步` : "读取中"}
-          {page && page.damaged_events ? ` · ${page.damaged_events} 条损坏` : ""}
-        </span>
-        <div className="pbe-toolbar__right">
-          <Button size="small" disabled={!page || page.cursor === 0 || loading} onClick={() => goPage(0)}>
-            回到开头
-          </Button>
-          <Button size="small" disabled={!page || !page.next_cursor || loading} onClick={() => page && page.next_cursor !== null && goPage(page.next_cursor)}>
-            下一页
-          </Button>
-        </div>
-      </div>
-      <div className="pbe-timeline">
-        {(page?.events ?? []).map((event, index) => (
-          <TimelineRow key={`${cursor}-${index}`} event={event} />
-        ))}
-        {page && !page.events.length ? <EmptyHint>没有轨迹事件</EmptyHint> : null}
-      </div>
+      <Trace
+        jobId={props.jobId}
+        taskId={detail.task_id}
+        attempt={detail.attempt}
+        page={tracePage}
+        loading={traceLoading}
+        error={traceError}
+        opened={opened}
+        onPage={goPage}
+        onOpen={toggleBeat}
+      />
 
       {/* Above this dialog rather than replacing it: reading a file is a
           detour on the way to a judgement, not a different place to be. */}
@@ -794,40 +830,6 @@ function FileRow(props: {
     <button type="button" className="pbe-row pbe-row--file" onClick={props.onOpen}>
       {body}
     </button>
-  );
-}
-
-const KIND: Record<string, string> = {
-  agent_message_chunk: "输出",
-  agent_thought_chunk: "思考",
-  tool_call: "调用",
-  tool_call_update: "结果",
-  plan: "计划",
-  plan_update: "计划",
-  user_message_chunk: "输入",
-  available_commands_update: "命令",
-  usage_update: "用量",
-  current_mode_update: "模式",
-  session_info_update: "会话",
-  config_option_update: "配置",
-};
-
-function TimelineRow(props: { event: TranscriptEvent }): unknown {
-  const event = props.event;
-  const label = KIND[event.kind] ?? event.kind;
-  const args = event.args && Object.keys(event.args).length ? Object.keys(event.args).join("、") : "";
-  const summary =
-    event.tool || args || (event.chars ? `${event.chars} 字符` : "") || (event.result_chars ? `${event.result_chars} 字符` : "");
-  return (
-    <div className="pbe-timeline__item">
-      <span className="pbe-timeline__at">{String(event.at).replace("T", " ").slice(11, 19)}</span>
-      <span>
-        <StatusPill tone={event.status === "completed" ? "ok" : "muted"} label={label} />
-      </span>
-      <span className="pbe-cell-sub" style={{ whiteSpace: "normal" }}>
-        {summary || "—"}
-      </span>
-    </div>
   );
 }
 

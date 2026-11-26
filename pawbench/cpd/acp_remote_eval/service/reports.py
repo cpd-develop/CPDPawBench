@@ -58,6 +58,20 @@ _FORMAT_SUFFIX = {FORMAT_JSON: "json", FORMAT_MD: "md", FORMAT_HTML: "html", FOR
 DEFAULT_TRANSCRIPT_PAGE = 200
 MAX_TRANSCRIPT_PAGE = 1000
 
+#: The dashboard pages *beats*, not raw notifications: twenty streamed chunks
+#: are one sentence, and a reader turning a page wants the next sentence.  The
+#: raw line cursor stays inside the service -- it is how a beat finds its lines
+#: again when the reader asks to expand one -- and is never shown in the UI.
+DEFAULT_BEAT_PAGE = 10
+BEAT_PAGE_SIZES = (10, 20, 50)
+BEAT_VOICES = ("all", "talk", "tool", "thought", "plan")
+
+#: Expanding is an explicit act, so it returns everything the beat carried.  A
+#: ceiling this high is a guard against one pathological tool argument, not a
+#: preview: it is a few hundred screens of text, and ``truncated`` says so if a
+#: beat ever reaches it.
+_FULL_CONTENT_CHARS = 200_000
+
 #: The three answers a transcript page can come back with, and the only two that
 #: are not "the file read fine" are spelled out because a page of nothing is
 #: otherwise three different situations wearing one shape: a task that never
@@ -253,12 +267,22 @@ class Reports:
         attempt: int = 1,
         cursor: int = 0,
         limit: int = DEFAULT_TRANSCRIPT_PAGE,
+        detail: bool = False,
     ) -> dict[str, Any]:
         """A page of the run's timeline.
 
         Paged and summarised on purpose: the JSONL is the full stream, and a
         detail route that returned it whole would put every tool argument -- the
         subject's own files included -- into a response the dashboard renders.
+
+        ``detail`` is the dashboard's own request and nobody else's.  Off, a row
+        is a size ("340 chars") and a tool's identity; on, it carries a *window*
+        into what was said or returned -- a few hundred characters per event,
+        still not the body -- because a timeline that only counts characters
+        cannot be read, and the person reading it is deciding whether a score is
+        fair.  The judge prompt and the MCP tools never pass it: their copies of
+        a transcript are the capped event list, and a wider page would only cost
+        them tokens.
         """
         # The row is looked up before the file, so a mistyped task answers
         # ``task_not_found`` instead of a well-formed page of nothing -- an empty
@@ -268,8 +292,13 @@ class Reports:
         page = max(1, min(int(limit), MAX_TRANSCRIPT_PAGE))
         start = max(0, int(cursor))
         path = self.exchange.attempt_dir(job_id, task_id, attempt) / "transcript.jsonl"
-        window, total, state = _read_window(path, start, page)
-        events, damaged = _timeline_events(window)
+        # A page can begin in the middle of a tool call, and the line that named
+        # the tool is then on the page before: without this the update draws as
+        # an anonymous "工具调用" with a result and no arguments.  The label map is
+        # filled during the walk that counts the file, and only for a detail page.
+        labels: dict[str, tuple[str, str]] | None = {} if detail else None
+        window, total, state = _read_window(path, start, page, labels=labels)
+        events, damaged = _timeline_events(window, detail=detail, labels=labels)
         if state == TRANSCRIPT_UNREADABLE:
             logger.warning(
                 "transcript page found the file and could not read it",
@@ -293,6 +322,140 @@ class Reports:
             "events": events,
             "transcript_state": state,
             "damaged_events": damaged,
+        }
+
+    def trace(
+        self,
+        job_id: str,
+        task_id: str,
+        *,
+        attempt: int = 1,
+        page: int = 1,
+        size: int = DEFAULT_BEAT_PAGE,
+        voice: str = "all",
+    ) -> dict[str, Any]:
+        """One page of a run's *beats*: the things a person would name.
+
+        :meth:`transcript` pages raw JSONL lines because the judge and the MCP
+        tools consume them one by one.  A reader does not: twenty thought chunks
+        are one thought, and a tool call and its update are one action.  Folding
+        has to happen before paging, or "next page" advances the reader by
+        twenty fragments of a sentence instead of by one sentence.
+
+        The fold is done here on the server (the same rules the dashboard used
+        to apply in the browser) so a page can be as small as ten beats without
+        downloading the whole transcript to learn where beat eleven begins.
+        Every beat keeps the raw line span it came from; that is the *internal*
+        handle :meth:`trace_content` uses when a reader expands one.  It is not
+        presented as a cursor in the UI.
+        """
+        self._job(job_id)
+        self._task_row(job_id, task_id, int(attempt))
+        width = size if size in BEAT_PAGE_SIZES else DEFAULT_BEAT_PAGE
+        index = max(1, int(page))
+        selected = voice if voice in BEAT_VOICES else "all"
+
+        path = self.exchange.attempt_dir(job_id, task_id, attempt) / "transcript.jsonl"
+        lines, total, state = _read_all(path)
+        if state != TRANSCRIPT_OK:
+            logger.warning(
+                "trace page found the file and could not read it",
+                extra={
+                    "job_id": job_id,
+                    "task_id": task_id,
+                    "attempt": int(attempt),
+                    "transcript_state": state,
+                },
+            )
+        events, damaged = _timeline_events(lines, detail=True)
+        all_beats = _fold_beats(events)
+        counts = _voice_counts(all_beats)
+        matches = [beat for beat in all_beats if _passes(beat, selected)]
+
+        start = (index - 1) * width
+        window = matches[start : start + width]
+        # Give every beat a stable index in its *filtered* list, so the expand
+        # route can name one without the reader ever seeing a line number.
+        for offset, beat in enumerate(window):
+            beat["index"] = start + offset
+
+        return {
+            "task_id": task_id,
+            "attempt": int(attempt),
+            "page": index,
+            "size": width,
+            "voice": selected,
+            "total_beats": len(matches),
+            "next_page": index + 1 if start + width < len(matches) else None,
+            "beats": window,
+            "counts": counts,
+            "transcript_state": state,
+            "damaged_events": damaged,
+            "total_events": total,
+        }
+
+    def trace_content(
+        self,
+        job_id: str,
+        task_id: str,
+        *,
+        attempt: int = 1,
+        index: int = 0,
+        voice: str = "all",
+    ) -> dict[str, Any]:
+        """The complete words of one beat, read only when a reader expands it.
+
+        The list page stays bounded: it carries previews, because it renders
+        hundreds of beats at once and a tool's argument may be a whole file.
+        Opening a beat is a deliberate act, so this walks the same fold again
+        and returns that beat's full text, arguments and result.  Nothing is
+        clipped at the preview ceilings here; ``truncated`` is set only if the
+        beat exceeds the much larger safety ceiling.
+        """
+        self._job(job_id)
+        self._task_row(job_id, task_id, int(attempt))
+        selected = voice if voice in BEAT_VOICES else "all"
+        path = self.exchange.attempt_dir(job_id, task_id, attempt) / "transcript.jsonl"
+        lines, _total, state = _read_all(path)
+        events, _damaged = _timeline_events(lines, detail=True)
+        matches = [beat for beat in _fold_beats(events) if _passes(beat, selected)]
+        wanted = max(0, int(index))
+        if state != TRANSCRIPT_OK or wanted >= len(matches):
+            return {
+                "task_id": task_id,
+                "attempt": int(attempt),
+                "index": wanted,
+                "voice": selected,
+                "text": "",
+                "args": {},
+                "output": "",
+                "text_truncated": False,
+                "output_truncated": False,
+                "transcript_state": state,
+                "found": False,
+            }
+
+        beat = matches[wanted]
+        first, last = int(beat["from"]), int(beat["to"])
+        # Re-read just this beat's lines at full length.  Parsing the whole file
+        # again would be simple but would also copy every other tool's arguments
+        # into a response for one card.
+        portion = lines[first : last + 1]
+        full_events, _ = _timeline_events(portion, full=True)
+        full_beat = _fold_beats(full_events)[0]
+        return {
+            "task_id": task_id,
+            "attempt": int(attempt),
+            "index": wanted,
+            "voice": selected,
+            "kind": beat["voice"],
+            "text": full_beat.get("text", ""),
+            "args": full_beat.get("args", {}),
+            "output": full_beat.get("output", ""),
+            "text_truncated": bool(full_beat.get("text_truncated")),
+            "output_truncated": bool(full_beat.get("output_truncated")),
+            "transcript_state": state,
+            "found": True,
         }
 
     # ── report files ──────────────────────────────────────────────────────────
@@ -443,9 +606,13 @@ class Reports:
             path, copy_from = self._locate_fixture(
                 job_id, summary.task_id, attempt, summary, root, dest
             )
-        except ReportError:
-            # Declared but not on disk.  Listed anyway -- the manifest says the
-            # agent was given it, and hiding the row would hide that fact.
+        except (ReportError, ExchangeError):
+            # Declared but unreadable: not on disk, or a dest the exchange layer
+            # refuses (a dot path, say).  Listed anyway -- the manifest says the
+            # agent was given it, and hiding the row would hide that fact.  The
+            # exchange error counts here too: it is raised per attachment by
+            # `session_file`, and letting one bad dest escape would turn "this
+            # file is odd" into a report that will not open.
             return {"path": dest, "size": None, "copy": None}
         return {"path": dest, "size": path.stat().st_size, "copy": copy_from}
 
@@ -864,7 +1031,13 @@ def _as_set(value: Any) -> set[str]:
     return set()
 
 
-def _read_window(path: Path, start: int, page: int) -> tuple[list[str], int, str]:
+def _read_window(
+    path: Path,
+    start: int,
+    page: int,
+    *,
+    labels: dict[str, tuple[str, str]] | None = None,
+) -> tuple[list[str], int, str]:
     """Lines ``[start, start + page)`` of a transcript, its length and its state.
 
     Streamed, not read whole: the file is the raw notification stream, a long run
@@ -876,6 +1049,13 @@ def _read_window(path: Path, start: int, page: int) -> tuple[list[str], int, str
     up one undecodable byte without losing its other 200 lines: a
     ``UnicodeDecodeError`` here would answer 500 for the whole page, on a run that
     is readable apart from one character.
+
+    ``labels``, when given, is filled with the ``toolCallId -> (title, name)`` seen
+    *before* the window: a page that starts inside a tool call would otherwise
+    draw that call's updates as an unnamed "工具调用".  They are collected on this
+    walk rather than in a second pass over the prefix -- the file is already being
+    streamed to the end for the count, and a dashboard asking for page 9 of a long
+    run should not pay for the first eight pages twice.
     """
     window: list[str] = []
     total = 0
@@ -897,6 +1077,8 @@ def _read_window(path: Path, start: int, page: int) -> tuple[list[str], int, str
                     continue
                 if start <= total < start + page:
                     window.append(line.rstrip("\n"))
+                elif labels is not None and total < start:
+                    _remember_label(line, labels)
                 total += 1
     except OSError:
         # The same answer as a file that would not open at all.  A read that dies
@@ -907,7 +1089,165 @@ def _read_window(path: Path, start: int, page: int) -> tuple[list[str], int, str
     return window, total, TRANSCRIPT_OK
 
 
-def _timeline_events(lines: Sequence[str]) -> tuple[list[dict[str, Any]], int]:
+def _read_all(path: Path) -> tuple[list[str], int, str]:
+    """Every non-blank line of a transcript, its count and its state.
+
+    Unlike :func:`_read_window` this keeps the lines, because folding a run into
+    beats needs them all: the last chunk of a sentence may be the last line of
+    the file.  The dashboard asks for a page of ten beats, not ten lines, and a
+    line cursor would land in the middle of a thought.  The lines stay in the
+    service -- only the folded beats cross the wire.
+    """
+    lines: list[str] = []
+    try:
+        handle = path.open(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return lines, 0, TRANSCRIPT_ABSENT
+    except OSError:
+        return lines, 0, TRANSCRIPT_UNREADABLE
+    try:
+        with handle:
+            for line in handle:
+                if line.strip():
+                    lines.append(line.rstrip("\n"))
+    except OSError:
+        return [], 0, TRANSCRIPT_UNREADABLE
+    return lines, len(lines), TRANSCRIPT_OK
+
+
+#: ACP's notification name to the voice a reader hears.  Everything else is UI
+#: chatter (usage, mode, available commands) and folds into one system beat.
+_VOICE_OF = {
+    "user_message_chunk": "user",
+    "agent_message_chunk": "assistant",
+    "agent_thought_chunk": "thought",
+    "tool_call": "tool",
+    "tool_call_update": "tool",
+    "plan": "plan",
+    "plan_update": "plan",
+}
+
+_VOICE_LABEL = {
+    "user": "你",
+    "assistant": "助手",
+    "thought": "思考",
+    "tool": "工具",
+    "plan": "计划",
+    "system": "系统",
+}
+
+
+def _passes(beat: Mapping[str, Any], voice: str) -> bool:
+    if voice == "all":
+        return True
+    if voice == "talk":
+        return beat.get("voice") in ("user", "assistant")
+    return beat.get("voice") == voice
+
+
+def _voice_counts(beats: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    return {
+        "all": len(beats),
+        "talk": sum(1 for beat in beats if _passes(beat, "talk")),
+        "tool": sum(1 for beat in beats if _passes(beat, "tool")),
+        "thought": sum(1 for beat in beats if _passes(beat, "thought")),
+        "plan": sum(1 for beat in beats if _passes(beat, "plan")),
+    }
+
+
+def _fold_beats(events: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Fold notifications into the beats a person would name.
+
+    The rules are the ones the dashboard used to apply in the browser: adjacent
+    chunks of one voice become one utterance; a tool's updates join the call
+    that opened them, by call id when there is one and by adjacency when there
+    is not; a plan's last update replaces the one before it.  Only *adjacent*
+    chunks join, so a thought between two sentences stays between them.
+
+    ``from`` and ``to`` are line numbers in the transcript.  They travel with
+    the beat as its private handle for the full-content read; the UI never
+    prints them as a cursor.
+    """
+    out: list[dict[str, Any]] = []
+    for line, event in enumerate(events):
+        kind = str(event.get("kind") or "other")
+        voice = _VOICE_OF.get(kind, "system")
+        call_id = str(event.get("tool_call_id") or "")
+        previous = out[-1] if out else None
+        starts_tool = kind == "tool_call"
+        extends_tool = (
+            voice == "tool"
+            and previous is not None
+            and previous["voice"] == "tool"
+            and not starts_tool
+            and (
+                previous["key"] == f"tool:{call_id}"
+                if call_id
+                else True
+            )
+        )
+        joins = previous is not None and (
+            extends_tool
+            or (voice != "tool" and previous["voice"] == voice and not call_id)
+        )
+
+        if joins:
+            beat = previous
+            beat["to"] = line
+            beat["events"] += 1
+            beat["kinds"].append(kind)
+            text = str(event.get("text") or "")
+            if voice != "plan":
+                beat["text"] = (beat["text"] + text) if text else beat["text"]
+            elif text:
+                beat["text"] = text
+            beat["text_truncated"] = beat["text_truncated"] or bool(event.get("text_truncated"))
+            beat["chars"] += int(event.get("chars") or 0)
+            beat["tool"] = beat["tool"] or str(event.get("tool") or "")
+            beat["name"] = beat["name"] or str(event.get("name") or "")
+            beat["status"] = str(event.get("status") or "") or beat["status"]
+            if event.get("args"):
+                beat["args"] = dict(event["args"])
+            beat["result_chars"] = max(beat["result_chars"], int(event.get("result_chars") or 0))
+            beat["output"] = str(event.get("output") or "") or beat["output"]
+            beat["output_truncated"] = bool(event.get("output_truncated"))
+            beat["steps"] = int(event.get("steps") or 0) or beat["steps"]
+            continue
+
+        key = f"tool:{call_id}" if voice == "tool" and call_id else f"{voice}:{line}"
+        out.append(
+            {
+                "key": key,
+                "voice": voice,
+                "label": _VOICE_LABEL[voice],
+                "at": str(event.get("at") or ""),
+                "from": line,
+                "to": line,
+                "events": 1,
+                "text": str(event.get("text") or ""),
+                "text_truncated": bool(event.get("text_truncated")),
+                "chars": int(event.get("chars") or 0),
+                "tool": str(event.get("tool") or ""),
+                "name": str(event.get("name") or ""),
+                "status": str(event.get("status") or ""),
+                "args": dict(event.get("args") or {}),
+                "result_chars": int(event.get("result_chars") or 0),
+                "output": str(event.get("output") or ""),
+                "output_truncated": bool(event.get("output_truncated")),
+                "steps": int(event.get("steps") or 0),
+                "kinds": [kind],
+            }
+        )
+    return out
+
+
+def _timeline_events(
+    lines: Sequence[str],
+    *,
+    detail: bool = False,
+    full: bool = False,
+    labels: Mapping[str, tuple[str, str]] | None = None,
+) -> tuple[list[dict[str, Any]], int]:
     """One timeline entry per line, and how many lines gave no entry.
 
     The count travels with the page because a transcript that was truncated
@@ -927,6 +1267,7 @@ def _timeline_events(lines: Sequence[str]) -> tuple[list[dict[str, Any]], int]:
     """
     events: list[dict[str, Any]] = []
     damaged = 0
+    known: dict[str, tuple[str, str]] = dict(labels or {})
     for text in lines:
         try:
             row = json.loads(text)
@@ -935,8 +1276,30 @@ def _timeline_events(lines: Sequence[str]) -> tuple[list[dict[str, Any]], int]:
         if not isinstance(row, dict):
             damaged += 1
             continue
-        events.append(_timeline_event(row))
+        events.append(_timeline_event(row, detail=detail, full=full, labels=known))
+        # In-page calls teach the rest of the page, so an update whose own row
+        # names nothing is still readable when the call happens to precede it in
+        # the same window.
+        _remember_label(text, known)
     return events, damaged
+
+
+def _remember_label(line: str, labels: dict[str, tuple[str, str]]) -> None:
+    """Record a ``tool_call`` row's title and tool name under its call id.
+
+    Damage is not counted here -- ``_timeline_events`` owns that count -- so an
+    unparsable line is simply not a label.
+    """
+    try:
+        row = json.loads(line)
+    except (ValueError, RecursionError):
+        return
+    if not isinstance(row, Mapping) or row.get("sessionUpdate") != "tool_call":
+        return
+    call_id = str(row.get("toolCallId") or "")
+    title = str(row.get("title") or row.get("name") or "")
+    if call_id and title:
+        labels[call_id] = (title, str(row.get("name") or ""))
 
 
 #: A tool's arguments are summarised, never copied.  The values are the
@@ -946,45 +1309,201 @@ def _timeline_events(lines: Sequence[str]) -> tuple[list[dict[str, Any]], int]:
 _ARG_PREVIEW_CHARS = 40
 _ARG_KEYS_SHOWN = 12
 
+#: How much of one event a ``detail`` page shows.  Two different jobs, two
+#: different ceilings: a message chunk is a sentence or half of one (the dashboard
+#: stitches a run of chunks back together), while a result is often a table or a
+#: stack trace and the first screenful is what a reader scans before asking for
+#: the artifact.  Neither is the body; the report zip is.
+_DETAIL_TEXT_CHARS = 500
+_DETAIL_OUTPUT_CHARS = 700
+_DETAIL_ARG_CHARS = 200
 
-def _timeline_event(row: Mapping[str, Any]) -> dict[str, Any]:
+
+def _timeline_event(
+    row: Mapping[str, Any],
+    *,
+    detail: bool = False,
+    full: bool = False,
+    labels: Mapping[str, tuple[str, str]] | None = None,
+) -> dict[str, Any]:
     """One JSONL row down to the timeline the dashboard is made of.
 
     The file holds the raw ``session/update`` stream, not the message events the
     judge is given, so this reads the wire names (``sessionUpdate``, ``rawInput``)
     -- a summariser written against the judge shape would find nothing in it.
+
+    ``detail`` widens a row from "how much" to "what": the chunk's opening words,
+    the tool's call id (so the dashboard can pair a call with its updates), the
+    arguments at a readable length, and the result's first screenful.  The keys it
+    adds are absent -- never empty -- when there is nothing to say, so a caller
+    that ignores them reads the same page it read before.
+
+    ``full`` is the opposite of a preview: it is asked for one beat, after a
+    reader has opened it, so arguments keep every field and every character and
+    results are not cut at a screenful.  A single generous ceiling still guards
+    against a pathological row, and says so when it bites.
     """
     kind = str(row.get("sessionUpdate") or "other")
     entry: dict[str, Any] = {"kind": kind, "at": row.get("at")}
     if kind in ("tool_call", "tool_call_update"):
-        entry["tool"] = str(row.get("title") or row.get("name") or "")
+        call_id = str(row.get("toolCallId") or "")
+        # The update carries the id only; the row that named the call is on an
+        # earlier page.  A reader comparing outcomes needs to know which tool
+        # these are the outcome of.
+        known = (labels or {}).get(call_id, ("", "")) if call_id else ("", "")
+        entry["tool"] = str(row.get("title") or row.get("name") or "") or known[0]
         entry["status"] = str(row.get("status") or "")
-        entry["args"] = _args_summary(row.get("rawInput"))
+        if full:
+            entry["args"] = _full_args(row.get("rawInput"))
+        else:
+            entry["args"] = _args_summary(
+                row.get("rawInput"), chars=_DETAIL_ARG_CHARS if detail else _ARG_PREVIEW_CHARS
+            )
         entry["result_chars"] = _result_length(row)
+        if detail or full:
+            entry["name"] = str(row.get("name") or "") or known[1]
+            entry["tool_call_id"] = call_id
+            if full:
+                output, truncated = _clip(_flatten_result(row), _FULL_CONTENT_CHARS)
+            else:
+                output, truncated = _output_preview(row)
+            if output:
+                entry["output"] = output
+                entry["output_truncated"] = truncated
         return entry
     if kind in ("plan", "plan_update"):
         entries = row.get("entries") or row.get("plan") or []
         entry["steps"] = len(entries) if isinstance(entries, list) else 0
+        if detail or full:
+            text, truncated = _clip(
+                _plan_lines(entries), _FULL_CONTENT_CHARS if full else _DETAIL_TEXT_CHARS
+            )
+            if text:
+                entry["text"] = text
+                entry["text_truncated"] = truncated
         return entry
+    if detail or full:
+        text, truncated = _clip(
+            "".join(str(_block_text(block)) for block in _blocks(row.get("content"))),
+            _FULL_CONTENT_CHARS if full else _DETAIL_TEXT_CHARS,
+        )
+        if text:
+            entry["text"] = text
+            entry["text_truncated"] = truncated
     entry["chars"] = _text_length(row.get("content"))
     return entry
 
 
-def _args_summary(raw_input: Any) -> dict[str, str]:
+def _args_summary(raw_input: Any, *, chars: int = _ARG_PREVIEW_CHARS) -> dict[str, str]:
     source = raw_input if isinstance(raw_input, Mapping) else {}
     summary: dict[str, str] = {}
     names = sorted(str(name) for name in source)
     for name in names[:_ARG_KEYS_SHOWN]:
-        summary[name] = _preview(str(source[name]))
+        summary[name] = _preview(str(source[name]), chars)
     if len(names) > _ARG_KEYS_SHOWN:
         summary["…"] = f"{len(names) - _ARG_KEYS_SHOWN} more field(s)"
     return summary
 
 
-def _preview(text: str) -> str:
-    if len(text) <= _ARG_PREVIEW_CHARS:
+def _preview(text: str, chars: int = _ARG_PREVIEW_CHARS) -> str:
+    if len(text) <= chars:
         return text
-    return f"{text[:_ARG_PREVIEW_CHARS]}… +{len(text) - _ARG_PREVIEW_CHARS} chars"
+    return f"{text[:chars]}… +{len(text) - chars} chars"
+
+
+def _clip(text: str, chars: int) -> tuple[str, bool]:
+    """``text`` cut to ``chars``, and whether anything was cut.
+
+    No marker is appended: the caller stitches several of these back together
+    (a streamed message is one sentence per chunk), and a "+3400 chars" notice in
+    the middle of a paragraph is noise where the surrounding text is the point.
+    The panel says "已截断" once, at the level of the whole entry.
+    """
+    if len(text) <= chars:
+        return text, False
+    return text[:chars], True
+
+
+def _text_preview(content: Any) -> tuple[str, bool]:
+    """The opening words of a chunk, from the block shape a chunk carries."""
+    return _clip("".join(str(_block_text(block)) for block in _blocks(content)), _DETAIL_TEXT_CHARS)
+
+
+def _output_preview(row: Mapping[str, Any]) -> tuple[str, bool]:
+    """A tool's result as text, the first screenful of it.
+
+    ``rawOutput`` first, then the content blocks -- the same order
+    :func:`.acp.transcript._tool_output_blocks` reads them in.  A structured
+    result is flattened to JSON for the same reason the judge gets it that way:
+    it is the only honest rendering of a value that has no text.
+    """
+    raw = row.get("rawOutput")
+    if raw not in (None, "", {}, []):
+        return _clip(_flatten(raw), _DETAIL_OUTPUT_CHARS)
+    parts = []
+    for block in _blocks(row.get("content")):
+        parts.append(str(_block_text(block)))
+    return _clip("".join(parts), _DETAIL_OUTPUT_CHARS)
+
+
+def _plan_lines(entries: Any) -> str:
+    """A plan as the checklist the agent wrote, one line per entry."""
+    lines = []
+    for entry in entries if isinstance(entries, list) else []:
+        item = entry if isinstance(entry, Mapping) else {}
+        content = str(item.get("content") or "").strip()
+        if content:
+            status = str(item.get("status") or "pending")
+            lines.append(f"[{status}] {content}")
+    return "\n".join(lines)
+
+
+def _plan_preview(entries: Any) -> tuple[str, bool]:
+    return _clip(_plan_lines(entries), _DETAIL_TEXT_CHARS)
+
+
+def _full_args(raw_input: Any) -> dict[str, str]:
+    """Every argument, in full, for a card the reader opened.
+
+    The list page summarises values at 200 characters because it renders many
+    cards at once and one argument may be a whole file.  Here the reader asked
+    for this one card, so every key and every character comes back -- the only
+    ceiling is the same generous one as text, and it is reported when hit.
+    """
+    source = raw_input if isinstance(raw_input, Mapping) else {}
+    full: dict[str, str] = {}
+    for name in sorted(str(key) for key in source):
+        value, _ = _clip(_flatten(source[name]), _FULL_CONTENT_CHARS)
+        full[name] = value
+    return full
+
+
+def _flatten_result(row: Mapping[str, Any]) -> str:
+    """A tool's complete result, from whichever place the agent put it."""
+    raw = row.get("rawOutput")
+    if raw not in (None, "", {}, []):
+        return _flatten(raw)
+    return "".join(str(_block_text(block)) for block in _blocks(row.get("content")))
+
+
+def _flatten(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False, default=str)
+
+
+def _block_text(block: Any) -> str:
+    """The text a content block carries, whether or not it wraps another block.
+
+    A tool-call block wraps its content one level deeper than a message chunk
+    does (``{"type": "content", "content": {...}}``), so reading only the outer
+    mapping would find no ``text`` key and count every tool result as zero.
+    """
+    if not isinstance(block, Mapping):
+        return ""
+    inner = block.get("content")
+    text = inner if isinstance(inner, Mapping) else block
+    return str(text.get("text") or "")
 
 
 def _text_length(content: Any) -> int:
@@ -1017,14 +1536,7 @@ def _blocks(content: Any) -> list[Any]:
 
 
 def _block_length(block: Any) -> int:
-    if not isinstance(block, Mapping):
-        return 0
-    # A tool-call block wraps its content one level deeper than a message chunk
-    # does (``{"type": "content", "content": {...}}``), so reading only the outer
-    # mapping would find no ``text`` key and count every tool result as zero.
-    inner = block.get("content")
-    text = inner if isinstance(inner, Mapping) else block
-    return len(str(text.get("text") or ""))
+    return len(_block_text(block))
 
 
 def _artifact_link(job_id: str, task_id: str, attempt: int, path: str) -> dict[str, Any]:

@@ -21,11 +21,32 @@ into `~/.qwenpaw/plugins/pawbench-eval` (no symlink), so an edit here reaches
 nobody until somebody installs again -- and nobody is notified automatically.
 Whoever changes the plugin says so in the channel the team already uses.
 
-The skill is gated on the MCP server: until `pawbench-eval` is configured in
-QwenPaw the skill does not appear in the skill list.  QwenPaw has no
-`register_mcp*` hook, so that step is manual (see `website/public/docs/mcp.en.md`
-in the QwenPaw checkout): the endpoint is `<service>/mcp` and it needs
-`Authorization: Bearer <token>`.
+A `--force` reinstall replaces the tree, `data/config.json` included: the
+service address and token have to be entered again.  The MCP client follows from
+that save (below), so it does not need a second visit to 智能体 → MCP.
+
+### The MCP client is written by the plugin, not by hand
+
+`pawbench-datasets` is gated on an MCP server named `pawbench-eval`
+(`metadata.qwenpaw.requires.mcp` in its SKILL.md).  Until that client exists the
+skill is not "broken", it is simply absent from the list, with no error to read.
+QwenPaw has no `register_mcp*` hook, so the plugin registers it the way the
+console does -- `MCPConfigService` (`backend/mcp_sync.py`), which writes
+`<workspace>/drivers/mcp/pawbench-eval.yaml` and keeps the bearer token in the
+credential store rather than in the header:
+
+| When | What happens |
+|---|---|
+| 配置 saved | client created, or updated in place (a rotated token reaches it) |
+| QwenPaw starts | reconciled from `data/config.json` / `PAWBENCH_EVAL_*`, no write when nothing moved |
+| an agent is created | the new workspace gets its own client, no restart |
+| plugin uninstalled | removed -- but only if this plugin wrote it; a card pasted by hand is left alone |
+
+The endpoint is `<service>/mcp` over `streamable_http` with
+`Authorization: Bearer <token>`, which is what the service mounts.  Nothing is
+written while the address or the token is still missing: an enabled client with
+no credential answers 401 to every tool call, which reads as a broken service
+rather than an unconfigured plugin.
 
 ## First run
 
@@ -37,6 +58,10 @@ Open **PawBench 评测** in the sidebar (route `/apps/pawbench-eval`), then
 | 评测服务地址 | the service's `public_base_url`, e.g. `http://127.0.0.1:8471` |
 | 访问 token | a token issued by `service.auth add-subject`; pasted once, never shown again |
 | 我的身份 | optional. The submitter name this token belongs to; filled in automatically after the first submission |
+
+Saving that form is the whole setup: it also registers the MCP client, so the
+`pawbench-datasets` skill shows up in every agent workspace without pasting a
+JSON snippet into 智能体 → MCP.
 
 The connection is saved to `<plugin>/data/config.json` beside the installed
 copy.  Two environment variables can stand in for it — `PAWBENCH_EVAL_BASE_URL`

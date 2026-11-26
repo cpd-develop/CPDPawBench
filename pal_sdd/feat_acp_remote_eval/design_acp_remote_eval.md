@@ -135,7 +135,9 @@ reports     job_id, format(json|md|html|zip), sensitivity(shared|full), path, sh
 | `GET /v1/jobs/{id}/detail` | 评测详情（需求 8）。白名单内**全员可读** shared 版：job 配置、窗口与数据集来源、进度、总分与切片对比、逐题分数/耗时/失败原因。`?sensitivity=full` **同样白名单内全员可读**，追加 judge 逐条依据与产物下载口（档位差异是外发边界，不是人员边界） |
 | `GET /v1/jobs/{id}/tasks/{tid}/detail` | 单题详情：`automated_breakdown`、judge 结论（按档脱敏）、起止与耗时、`protocol_written` / `out_of_band_count`、轨迹分页、产物清单 |
 | `GET /v1/jobs/{id}/report?format=json\|md\|html\|zip&sensitivity=` | 报告下载（需求 9）。返回一次性预签名 URL + sha256 + size + 过期时刻，不直接回流文件字节 |
-| `GET /v1/jobs/{id}/transcript?task_id=&cursor=&limit=` | 轨迹分段读取（默认 200 事件/页），避免大轨迹把服务与前端打爆 |
+| `GET /v1/jobs/{id}/transcript?task_id=&cursor=&limit=&detail=` | 原始 `session/update` 分段读取（默认 200 行/页），judge 与 MCP 工具用；默认页只给"多大"（字符数、工具名、状态），`detail=1` 才给有界窗口（正文开头 ~500 字、结果首屏 ~700 字、参数 ~200 字，外加 `tool_call_id`） |
+| `GET /v1/jobs/{id}/beats?task_id=&attempt=&page=&size=&voice=` | 看板用的轨迹：服务先把通知折成"步"（相邻同声(stream chunk)合并、调用与结果配对、计划成清单），再按步分页（`size` 只能 10/20/50，默认 10），`voice` 在折好的列表上筛选（`all`/`talk`/`tool`/`thought`/`plan`）。原始行游标只在服务内部用来定位一步，**不出现在响应给用户的游标里**；响应带各筛选的总数与 `index`。每步给有界预览，避免一次渲染几千步 |
+| `GET /v1/jobs/{id}/beats/content?task_id=&attempt=&index=&voice=` | 展开某一步时按需取全文：正文、参数、结果都不再按预览上限截断（只留一个极高的安全上限，触发时 `*_truncated` 说明）。默认列表仍是预览，只有用户点了展开才拉全文 |
 | `POST /v1/datasets/packages` | 上传自定义评测集（zip 整包，元数据走 query：`id` / `name` / `categories` / `description`）→ `{dataset_id, validation_report}`；校验失败返回逐项原因，**不注册、不进队列**。实现上把 body 分成两条路由而不是 `POST /v1/datasets` 按 `kind` 分叉：zip 是 256 MB 上限的二进制体，内置视图是几十字节的 JSON 过滤器，合成一条会让 JSON 调用方也走一遍 multipart 解析（原方案的那一条已按此拆开） |
 | `GET /v1/datasets` / `GET /v1/datasets/{id}` | 目录浏览：名称、owner、kind、分类、任务数、labels 分布（能力/场景/复杂度/环境/模态）。**列表与数据集描述不含题目正文**：一页列出每个数据集的每道题，等于把题库发出去；正文只走下面那条一次一题的路径 |
 | `GET /v1/datasets/{id}/tasks/{tid}` | 单题（下钻的最后一层）：题干、期望行为、标签、判分**方式**与权重、超时、**判据清单与 judge 细则正文**、`workspace_files` 清单（含文件在不在、多大）。判据若被写成普通项目符号——语料 150 题里有 26 题如此，`TaskLoader` 只认 `- [ ]`——这里补一道只用于展示的解析，不碰 loader 也不碰判分器。**不含 `automated_checks`**：那是期望值本身，等于答案 |
@@ -302,7 +304,11 @@ workspace/ = 评测集 fixture 原样铺一层（我们侧持有，可信）
 
 MCP 侧详情与报告有三条硬约束：① 与看板共用 `build_job_detail`，不允许 tool 自己拼字段；② 默认 `sensitivity=shared`——这条**不再是权限降级，而是两个各自独立的理由**：agent 上下文里不需要 rubric 与他人产物（完整版靠显式参数请求），以及默认外发安全（agent 很可能把拿到的内容贴回对话，对话再被转发给被评测方）。取 `full` 时白名单内一律放行；只有白名单外才 401，不返回"无权"这种区分档次的错误；③ 轨迹与产物正文永不内联在 tool 响应里，只给分页与预签名 URL——报告 zip 动辄上百 MB，塞进 MCP 消息会同时打爆上下文窗口和服务带宽。
 
-MCP 形态：HTTP/SSE server（服务常驻时同进程挂载）。注意 QwenPaw **没有** `register_mcp*` 插件钩子，所以 MCP server 由用户在 QwenPaw 侧按 `website/public/docs/mcp.en.md` 手工配一次；skill 用 `metadata.requires.mcp` 做门控，MCP 未启用时 skill 不出现在可用列表，插件看板则提示"先启用 pawbench MCP"。
+MCP 形态：HTTP/SSE server（服务常驻时同进程挂载）。skill 用 `metadata.requires.mcp` 做门控，MCP 未启用时 skill 不出现在可用列表——所以"配 MCP"这件事不能留给用户手工做，否则失败形态是"技能没出现"，没有任何报错可读。
+
+QwenPaw **没有** `register_mcp*` 插件钩子，但它的 Console 写卡片的入口是公开可用的服务层 `app/mcp/config_service.MCPConfigService`（`create_client` / `update_client` / `delete_client`），插件可以直接调它，写出来的就是手工配置会写出的那份 `<workspace>/drivers/mcp/pawbench-eval.yaml`（token 进凭据库，不落在 header 里）。因此采用**派生状态**：插件把自己的连接配置（`data/config.json` 或 `PAWBENCH_EVAL_*`）同步成 MCP 客户端（`backend/mcp_sync.py`），触发点是 ①保存配置 ②QwenPaw 启动（priority 90 的 startup hook，装机即生效）③新建 agent（`on_workspace_created`，按 `agent_id` 解析工作区）④卸载时删除。三条边界：卡片名必须与 skill 的 `requires.mcp` 完全一致（`pawbench-eval`）；地址或 token 缺失时不写，避免造出一个每次调用都 401 的"已启用"客户端；卸载只删带自己 description 标记的卡片，手工建的卡片不碰。启动对齐不写已经匹配的卡片，也不把用户手动关掉的客户端重新打开——保存配置才重新接管。
+
+代价：这条同步依赖 QwenPaw 2.x 的 `MCPConfigService` 路径。真到没有它的 host 上，异常被吞在 `_sync_mcp` 里，退化成"和以前一样手工配一次"，看板照常可用。若将来 QwenPaw 在 `plugin.json` 里支持声明 mcpServers，应当改回声明式，把这段删掉。
 
 skill 改名 **`pawbench-datasets`**（原 `pawbench-dataset-prep`），装载方式是插件后端调 `PawApp.skill_provider(skills_dir=Path(__file__).parent / "skills", channels=["all"])`（`src/qwenpaw/pawapp/app.py:544`，它转发给 `api.register_skill_provider`）。两个只在读源码后才能发现的点：① 它吃的是一个**目录**，目录里每个子目录是一个带 `SKILL.md` 的 skill，不是"注册单个 skill"的接口；② host 会把 skill **复制进 workspace** 再按 `source` 记账（卸载时按 source 清理）。所以 `skills_dir` 必须相对 `__file__` 解析——运行时它在 `~/.qwenpaw/plugins/` 下，不在仓库里（同 G5）；也意味着我们改了 SKILL.md，别人光重新 install 不一定生效，还要看 workspace 侧的 manifest 是否重新 reconcile，这条挂在遗留 16。两条工作流：
 
@@ -341,6 +347,7 @@ plugins/pawbench-eval/
   plugin.json          { id, version, type:"app", entry:{backend,frontend}, meta.pawapp.entry_page:"/apps/pawbench-eval" }
   requirements.txt     必须放插件根，不能放 backend/（见下）
   backend/main.py      PawApp；代理 /v1/*（注入 token）；/config 读写；/identity 学身份；@app.on_launch 校验服务可达
+  backend/mcp_sync.py  把连接配置同步成 `pawbench-eval` MCP 客户端（保存配置 / 启动 / 新建 agent / 卸载）
   ui/index.js          ES module 单文件；registerRoutes 注册 /apps/pawbench-eval
   skills/pawbench-datasets/SKILL.md + templates/
   README.md            安装两步、首跑配置、看板各区块、编辑者注意事项

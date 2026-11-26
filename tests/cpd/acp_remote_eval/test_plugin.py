@@ -21,6 +21,7 @@ test QwenPaw rather than our use of it.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import json
 import re
@@ -154,6 +155,8 @@ class _FakePawApp:
         self.routers: list[Any] = []
         self.skill_providers: list[dict[str, Any]] = []
         self.lifecycle: dict[str, Any] = {}
+        self.hooks: list[dict[str, Any]] = []
+        self.workspace_hooks: list[Any] = []
 
     def include_router(self, router: Any, **_: Any) -> None:
         self.routers.append(router)
@@ -167,6 +170,21 @@ class _FakePawApp:
 
     def on_terminate(self, func: Any) -> Any:
         self.lifecycle["terminate"] = func
+        return func
+
+    def on_uninstall(self, func: Any) -> Any:
+        self.lifecycle["uninstall"] = func
+        return func
+
+    def hook(self, phase: str, *, priority: int = 100) -> Any:
+        def decorator(func: Any) -> Any:
+            self.hooks.append({"phase": phase, "priority": priority, "func": func})
+            return func
+
+        return decorator
+
+    def on_workspace_created(self, func: Any) -> Any:
+        self.workspace_hooks.append(func)
         return func
 
 
@@ -752,3 +770,241 @@ def test_fetch_relays_only_the_configured_origin(client: Any) -> None:
         )
         assert outside.status_code == 400
         assert outside.json()["error"] == "fetch_origin_refused"
+
+
+# ── the MCP client the skill waits for ────────────────────────────────────
+#
+# ``pawbench-datasets`` is gated on an MCP server named ``pawbench-eval``, and a
+# gate nobody satisfies is a skill that is silently absent rather than an error.
+# The plugin therefore writes the client itself (backend/mcp_sync.py) from the
+# same settings the dashboard already saves.  These cases pin the two things
+# that break quietly: a client whose name no longer matches the gate, and a
+# token that never reaches the host because a save only created the card once.
+
+
+class _FakeCard:
+    """A ``DriverCard`` as far as ``mcp_sync`` reads one."""
+
+    def __init__(
+        self,
+        *,
+        url: str = "",
+        enabled: bool = True,
+        description: str = "",
+    ) -> None:
+        self.url = url
+        self.enabled = enabled
+        self.config = {"description": description}
+
+
+class _FakeMCPRequest:
+    """``MCPClientCreateRequest`` / ``...UpdateRequest``: kwargs in, kwargs out."""
+
+    def __init__(self, **fields: Any) -> None:
+        self.fields = fields
+
+
+class _FakeMCPService:
+    """The slice of ``MCPConfigService`` that ``mcp_sync`` actually calls."""
+
+    def __init__(self, existing: _FakeCard | None = None) -> None:
+        self.existing = existing
+        self.created: list[tuple[str, Any]] = []
+        self.updated: list[tuple[str, Any]] = []
+        self.deleted: list[str] = []
+
+    async def load_card(self, client_key: str) -> Any:
+        if self.existing is None:
+            raise RuntimeError(f"MCP client '{client_key}' not found")  # host: HTTP 404
+        return self.existing
+
+    async def build_info_from_card(self, card: Any) -> Any:
+        return card
+
+    async def create_client(self, client_key: str, request: Any) -> None:
+        self.created.append((client_key, request))
+
+    async def update_client(self, client_key: str, request: Any) -> None:
+        self.updated.append((client_key, request))
+
+    async def delete_client(self, client_key: str) -> dict[str, str]:
+        self.deleted.append(client_key)
+        return {"message": "deleted"}
+
+
+@pytest.fixture()
+def mcp_models(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Stand in for ``qwenpaw.app.mcp.schemas``.
+
+    ``sync_workspace`` imports the request models from the host at call time --
+    that is what keeps this suite runnable with QwenPaw uninstalled.
+    """
+    schemas = types.ModuleType("qwenpaw.app.mcp.schemas")
+    schemas.MCPClientCreateRequest = _FakeMCPRequest  # type: ignore[attr-defined]
+    schemas.MCPClientUpdateRequest = _FakeMCPRequest  # type: ignore[attr-defined]
+    for name in ("qwenpaw", "qwenpaw.app", "qwenpaw.app.mcp"):
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    monkeypatch.setitem(sys.modules, "qwenpaw.app.mcp.schemas", schemas)
+    return schemas
+
+
+@pytest.fixture()
+def mcp_registry(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Stand in for ``qwenpaw.plugins.registry``: the host's agent map."""
+
+    class _Manager:
+        def __init__(self) -> None:
+            self.agents: dict[str, Any] = {}
+
+    manager = _Manager()
+    registry = types.ModuleType("qwenpaw.plugins.registry")
+    registry.PluginRegistry = lambda: types.SimpleNamespace(  # type: ignore[attr-defined]
+        get_workspace_manager=lambda: manager,
+    )
+    plugins = types.ModuleType("qwenpaw.plugins")
+    plugins.registry = registry  # type: ignore[attr-defined]
+    root = sys.modules.get("qwenpaw") or types.ModuleType("qwenpaw")
+    root.plugins = plugins  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "qwenpaw", root)
+    monkeypatch.setitem(sys.modules, "qwenpaw.plugins", plugins)
+    monkeypatch.setitem(sys.modules, "qwenpaw.plugins.registry", registry)
+    return manager
+
+
+def _workspace() -> Any:
+    return types.SimpleNamespace(workspace_dir="/tmp/ws")
+
+
+def test_the_client_the_plugin_writes_is_the_one_the_skill_gates_on(backend: Any) -> None:
+    """The gate is matched by name against the card; a rename hides the skill."""
+    gate = _front_matter(_skill_dir() / "SKILL.md")["metadata"]["qwenpaw"]["requires"]["mcp"]
+    assert list(gate) == [backend._mcp_sync().CLIENT_KEY]
+
+
+def test_the_client_points_at_the_service_s_own_mount(mcp_models: Any, backend: Any) -> None:
+    payload = backend._mcp_sync().desired("http://127.0.0.1:8471/", "tok-123")
+    assert payload["name"] == "pawbench-eval"
+    assert payload["transport"] == "streamable_http"
+    assert payload["url"] == "http://127.0.0.1:8471/mcp", "service/api.py mounts it at /mcp"
+    assert payload["headers"] == {"Authorization": "Bearer tok-123"}
+    assert payload["enabled"] is True, "a disabled card leaves the skill gated"
+
+
+def test_the_first_save_creates_the_client(mcp_models: Any, backend: Any) -> None:
+    sync = backend._mcp_sync()
+    service = _FakeMCPService()
+    action = asyncio.run(
+        sync.sync_workspace(_workspace(), "http://svc", "one", force=True, service=service),
+    )
+    assert action == "created"
+    key, request = service.created[0]
+    assert key == sync.CLIENT_KEY
+    assert request.fields["headers"]["Authorization"] == "Bearer one"
+
+
+def test_a_later_save_rotates_the_token(mcp_models: Any, backend: Any) -> None:
+    """The host masks the token on the way out, so "same URL" is not "same key"."""
+    sync = backend._mcp_sync()
+    service = _FakeMCPService(_FakeCard(url="http://svc/mcp", description=sync.DESCRIPTION))
+    action = asyncio.run(
+        sync.sync_workspace(_workspace(), "http://svc", "two", force=True, service=service),
+    )
+    assert action == "updated"
+    assert service.updated[0][1].fields["headers"]["Authorization"] == "Bearer two"
+    assert service.created == []
+
+
+def test_startup_leaves_a_matching_client_alone(mcp_models: Any, backend: Any) -> None:
+    """Startup reconciles, it does not rewrite: a write here reconnects the driver."""
+    sync = backend._mcp_sync()
+    service = _FakeMCPService(_FakeCard(url="http://svc/mcp", description=sync.DESCRIPTION))
+    action = asyncio.run(sync.sync_workspace(_workspace(), "http://svc", "tok", service=service))
+    assert action == "unchanged"
+    assert service.updated == []
+
+
+def test_startup_does_not_switch_a_disabled_client_back_on(mcp_models: Any, backend: Any) -> None:
+    """Somebody who turned it off in 智能体 → MCP meant it; a restart is not a vote."""
+    sync = backend._mcp_sync()
+    service = _FakeMCPService(
+        _FakeCard(url="http://svc/mcp", enabled=False, description=sync.DESCRIPTION),
+    )
+    action = asyncio.run(sync.sync_workspace(_workspace(), "http://svc", "tok", service=service))
+    assert action == "unchanged"
+    assert service.updated == []
+
+
+def test_moving_the_service_moves_the_client(mcp_models: Any, backend: Any) -> None:
+    sync = backend._mcp_sync()
+    service = _FakeMCPService(_FakeCard(url="http://old/mcp", description=sync.DESCRIPTION))
+    action = asyncio.run(sync.sync_workspace(_workspace(), "http://new", "tok", service=service))
+    assert action == "updated"
+    assert service.updated[0][1].fields["url"] == "http://new/mcp"
+
+
+def test_no_token_means_no_client_rather_than_a_broken_one(mcp_models: Any, backend: Any) -> None:
+    """An enabled client without a credential answers 401 to every tool call."""
+    sync = backend._mcp_sync()
+    service = _FakeMCPService()
+    assert asyncio.run(sync.sync_workspace(_workspace(), "http://svc", "", service=service)) == "skipped"
+    assert service.created == []
+
+
+def test_uninstall_removes_only_the_client_this_plugin_wrote(mcp_models: Any, backend: Any) -> None:
+    sync = backend._mcp_sync()
+
+    ours = _FakeMCPService(_FakeCard(url="http://svc/mcp", description=sync.DESCRIPTION))
+    assert asyncio.run(sync.remove_workspace(_workspace(), service=ours)) == "removed"
+    assert ours.deleted == [sync.CLIENT_KEY]
+
+    # Pasted by hand, with whatever policy its owner chose: not ours to delete.
+    theirs = _FakeMCPService(
+        _FakeCard(url="http://svc/mcp", description="PawBench remote evaluation"),
+    )
+    assert asyncio.run(sync.remove_workspace(_workspace(), service=theirs)) == "kept"
+    assert theirs.deleted == []
+
+
+def test_a_new_workspace_is_resolved_from_the_agent_id(
+    mcp_models: Any,
+    mcp_registry: Any,
+    backend: Any,
+) -> None:
+    """The created-workspace payload carries an id, not the object.
+
+    Reading only ``workspace_info["workspace"]`` works on the reload path and
+    silently does nothing when an agent is created, which is the case this hook
+    exists for.
+    """
+    sync = backend._mcp_sync()
+    workspace = _workspace()
+    mcp_registry.agents["default"] = workspace
+    assert sync.workspace_for({"agent_id": "default", "workspace_dir": "/tmp/ws"}) is workspace
+    assert sync.workspace_for({"workspace": workspace}) is workspace
+    assert sync.workspace_for({"agent_id": "gone"}) is None
+
+
+def test_the_backend_reconciles_on_startup_and_uninstalls_cleanly(backend: Any) -> None:
+    app = backend.plugin
+    startup = [h for h in app.hooks if h["phase"] == "startup"]
+    assert startup, "nothing reconciles the client when the host starts"
+    assert startup[0]["priority"] < 100, "configure before the page's own probe reports"
+    assert "uninstall" in app.lifecycle, "the card outlives the plugin without this"
+    assert app.workspace_hooks, "agents created later would never get the client"
+
+
+def test_saving_the_connection_configures_the_client(
+    client: Any,
+    backend: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[bool] = []
+
+    async def record(*, force: bool) -> dict[str, str]:
+        seen.append(force)
+        return {}
+
+    monkeypatch.setattr(backend, "_sync_mcp", record)
+    with _Upstream() as upstream:
+        _configure(client, upstream.base_url)
+    assert seen == [True], "a save must rewrite the card, not only create it once"

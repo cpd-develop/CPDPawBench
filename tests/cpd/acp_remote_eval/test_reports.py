@@ -810,6 +810,70 @@ def test_more_arguments_than_shown_are_counted_not_dropped(env: Env) -> None:
     assert args["…"] == "3 more field(s)"
 
 
+def test_a_detail_page_carries_the_opening_words_and_the_result(env: Env) -> None:
+    """``detail=1`` is the dashboard's page: readable, and still a window.
+
+    Off, this route answers sizes -- which is all the judge and the MCP tools
+    need, and all that should ever leave in a document meant to be forwarded.  On,
+    the reader gets the sentence the agent said and the first screenful of what
+    the tool returned, because "340 chars" is not something anyone can judge a
+    score by.
+    """
+    body = "| date | amount |\n" * 200
+    write_transcript(
+        env,
+        [
+            message_chunk("我先读一遍表头，再按月份汇总。"),
+            tool_call("Read inbox.csv", {"path": "fixtures/inbox.csv", "contents": body}),
+            plan_update(2),
+        ],
+    )
+
+    page = env.reports.transcript(JOB, "mail_a", detail=True)
+
+    said, called, plan = page["events"]
+    assert said["text"] == "我先读一遍表头，再按月份汇总。"
+    assert said["text_truncated"] is False
+    assert said["chars"] == len("我先读一遍表头，再按月份汇总。")
+    assert called["tool_call_id"] == "call-1"
+    assert called["output"] == "42 rows read"
+    assert called["output_truncated"] is False
+    # A readable argument, not the whole file: the ceiling moved, it did not go.
+    kept = reports_mod._DETAIL_ARG_CHARS
+    assert called["args"]["contents"] == f"{body[:kept]}… +{len(body) - kept} chars"
+    assert plan["text"] == "[pending] step 0\n[pending] step 1"
+    assert plan["steps"] == 2
+
+
+def test_a_detail_page_cuts_a_long_body_and_says_so(env: Env) -> None:
+    long_text = "the agent kept talking, " * 200
+    write_transcript(env, [message_chunk(long_text)])
+
+    event = env.reports.transcript(JOB, "mail_a", detail=True)["events"][0]
+
+    assert event["text"] == long_text[: reports_mod._DETAIL_TEXT_CHARS]
+    assert event["text_truncated"] is True
+    # The count is still the whole chunk: a reader deciding whether to open the
+    # report zip needs to know how much is missing, not how much was shown.
+    assert event["chars"] == len(long_text)
+
+
+def test_a_plain_page_carries_no_detail_keys(env: Env) -> None:
+    """The default page is the one the judge and the MCP tools are handed."""
+    write_transcript(
+        env,
+        [message_chunk("hello"), tool_call("Read inbox.csv", {"path": "a.csv"}), plan_update(1)],
+    )
+
+    events = env.reports.transcript(JOB, "mail_a")["events"]
+
+    for event in events:
+        assert "text" not in event
+        assert "output" not in event
+        assert "tool_call_id" not in event
+
+
+
 def test_transcript_limit_is_capped_at_one_page(env: Env) -> None:
     write_transcript(env, [message_chunk("x") for _ in range(30)])
 
@@ -818,6 +882,139 @@ def test_transcript_limit_is_capped_at_one_page(env: Env) -> None:
     assert page["limit"] == MAX_TRANSCRIPT_PAGE
     assert len(page["events"]) == 30
     assert page["next_cursor"] is None
+
+
+def test_a_page_that_starts_inside_a_tool_call_still_names_the_tool(env: Env) -> None:
+    """The update row carries the id and nothing else; the title is on page one.
+
+    Without the label carried across the window boundary, the second page draws a
+    result with no idea which tool produced it -- and the reader is comparing
+    outcomes, which is the one thing they cannot do without the name.
+    """
+    call = tool_call("Read inbox.csv", {"path": "fixtures/inbox.csv"})
+    call["name"] = "read_file"
+    update = {
+        "at": "2026-11-10T02:01:09+00:00",
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "call-1",
+        "content": [{"type": "content", "content": {"type": "text", "text": "3 rows"}}],
+    }
+    write_transcript(env, [message_chunk("先读一遍。"), call, update])
+
+    second = env.reports.transcript(JOB, "mail_a", cursor=2, limit=2, detail=True)
+
+    assert [event["kind"] for event in second["events"]] == ["tool_call_update"]
+    assert second["events"][0]["tool"] == "Read inbox.csv"
+    assert second["events"][0]["name"] == "read_file"
+    assert second["events"][0]["output"] == "3 rows"
+
+
+def test_a_plain_page_does_not_read_the_prefix_for_labels(env: Env) -> None:
+    """The budget is why ``detail`` is opt-in: no flag, no second parse."""
+    update = {
+        "at": "2026-11-10T02:01:09+00:00",
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "call-1",
+        "content": [{"type": "content", "content": {"type": "text", "text": "3 rows"}}],
+    }
+    write_transcript(env, [tool_call("Read inbox.csv", {"path": "a.csv"}), update])
+
+    assert env.reports.transcript(JOB, "mail_a", cursor=1, limit=5)["events"][0]["tool"] == ""
+
+
+def test_beats_page_after_folding_not_by_raw_line(env: Env) -> None:
+    """Twenty chunks of one thought are one beat, not twenty pages of one."""
+    write_transcript(
+        env,
+        [message_chunk(f"chunk {index} ") for index in range(25)]
+        + [tool_call("run tests", {"command": "pytest"}), message_chunk("done")],
+    )
+
+    first = env.reports.trace(JOB, "mail_a", page=1, size=10)
+
+    assert first["total_events"] == 27
+    assert first["total_beats"] == 3
+    assert [beat["voice"] for beat in first["beats"]] == ["assistant", "tool", "assistant"]
+    assert first["beats"][0]["events"] == 25
+    assert first["beats"][0]["text"] == "".join(f"chunk {index} " for index in range(25))
+    assert first["next_page"] is None
+    assert first["counts"] == {
+        "all": 3,
+        "talk": 2,
+        "tool": 1,
+        "thought": 0,
+        "plan": 0,
+    }
+
+
+def test_beats_page_size_and_filter(env: Env) -> None:
+    write_transcript(
+        env,
+        [
+            message_chunk(f"line {index}")
+            for index in range(12)
+        ],
+    )
+
+    page1 = env.reports.trace(JOB, "mail_a", page=1, size=10, voice="talk")
+    page2 = env.reports.trace(JOB, "mail_a", page=2, size=10, voice="talk")
+
+    # Adjacent message chunks all merge into one beat, so the filter has one.
+    assert page1["total_beats"] == 1
+    assert page1["beats"][0]["index"] == 0
+    assert page2["beats"] == []
+    assert page2["next_page"] is None
+
+    # An unsupported size falls back rather than letting a caller ask for 5000.
+    assert env.reports.trace(JOB, "mail_a", size=5000)["size"] == 10
+
+
+def test_trace_content_returns_every_character_when_opened(env: Env) -> None:
+    """The list page previews; opening a beat gives the whole thing back."""
+    long_text = "说了很多 " * 400  # well past the 500-char preview ceiling
+    long_arg = "A" * 900
+    long_output = "result line\n" * 200
+    write_transcript(
+        env,
+        [
+            message_chunk(long_text),
+            tool_call("run", {"payload": long_arg}, output=long_output),
+        ],
+    )
+
+    page = env.reports.trace(JOB, "mail_a")
+    preview = page["beats"][0]
+    assert preview["text_truncated"] is True
+    assert len(preview["text"]) == 500
+
+    full = env.reports.trace_content(JOB, "mail_a", index=0)
+    assert full["found"] is True
+    assert full["text"] == long_text
+    assert full["text_truncated"] is False
+
+    tool_full = env.reports.trace_content(JOB, "mail_a", index=1)
+    assert tool_full["args"]["payload"] == long_arg
+    assert tool_full["output"] == long_output
+
+
+def test_trace_content_keeps_a_calls_arguments_when_the_update_is_on_another_page(
+    env: Env,
+) -> None:
+    call = tool_call("Read inbox.csv", {"path": "fixtures/inbox.csv"}, output="3 rows")
+    update = {
+        "at": "2026-11-10T02:01:09+00:00",
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "call-1",
+        "content": [{"type": "content", "content": {"type": "text", "text": "3 rows"}}],
+    }
+    write_transcript(env, [message_chunk("先读一遍。"), call, update])
+
+    page = env.reports.trace(JOB, "mail_a", voice="tool")
+    assert page["total_beats"] == 1
+
+    full = env.reports.trace_content(JOB, "mail_a", index=0, voice="tool")
+    assert full["args"]["path"] == "fixtures/inbox.csv"
+    assert full["output"] == "3 rows"
 
 
 def test_a_run_without_a_transcript_reads_as_empty(env: Env) -> None:
@@ -1228,6 +1425,36 @@ def test_a_task_without_attachments_reports_a_list_and_not_a_section(env: Env) -
 
     assert detail["has_attachments"] is False
     assert detail["attachments"] == []
+
+
+def test_one_odd_dest_is_a_row_and_not_a_report_that_will_not_open(env: Env) -> None:
+    """A fixture at a dot path is odd, not fatal.
+
+    ``.github/workflows/ci.yml`` is a real dest in the shipped corpus, and the
+    exchange layer refuses it (``bad_dest``).  That refusal is raised per
+    attachment, so without a catch here one such task makes the *whole* job
+    detail answer 400 -- a report nobody can open because a file name started
+    with a dot.  The row stays listed: the manifest says the agent was handed
+    that file, and "declared, unreadable" is a fact worth showing.
+    """
+    from pawbench.cpd.acp_remote_eval.service.datasets import TaskSummary
+
+    summary = TaskSummary(
+        task_id="dot_dest",
+        name="dot dest",
+        file_stem="dot_dest",
+        path=env.builtin_root / "tasks" / "dot_dest.md",
+        grading_type="automated",
+        timeout_seconds=60,
+        workspace_files=({"source": "fixtures/ci.yml", "dest": ".github/workflows/ci.yml"},),
+        labels={},
+    )
+
+    row = env.reports._attachment_row(
+        JOB, summary, env.builtin_root, 1, summary.workspace_files[0]
+    )
+
+    assert row == {"path": ".github/workflows/ci.yml", "size": None, "copy": None}
 
 
 def test_task_detail_and_the_job_detail_describe_attachments_the_same_way(env: Env) -> None:

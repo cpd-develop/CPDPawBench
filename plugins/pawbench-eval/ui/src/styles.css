@@ -607,33 +607,521 @@
   font-weight: 600;
 }
 
-.pbe-timeline {
-  display: flex;
-  flex-direction: column;
+/* ── trace (one run, read in order) ────────────────────────────────────── */
+
+/*
+ * A console, not a page section: the toolbar and the position stay put while
+ * the run scrolls under them.  That is the one thing the old table got right by
+ * accident (its rows were short) and the thing a 200-row page needs most.
+ */
+.pbe-trace {
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-12);
+  background: var(--bg-base-default);
+  overflow: hidden;
 }
 
-.pbe-timeline__item {
-  display: grid;
-  grid-template-columns: 88px 96px minmax(0, 1fr);
+.pbe-trace__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--spacer-12);
-  padding: var(--spacer-8) 0;
+  padding: var(--spacer-8) var(--spacer-12);
   border-bottom: 1px solid var(--border-neutral-l1);
+  background: var(--bg-base-secondary);
+}
+
+.pbe-trace__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--spacer-8);
+  margin-left: auto;
+}
+
+.pbe-trace__pos {
+  color: var(--text-tertiary);
+  font-size: var(--body-sm-font-size);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pbe-trace__error {
+  padding: var(--spacer-6) var(--spacer-12);
+  border-bottom: 1px solid var(--border-neutral-l1);
+  color: var(--status-error-default);
   font-size: var(--body-sm-font-size);
 }
 
-.pbe-timeline__item:last-child {
-  border-bottom: 0;
+.pbe-trace__scroll {
+  max-height: min(56vh, 560px);
+  padding: var(--spacer-16) var(--spacer-16) var(--spacer-8);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
-.pbe-timeline__at {
+.pbe-trace__scroll[aria-busy="true"] {
+  opacity: 0.5;
+  transition: opacity 120ms ease;
+}
+
+.pbe-trace__quiet {
+  max-width: 62ch;
+  padding: var(--spacer-24) var(--spacer-8);
   color: var(--text-tertiary);
+  font-size: var(--body-sm-font-size);
+  line-height: 1.8;
+}
+
+.pbe-trace__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacer-12);
+  padding: var(--spacer-8) var(--spacer-12);
+  border-top: 1px solid var(--border-neutral-l1);
+  background: var(--bg-base-secondary);
+}
+
+/* one beat on the rail */
+
+.pbe-beat {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 0 var(--spacer-12);
+}
+
+.pbe-beat__rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+/*
+ * The line is drawn per beat and runs the full height of the gutter, so two
+ * adjacent beats join without a seam.  The first starts below its dot and the
+ * last stops at it, which is what keeps the rail from overshooting the run.
+ * At the hairline weight the lighter border token is invisible once the page is
+ * scrolled -- the spine is what tells a reader these rows are one run.
+ */
+.pbe-beat__rail::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  margin-left: -0.5px;
+  background: var(--border-neutral-l3);
+}
+
+.pbe-beat:first-child .pbe-beat__rail::before {
+  top: 9px;
+}
+
+.pbe-beat:last-child .pbe-beat__rail::before {
+  bottom: auto;
+  height: 9px;
+}
+
+.pbe-beat:only-child .pbe-beat__rail::before {
+  display: none;
+}
+
+.pbe-beat__dot {
+  position: relative;
+  z-index: 1;
+  width: 7px;
+  height: 7px;
+  margin-top: 7px;
+  border-radius: 2px;
+  background: var(--text-disabled);
+  box-shadow: 0 0 0 3px var(--bg-base-default);
+}
+
+.pbe-beat__rail--user .pbe-beat__dot {
+  background: var(--text-secondary);
+}
+
+.pbe-beat__rail--assistant .pbe-beat__dot {
+  background: var(--bg-brand);
+}
+
+.pbe-beat__rail--tool .pbe-beat__dot {
+  box-sizing: border-box;
+  background: var(--bg-base-default);
+  border: 1.5px solid var(--border-neutral-l3);
+}
+
+.pbe-beat__rail--thought .pbe-beat__dot {
+  width: 5px;
+  height: 5px;
+  margin-top: 8px;
+}
+
+.pbe-beat__rail--plan .pbe-beat__dot {
+  background: var(--accent-teal);
+}
+
+.pbe-beat__rail--system .pbe-beat__dot {
+  width: 5px;
+  height: 5px;
+  margin-top: 8px;
+  background: var(--border-neutral-l3);
+}
+
+.pbe-beat__body {
+  min-width: 0;
+  padding-bottom: var(--spacer-16);
+}
+
+.pbe-beat__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacer-8);
+  min-height: 20px;
+  color: var(--text-tertiary);
+  font-size: var(--body-sm-font-size);
+  line-height: 20px;
+}
+
+.pbe-beat__who {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.pbe-beat__quiet {
+  color: var(--text-tertiary);
+  font-size: var(--body-sm-font-size);
+  line-height: 1.7;
+}
+
+/* words: prose on the page, not a box per turn */
+
+.pbe-speech {
+  max-width: 74ch;
+  color: var(--text-default);
+  font-size: var(--body-base-font-size);
+  line-height: 1.72;
+  letter-spacing: -0.01em;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pbe-thought {
+  max-width: 74ch;
+  max-height: 3.4em;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: var(--body-md-font-size, 12px);
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+  /* A fade on the text of a collapsed thought, not a colour: the mask only
+     reads alpha, so `black` here is "opaque" and takes no value from the tokens. */
+  -webkit-mask-image: linear-gradient(180deg, black 55%, transparent);
+  mask-image: linear-gradient(180deg, black 55%, transparent);
+}
+
+.pbe-thought--open {
+  max-height: none;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/* a tool call: identity on the head, arguments as fields, result attached */
+
+.pbe-tool {
+  /* One column for every label in the card: argument names and "结果".  Wide
+     enough for a field like ``command``, narrow enough that a short one is not
+     stranded in the middle of the card. */
+  --pbe-tool-key: 84px;
+  padding: var(--spacer-10) var(--spacer-12);
+  border: 1px solid var(--border-neutral-l1);
+  border-radius: var(--radius-8);
+  background: var(--bg-base-secondary);
+}
+
+.pbe-tool__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacer-8);
+  min-height: 22px;
+}
+
+/* A failed call is the one thing in a run that must survive a skim. */
+.pbe-tool--failed {
+  border-color: var(--status-error-surface-l3);
+  background: var(--status-error-surface-l1);
+}
+
+.pbe-tool__title {
+  color: var(--text-default);
+  font-size: var(--body-base-font-size);
+  font-weight: 500;
+}
+
+.pbe-tool__name {
+  color: var(--text-tertiary);
+  font-size: var(--body-sm-font-size);
+}
+
+.pbe-tool__size {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: var(--body-sm-font-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.pbe-tool__args {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--spacer-6);
+}
+
+.pbe-tool__arg {
+  display: grid;
+  grid-template-columns: var(--pbe-tool-key) minmax(0, 1fr);
+  gap: var(--spacer-8);
+  font-size: var(--body-sm-font-size);
+  line-height: 18px;
+}
+
+.pbe-tool__key {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pbe-tool__value {
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pbe-tool__value--wrap {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Arguments and the result share one left column, so the card reads as a single
+   key/value table rather than as two blocks indented differently. */
+
+.pbe-tool__out {
+  display: grid;
+  grid-template-columns: var(--pbe-tool-key) minmax(0, 1fr);
+  gap: var(--spacer-8);
+  margin-top: var(--spacer-8);
+}
+
+.pbe-tool__out-label {
+  padding-top: var(--spacer-6);
+  color: var(--text-tertiary);
+  font-size: var(--body-sm-font-size);
+  line-height: 18px;
+  text-align: right;
+}
+
+.pbe-tool__out-text {
+  min-width: 0;
+  max-height: 84px;
+  margin: 0;
+  padding: var(--spacer-6) var(--spacer-10);
+  overflow: hidden;
+  border-left: 2px solid var(--border-neutral-l2);
+  border-radius: 0 var(--radius-4) var(--radius-4) 0;
+  background: var(--bg-base-default);
+  color: var(--text-secondary);
   font-family: var(--code-editor-font-family);
+  font-size: 11px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Once opened the reader asked for the whole result: no clamp, no scroll box
+   hiding the tail behind a scrollbar that looks like "the end". */
+.pbe-tool__out--open .pbe-tool__out-text {
+  max-height: none;
+  overflow: visible;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* The control lives in one slot on every meta row, so "展开" and "收起" keep
+   the same baseline and the same right edge no matter how long the content is. */
+.pbe-beat__more-slot {
+  display: inline-flex;
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.pbe-beat__more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 96px;
+  min-height: 20px;
+  margin: 0;
+  padding: 0 var(--spacer-8);
+  border: 0;
+  border-radius: var(--radius-4);
+  background: none;
+  color: var(--text-brand);
+  font: inherit;
+  font-size: var(--body-sm-font-size);
+  line-height: 18px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pbe-beat__more--open,
+.pbe-beat__more:disabled {
+  color: var(--text-tertiary);
+}
+
+.pbe-beat__more:disabled {
+  cursor: default;
+}
+
+.pbe-beat__more:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.pbe-beat__more:focus-visible {
+  outline: 2px solid var(--border-brand);
+  outline-offset: 2px;
+}
+
+/* a plan is a checklist, because that is what the agent wrote */
+
+.pbe-plan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacer-4);
+  max-width: 74ch;
+  margin: var(--spacer-6) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--body-base-font-size);
+  line-height: 1.6;
+}
+
+.pbe-plan__item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: var(--spacer-6);
+  color: var(--text-secondary);
+}
+
+.pbe-plan__mark {
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.pbe-plan__item--completed {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-neutral-l3);
+}
+
+.pbe-plan__item--completed .pbe-plan__mark {
+  color: var(--status-success-default);
+}
+
+.pbe-plan__item--in_progress {
+  color: var(--text-default);
+}
+
+.pbe-plan__item--in_progress .pbe-plan__mark {
+  color: var(--text-brand);
+}
+
+/* UI chatter folds into one line */
+
+.pbe-system {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacer-8);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-4);
+  background: none;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: var(--body-sm-font-size);
+  cursor: pointer;
+}
+
+.pbe-system:hover {
+  color: var(--text-secondary);
+}
+
+.pbe-system:focus-visible {
+  outline: 2px solid var(--border-brand);
+  outline-offset: 2px;
+}
+
+.pbe-system__act {
+  margin-left: auto;
+  color: var(--text-brand);
+}
+
+.pbe-system__list {
+  margin: var(--spacer-4) 0 0;
+  padding-left: var(--spacer-16);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.7;
 }
 
 @media (max-width: 760px) {
-  .pbe-timeline__item {
+  .pbe-trace__bar {
+    align-items: stretch;
+  }
+
+  .pbe-trace__nav {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
+  }
+
+  .pbe-trace__scroll {
+    max-height: 60vh;
+    padding: var(--spacer-12);
+  }
+
+  .pbe-tool__arg {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .pbe-tool__key {
+    text-align: left;
+  }
+
+  /* No room for a label column: the label goes above its value, and the result
+     block keeps the full width it needs to be readable. */
+  .pbe-tool__out {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--spacer-4);
+  }
+
+  .pbe-tool__out-label {
+    padding-top: 0;
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pbe-trace__scroll[aria-busy="true"] {
+    transition: none;
   }
 }
 

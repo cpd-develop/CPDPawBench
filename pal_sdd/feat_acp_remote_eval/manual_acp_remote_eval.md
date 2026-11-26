@@ -585,8 +585,11 @@ QwenPaw 对"临时会话"的定义决定的，不是桥偷懒。
   `session_id`，两个 id 都能一键复制
 - **判据逐项** —— 哪条过了、哪条没过，右侧是这一项的分值
 - **产物** —— 文件清单、大小、sha256 前 12 位；**点一行就预览**，也能下载
-- **轨迹时间线** —— 每一步的时间、类型（调用 / 结果 / 输出 / 计划 / 用量…）、工具名与
-  参数键。分页读，长会话不会一次糊满屏幕
+- **轨迹时间线** —— 按"谁在说"排的一列：你说的话、计划清单、思考、工具调用，左侧一条
+  导轨把它们串成一次连续的执行。同一条消息被流式切成几十片时合成一段；一次工具调用和它
+  的结果合成一张卡片（工具名、参数、结果开头、成功/失败），失败的卡片整张标红。思考默认
+  只露开头，点开看全文；用量、模式之类的系统事件折叠成一行。顶部的筛选器按类型过滤并按
+  类型计数，翻页读，长会话不会一次糊满屏幕
 
 #### 7.2.1 预览文件
 
@@ -837,15 +840,38 @@ python -m pawbench.cpd.acp_remote_eval.cli submit \
 插件里带一个 skill `pawbench-datasets`，可在 QwenPaw 对话里让 agent 帮你查数据集、解析
 选择器、提交作业、上传任务包。
 
-启用前提：在 QwenPaw 里配好 MCP server（QwenPaw 没有 `register_mcp*` 钩子，这一步是手工的）：
+**这一步不用手工配置。** 在插件页面的「配置」里保存评测服务地址和 token 时，插件会顺带把
+MCP 客户端写好（`pawbench-eval`，写入每个 agent 工作区的 `drivers/mcp/pawbench-eval.yaml`，
+token 存进凭据库而不是写进请求头）；QwenPaw 启动时会按 `data/config.json`（或
+`PAWBENCH_EVAL_*` 环境变量）自动对齐，新建 agent 时也会补上，卸载插件时删除它自己写的那份。
+所以保存完配置，`pawbench-datasets` 就应该出现在技能列表里。
+
+插件写入的内容（出问题时对照这张表）：
 
 | 项 | 值 |
 |---|---|
-| 端点 | `<服务地址>/mcp` |
-| 认证 | `Authorization: Bearer <token>` |
+| 客户端 key（名称） | **必须是 `pawbench-eval`**，别的名字 skill 认不出来 |
+| 端点 | `<服务地址>/mcp`，例如 `http://127.0.0.1:8471/mcp` |
+| 传输 | `streamable_http` |
+| 认证 | 请求头 `Authorization: Bearer <token>`，token 由 `service.auth add-subject` 签发 |
+| 主机 / 来源 | 必须与 `service.public_base_url` 完全一致；写 `localhost` 会被 421/403 拒绝，局域网 IP 同理 |
 
-配好后 skill 才会出现在技能列表里，因为它在 `SKILL.md` 里声明了
-`requires.mcp: ["pawbench-eval"]`。
+早于本版本的手工配置（QwenPaw 的 MCP 管理里那张同名卡片）会被第一次保存接管：地址、token
+按配置页的为准，原有策略和工具白名单保留。
+
+skill 能不能出现，取决于这张卡片在不在，因为它在 `SKILL.md` 里声明了
+`requires.mcp: ["pawbench-eval"]`。验证顺序：`curl <服务地址>/healthz` →
+QwenPaw 的 `/api/mcp/tools/pawbench-eval` 能看到 19 个 `pawbench_*` 工具 → 技能列表里出现
+`pawbench-datasets`。技能没出现时，先看 QwenPaw 日志里有没有
+`[pawbench-eval] MCP sync: {...}` 这一行：它说明插件认为该写哪几个工作区、每个写成了什么
+（`created` / `updated` / `unchanged` / `skipped` / `failed`）。
+
+几个容易踩的坑，都是实测过的：
+
+- **少了 Bearer 头**：服务返回 401，QwenPaw 会把任何 401 都判成"需要 OAuth 授权"，界面上就表现为"添加失败/要求授权"。日志关键词是 `requires OAuth authorization`，实际只是 token 没带上——配置页里把 token 再存一次即可（保存会重写卡片）。
+- **客户端 key 写错**（如 `bench`）：MCP 本身能连上，但 skill 的 `requires.mcp` 是按 key 精确匹配的，技能不会出现。
+- **协议版本告警**：新版 QwenPaw 先用 `2026-07-28` 探测，当前服务端 MCP SDK 支持到 `2025-11-25`，会回退到 legacy 客户端后正常连上。日志里的 `Unsupported protocol version: 2026-07-28` 是噪声，不代表连不上。
+- **URL 结尾**：服务对 `/mcp` 会 307 跳到 `/mcp/`；不跟随 POST 重定向的客户端直接填 `/mcp/` 即可。
 
 一句提醒：让 agent 帮你做题时，**不要让它读判据、判分代码或夹具内容**——那是被评测对象
 不该看到的答案。
@@ -893,7 +919,9 @@ python -m pawbench.cpd.acp_remote_eval.cli submit \
 4. **服务没有 whoami 接口**，身份靠"首次提交后从 `submitter` 学到"。换 token 后第一次提交
    前，"我的"这一列可能标错行。
 5. **`pilot_v1` 的分类是空的**，进去看到"未分类"是正常的，不是配置漏了。
-6. 单题 transcript 很长时按页读，一次只取一屏；想全文就用报告里的 zip。
+6. 看板的单题轨迹按"步"翻页（默认 10 步/页，可切 20、50），步是服务把流式片段合并后的
+   一句话/一次工具调用；原始行游标不会显示给你。列表里的正文、参数、结果是预览，
+   点"展开完整内容"才会取这一步的全文（不再有 `… +N chars`）；要整轮的原文就用报告 zip。
 7. **stdio agent 必须经过桥**（§3.3），服务本身不接受命令形式的提交。桥是运维工具，
    不是服务的一部分：它重启后旧作业连不上，正在跑的任务会失败。
 8. **被评测 agent 自己的"需要人类确认"会被记成失败，而且这是对的**。评测端没有人在按
@@ -936,7 +964,9 @@ python -m pawbench.cpd.acp_remote_eval.cli submit \
 | `GET /v1/jobs/{id}/tasks/{task}/detail` | 单题详情 |
 | `GET /v1/jobs/{id}/results` | 切片结果 |
 | `GET /v1/jobs/{id}/report?format=` | 报告**签名链接**（不是字节） |
-| `GET /v1/jobs/{id}/transcript?task_id=&attempt=&cursor=` | 轨迹分页 |
+| `GET /v1/jobs/{id}/transcript?task_id=&attempt=&cursor=` | 原始轨迹按行分页（工具/判分用） |
+| `GET /v1/jobs/{id}/beats?task_id=&attempt=&page=&size=&voice=` | 看板轨迹：按"步"分页（10/20/50，默认 10），可按说话者筛选 |
+| `GET /v1/jobs/{id}/beats/content?task_id=&attempt=&index=&voice=` | 展开一步时取未截断的全文 |
 | `GET/POST /v1/datasets`、`PUT/DELETE /v1/datasets/{id}` | 数据集 |
 | `POST /v1/datasets/resolve` | 解析选择器，不落库 |
 | `POST /v1/datasets/packages` | 上传自定义包（裸 zip + query 元数据） |
